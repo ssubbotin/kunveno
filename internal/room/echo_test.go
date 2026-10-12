@@ -76,3 +76,14 @@ func TestSetCamera(t *testing.T) {
 		t.Fatal("camera flag not in snapshot")
 	}
 }
+
+func TestSetDeclinesVideo(t *testing.T) {
+	r := New("testing", "Testing", "1234", 3)
+	_ = r.Join("a", "Ann", "1234")
+	if !r.SetDeclinesVideo("a", true) || r.SetDeclinesVideo("a", true) {
+		t.Fatal("SetDeclinesVideo change reporting is wrong")
+	}
+	if !r.Snapshot().Participants[0].DeclinesVideo {
+		t.Fatal("flag not in snapshot")
+	}
+}

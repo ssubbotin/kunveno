@@ -7,6 +7,7 @@ import (
 	"github.com/ssubbotin/kunveno/internal/quality"
 	"io"
 	"log/slog"
+	"math/bits"
 	"strings"
 	"sync"
 	"time"
@@ -45,9 +46,8 @@ type Peer struct {
 	upTransport string // transport counted in ActiveConnections while connected; guarded by mu
 	prevLost    int64  // cumulative uplink counters at the previous Sample; guarded by mu
 	prevRecv    int64
-	rrLast      map[uint32][2]uint32 // per SSRC: highest sequence and total lost of the last report; guarded by mu
-	downExp     int64                // packets expected and lost since the last Sample; guarded by mu
-	downLost    int64
+	audioLoss   lossWindow    // downlink loss of the audio we send; guarded by mu
+	videoLoss   lossWindow    // downlink loss of the screen and cameras we send; guarded by mu
 	rtt         time.Duration // latest round trip from its receiver reports; guarded by mu
 	id          string
 	pc          *webrtc.PeerConnection
@@ -138,7 +138,7 @@ func (p *Peer) RequestKeyframe(kind Kind) {
 		p.log.Debug("pli", "err", err)
 		return
 	}
-	metrics.KeyframeRequests.Inc()
+	metrics.KeyframeRequests.WithLabelValues(kind.String()).Inc()
 }
 
 func (p *Peer) onTrack(remote *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
@@ -243,13 +243,14 @@ func (p *Peer) readRTCP(sender *webrtc.RTPSender, from Source, kind Kind) {
 		for _, pkt := range pkts {
 			switch v := pkt.(type) {
 			case *rtcp.PictureLossIndication:
+				metrics.ViewerPLIs.WithLabelValues(kind.String()).Inc()
 				if kind != KindAudio {
 					from.RequestKeyframe(kind)
 				}
+			case *rtcp.TransportLayerNack:
+				metrics.NACKedPackets.WithLabelValues(kind.String()).Add(float64(nackedPackets(v)))
 			case *rtcp.ReceiverReport:
-				if kind == KindAudio {
-					p.noteReceiverReport(v)
-				}
+				p.noteReport(kind, v)
 			}
 		}
 	}
@@ -415,6 +416,7 @@ func (p *Peer) Sample() (s quality.Sample, ok bool) {
 	}
 	p.mu.Unlock()
 	s.DownLoss = max(s.DownLoss, p.takeDownLoss())
+	s.VideoLoss, s.HasVideo = p.takeVideoLoss()
 	if dLost > 0 && dLost+dRecv > 0 {
 		s.UpLoss = float64(dLost) / float64(dLost+dRecv)
 	}
@@ -424,37 +426,80 @@ func (p *Peer) Sample() (s quality.Sample, ok bool) {
 func seconds(f float64) time.Duration { return time.Duration(f * float64(time.Second)) }
 
 // noteReceiverReport records what the participant says about the audio we send it.
-func (p *Peer) noteReceiverReport(rr *rtcp.ReceiverReport) {
+func (p *Peer) noteReceiverReport(rr *rtcp.ReceiverReport) { p.noteReport(KindAudio, rr) }
+
+// noteReport records what the participant says about a stream we send it: the round trip from
+// audio reports, and loss for audio and video in separate windows.
+func (p *Peer) noteReport(kind Kind, rr *rtcp.ReceiverReport) {
 	now := compactNTP(time.Now())
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.rrLast == nil {
-		p.rrLast = map[uint32][2]uint32{}
+	w := &p.videoLoss
+	if kind == KindAudio {
+		w = &p.audioLoss
 	}
 	for _, r := range rr.Reports {
-		if rtt := rttFromReport(now, r.LastSenderReport, r.Delay); rtt > 0 {
-			p.rtt = rtt
-		}
-		if prev, seen := p.rrLast[r.SSRC]; seen && r.LastSequenceNumber > prev[0] {
-			p.downExp += int64(r.LastSequenceNumber - prev[0])
-			if r.TotalLost > prev[1] {
-				p.downLost += int64(r.TotalLost - prev[1])
+		if kind == KindAudio {
+			if rtt := rttFromReport(now, r.LastSenderReport, r.Delay); rtt > 0 {
+				p.rtt = rtt
 			}
 		}
-		p.rrLast[r.SSRC] = [2]uint32{r.LastSequenceNumber, r.TotalLost}
+		w.note(r)
 	}
 }
 
-// takeDownLoss returns the downlink loss ratio since the previous call and starts a new window.
+// takeDownLoss returns the audio downlink loss ratio since the previous call and starts a new window.
 func (p *Peer) takeDownLoss() float64 {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	exp, lost := p.downExp, p.downLost
-	p.downExp, p.downLost = 0, 0
+	return p.audioLoss.take()
+}
+
+// takeVideoLoss is takeDownLoss for the video we send; ok is false when the participant got no
+// video in this window, so idle viewers do not dilute the loss figures.
+func (p *Peer) takeVideoLoss() (float64, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	had := p.videoLoss.expected > 0
+	return p.videoLoss.take(), had
+}
+
+// lossWindow accumulates loss from the cumulative counters of receiver reports.
+type lossWindow struct {
+	last           map[uint32][2]uint32 // per SSRC: highest sequence and total lost of the last report
+	expected, lost int64
+}
+
+func (w *lossWindow) note(r rtcp.ReceptionReport) {
+	if w.last == nil {
+		w.last = map[uint32][2]uint32{}
+	}
+	if prev, seen := w.last[r.SSRC]; seen && r.LastSequenceNumber > prev[0] {
+		w.expected += int64(r.LastSequenceNumber - prev[0])
+		if r.TotalLost > prev[1] {
+			w.lost += int64(r.TotalLost - prev[1])
+		}
+	}
+	w.last[r.SSRC] = [2]uint32{r.LastSequenceNumber, r.TotalLost}
+}
+
+func (w *lossWindow) take() float64 {
+	exp, lost := w.expected, w.lost
+	w.expected, w.lost = 0, 0
 	if exp <= 0 || lost <= 0 {
 		return 0
 	}
 	return min(1, float64(lost)/float64(exp))
+}
+
+// nackedPackets counts the packets a NACK asks to resend: each pair names one packet and a
+// bitmask of up to 16 more.
+func nackedPackets(n *rtcp.TransportLayerNack) int {
+	total := 0
+	for _, pair := range n.Nacks {
+		total += 1 + bits.OnesCount16(uint16(pair.LostPackets))
+	}
+	return total
 }
 
 // rttFromReport applies RFC 3550 6.4.1: round trip = arrival - LSR - DLSR, all in compact NTP

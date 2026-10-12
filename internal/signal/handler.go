@@ -509,6 +509,9 @@ func (h *Handler) watchQuality(ctx context.Context, s *session) {
 		if !s.bot {
 			metrics.LossRatio.WithLabelValues("up").Observe(sample.UpLoss)
 			metrics.LossRatio.WithLabelValues("down").Observe(sample.DownLoss)
+			if sample.HasVideo {
+				metrics.LossRatio.WithLabelValues("down_video").Observe(sample.VideoLoss)
+			}
 			metrics.JitterSeconds.Observe(sample.Jitter.Seconds())
 			if sample.RTT > 0 {
 				metrics.RTTSeconds.Observe(sample.RTT.Seconds())
@@ -540,6 +543,7 @@ func (h *Handler) declinesVideo(s *session) bool {
 // participants on a weak link who keep audio and the shared screen only.
 func (h *Handler) setReceiveVideo(s *session, receive bool) {
 	lr, _ := h.lookup(s.slug)
+	lr.room.SetDeclinesVideo(s.id, !receive)
 	h.mu.Lock()
 	s.noVideo = !receive
 	others := lr.membersExcept(s.id)

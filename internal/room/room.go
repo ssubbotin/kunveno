@@ -24,6 +24,8 @@ type Participant struct {
 	// Quality is the connection grade ("good", "fair", "poor"), empty until measured.
 	Quality string
 	Camera  bool // the participant's camera is on
+	// DeclinesVideo: the participant declined other cameras; for metrics, not sent to clients.
+	DeclinesVideo bool
 }
 
 // Snapshot is the full public state of a room.
@@ -214,5 +216,17 @@ func (r *Room) SetCamera(id string, on bool) bool {
 		return false
 	}
 	p.Camera = on
+	return true
+}
+
+// SetDeclinesVideo records whether a participant declined other cameras and reports a change.
+func (r *Room) SetDeclinesVideo(id string, on bool) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	p, ok := r.members[id]
+	if !ok || p.DeclinesVideo == on {
+		return false
+	}
+	p.DeclinesVideo = on
 	return true
 }
