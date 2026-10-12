@@ -1,0 +1,20 @@
+# kunveno-server configuration. Install as /etc/kunveno/config.yaml (mode 0640, group kunveno).
+http:
+  listen: 127.0.0.1:8080        # nginx proxies /ws and /api/ here
+  # allowed_origins: ["https://meet.example.internal"]   # default: same host as the request
+media:
+  udp_port: 7000                # one UDP port for all media; open it on the VPN interface only
+  advertise_ip: 10.8.0.1        # the VPN address browsers will send media to
+  share_max_kbps: 2500
+rooms:
+  - slug: ops
+    name: Operations
+    pin: "1234"
+    max_participants: 15
+  - slug: dev
+    name: Development
+    pin: "5678"
+  - slug: all-hands
+    name: All hands
+    pin: "9999"
+    max_participants: 30
