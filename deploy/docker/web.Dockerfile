@@ -1,0 +1,21 @@
+# syntax=docker/dockerfile:1
+# nginx with the built web client. Built in CI from the repository root:
+#   docker build -f deploy/docker/web.Dockerfile .
+# Only the final stage is published: nginx, the built bundle (no source maps) and the site template.
+
+FROM node:22-alpine AS build
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY web/ ./
+ARG VERSION=dev
+ARG BUILD_DATE=
+RUN VITE_APP_VERSION=${VERSION} VITE_BUILD_DATE=${BUILD_DATE} npm run build \
+ && if find dist -name '*.map' | grep -q . || grep -rq sourceMappingURL dist; then echo "source maps in the bundle" >&2; exit 1; fi
+
+# The official image renders templates/*.template with envsubst on start, substituting only
+# variables defined in the environment (nginx's own $vars are kept).
+FROM nginx:1.27-alpine
+RUN rm -f /etc/nginx/conf.d/default.conf
+COPY --from=build /web/dist/ /usr/share/nginx/kunveno/
+COPY deploy/docker/nginx.conf.template /etc/nginx/templates/kunveno.conf.template

@@ -1,7 +1,0 @@
-# Runtime image for kunveno-server. The build context is the bundle from `make docker-bundle`,
-# which holds the static binary only; no sources are copied.
-FROM alpine:3.22
-RUN adduser -D -H -u 10001 kunveno
-COPY kunveno-server /usr/local/bin/kunveno-server
-USER kunveno
-ENTRYPOINT ["/usr/local/bin/kunveno-server", "-config", "/etc/kunveno/config.yaml"]

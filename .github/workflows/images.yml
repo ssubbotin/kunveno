@@ -1,0 +1,122 @@
+name: images
+
+# Builds the three service images, checks they leak no sources, maps or debug data, and
+# publishes them to GHCR (private, linked to this repository). Pull requests build and check only.
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # The leak check must be able to fail: build a deliberately dirty image and require it to
+  # report every kind of leak.
+  check-the-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build a leaky image
+        run: |
+          docker build -t check/leaky:ci - <<'DOCKERFILE'
+          FROM alpine:3.22
+          RUN mkdir -p /app /usr/share/nginx/kunveno/assets /usr/local/bin \
+           && echo 'package main' > /app/main.go \
+           && echo '{}' > /usr/share/nginx/kunveno/assets/index.js.map \
+           && echo 'x();//# sourceMappingURL=index.js.map' > /usr/share/nginx/kunveno/assets/index.js \
+           && printf '/src/internal/sfu/peer.go .debug_info' > /usr/local/bin/kunveno-test
+          DOCKERFILE
+      - name: the check must fail and name every leak
+        run: |
+          if deploy/docker/check-image.sh check/leaky:ci 2> report.txt; then
+            echo "check-image.sh passed a leaky image" >&2; exit 1
+          fi
+          cat report.txt
+          for want in 'app/main.go' 'index.js.map' 'sourceMappingURL in the web bundle' 'keeps build paths' 'DWARF debug data'; do
+            grep -q "$want" report.txt || { echo "not reported: $want" >&2; exit 1; }
+          done
+
+  image:
+    needs: check-the-check
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: kunveno-server
+            file: deploy/docker/go.Dockerfile
+            target: server
+            app: kunveno-server
+          - name: kunveno-echo
+            file: deploy/docker/go.Dockerfile
+            target: echo
+            app: kunveno-echo
+          - name: kunveno-web
+            file: deploy/docker/web.Dockerfile
+            target: ''
+            app: ''
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags, for the version
+      - id: version
+        run: |
+          v=$(git describe --tags --always --dirty 2>/dev/null | sed 's/^v//')
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.name }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=ref,event=branch
+            type=sha,prefix=sha-
+          labels: |
+            org.opencontainers.image.title=${{ matrix.name }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+      # Build into the local daemon first and check it; only a clean image is pushed.
+      # The cache lives in the repository's private Actions cache, never in the registry,
+      # so build stages (which hold the sources) are not published.
+      - name: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          build-args: |
+            APP=${{ matrix.app }}
+            VERSION=${{ steps.version.outputs.version }}
+            BUILD_DATE=${{ steps.version.outputs.date }}
+          load: true
+          tags: check/${{ matrix.name }}:ci
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,scope=${{ matrix.name }},mode=max
+      - name: check for leaked sources and debug data
+        run: deploy/docker/check-image.sh check/${{ matrix.name }}:ci
+      - if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - if: github.event_name == 'push'
+        name: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          build-args: |
+            APP=${{ matrix.app }}
+            VERSION=${{ steps.version.outputs.version }}
+            BUILD_DATE=${{ steps.version.outputs.date }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.name }}
