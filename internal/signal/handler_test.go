@@ -677,3 +677,28 @@ func TestPlayerJoinsOnlyItsRoomAndStaysWhenEchoGoesOff(t *testing.T) {
 		}
 	}
 }
+
+// A page that ends up with two connections (a client bug, a racing reconnect) keeps one
+// participant: a join with the same client id replaces the earlier session.
+func TestSameClientReplacesItsEarlierSession(t *testing.T) {
+	e := newEnv(t, 15)
+	first := dial(t, e)
+	send(t, first, `{"type":"join","room":"ops","pin":"1234","name":"Вероника","client":"page-abc123"}`)
+	expect(t, first, "joined")
+	second := dial(t, e)
+	send(t, second, `{"type":"join","room":"ops","pin":"1234","name":"Вероника","client":"page-abc123"}`)
+	expect(t, second, "joined")
+	expectClosed(t, first)
+	waitFor(t, func() bool { return e.h.count("ops") == 1 })
+	for {
+		m := expect(t, second, "participants")
+		if len(m.Participants) == 1 {
+			break
+		}
+	}
+	// Another page with its own id is a different participant.
+	other := dial(t, e)
+	send(t, other, `{"type":"join","room":"ops","pin":"1234","name":"Вероника","client":"page-zzz999"}`)
+	expect(t, other, "joined")
+	waitFor(t, func() bool { return e.h.count("ops") == 2 })
+}

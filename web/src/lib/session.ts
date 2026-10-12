@@ -5,6 +5,7 @@ import { Rtc } from './rtc';
 import { watchLevel } from './levels';
 import { MIC_KEY, audioConstraints } from './micLevel';
 import { prefersTcp, rememberTcp } from './transport';
+import { Reconnector, newClientId } from './reconnect';
 import { cameraConstraints, loadPrefs, savePrefs, splitStream } from './media';
 
 const FATAL_CODES = new Set(['bad_pin', 'bad_room', 'room_full', 'bad_message', 'too_many_attempts']);
@@ -19,8 +20,12 @@ export class Session {
   private rtc: Rtc | null = null;
   private mic: MediaStreamTrack | null = null;
   private wanted: Wanted | null = null;
-  private attempt = 0;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  // One pending rejoin at most; see Reconnector.
+  private readonly reconnector = new Reconnector(() => {
+    if (this.wanted) void this.connect();
+  });
+  private everJoined = false;
+  private readonly clientId = newClientId();
   private remoteAudio = new Map<string, { el: HTMLAudioElement; stop: () => void }>();
   private screenTrack: MediaStreamTrack | null = null;
   private screenAttached = false;
@@ -33,7 +38,9 @@ export class Session {
 
   async join(room: string, pin: string, name: string): Promise<void> {
     this.wanted = { room, pin, name };
-    this.attempt = 0;
+    this.reconnector.cancel();
+    this.reconnector.succeeded();
+    this.everJoined = false;
     // Enter in the state chosen in the lobby.
     const prefs = loadPrefs(localStorage);
     this.state.muted = !prefs.micOn;
@@ -65,13 +72,23 @@ export class Session {
 
   private async connect(): Promise<void> {
     if (!this.wanted || !this.mic) return;
-    this.state.status = this.attempt === 0 ? 'connecting' : 'reconnecting';
-    const sig = new Signaling(this.wsUrl(), (m) => this.onMessage(m), () => this.onClosed());
+    this.state.status = this.everJoined ? 'reconnecting' : 'connecting';
+    // Events of a connection that is no longer the current one are ignored, so a late close
+    // of an old socket cannot start a second session.
+    const sig: Signaling = new Signaling(
+      this.wsUrl(),
+      (m) => { if (this.sig === sig) this.onMessage(m); },
+      () => { if (this.sig === sig) this.onClosed(); },
+    );
     this.sig = sig;
     try {
       await sig.connect();
     } catch {
-      this.scheduleReconnect();
+      if (this.sig === sig) this.scheduleReconnect();
+      return;
+    }
+    if (this.sig !== sig) {
+      sig.close(); // superseded while connecting
       return;
     }
     this.rtc = new Rtc(
@@ -80,19 +97,20 @@ export class Session {
       (pid, track) => this.onRemoteTrack(pid, track),
       () => {
         this.useTcp();
-        sig.close();
+        if (this.sig === sig) this.restart();
       },
       2500,
       (t) => (this.state.transport = t),
     );
-    sig.send({ type: 'join', ...this.wanted, ...(this.preferTcp ? { media: 'tcp' as const } : {}) });
+    sig.send({ type: 'join', ...this.wanted, client: this.clientId, ...(this.preferTcp ? { media: 'tcp' as const } : {}) });
   }
 
   private onMessage(m: ServerMessage): void {
     this.state.apply(m);
     switch (m.type) {
       case 'joined':
-        this.attempt = 0;
+        this.reconnector.succeeded();
+        this.everJoined = true;
         this.state.status = 'connected';
         if (this.state.muted) this.sig?.send({ type: 'mute', muted: true });
         if (!this.state.receiveVideo) this.sig?.send({ type: 'video', receive: false });
@@ -130,18 +148,23 @@ export class Session {
   }
 
   private scheduleReconnect(): void {
-    const delay = Math.min(10_000, 1000 * 2 ** this.attempt);
-    this.attempt += 1;
     this.state.status = 'reconnecting';
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null;
-      if (this.wanted) void this.connect();
-    }, delay);
+    this.reconnector.schedule();
   }
+
+  // restart drops the current connection on purpose (media failed) and rejoins.
+  private restart(): void {
+    const sig = this.sig;
+    this.sig = null;
+    sig?.close();
+    this.teardownMedia();
+    if (this.wanted) this.scheduleReconnect();
+  }
+
 
   leave(): void {
     this.wanted = null;
-    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnector.cancel();
     this.sig?.send({ type: 'leave' });
     this.sig?.close();
     this.teardownMedia();
