@@ -3,6 +3,7 @@ import { RoomState } from './state.svelte';
 import { Signaling } from './signaling';
 import { Rtc } from './rtc';
 import { watchLevel } from './levels';
+import { prefersTcp, rememberTcp } from './transport';
 
 const FATAL_CODES = new Set(['bad_pin', 'bad_room', 'room_full', 'bad_message']);
 
@@ -22,9 +23,10 @@ export class Session {
   private screenTrack: MediaStreamTrack | null = null;
   private screenAttached = false;
   private stopSelfLevel: (() => void) | null = null;
-  // Set after our media connection failed; rejoins then ask the server for ICE over TCP only,
-  // since a UDP path that broke once tends to break again (NAT or firewall on a gateway).
-  private preferTcp = false;
+  // Set after our media connection failed, and remembered for a day; joins then ask the server
+  // for ICE over TCP only, since a UDP path that broke once tends to break again (NAT or
+  // firewall on a gateway).
+  private preferTcp = prefersTcp(localStorage);
 
   async join(room: string, pin: string, name: string): Promise<void> {
     this.wanted = { room, pin, name };
@@ -63,7 +65,7 @@ export class Session {
       (m) => sig.send(m),
       (pid, track) => this.onRemoteTrack(pid, track),
       () => {
-        this.preferTcp = true;
+        this.useTcp();
         sig.close();
       },
     );
@@ -95,7 +97,7 @@ export class Session {
           this.dropScreen();
           this.state.status = 'connected';
         } else if (m.code === 'media_failed') {
-          this.preferTcp = true;
+          this.useTcp();
         } else if (FATAL_CODES.has(m.code)) {
           this.wanted = null;
         }
@@ -137,6 +139,11 @@ export class Session {
     this.state.muted = muted;
     if (this.mic) this.mic.enabled = !muted;
     this.sig?.send({ type: 'mute', muted });
+  }
+
+  private useTcp(): void {
+    this.preferTcp = true;
+    rememberTcp(localStorage);
   }
 
   // Asks the server to bring the echo helper into this room, or to remove it.
