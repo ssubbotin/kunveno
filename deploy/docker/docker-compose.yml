@@ -1,8 +1,18 @@
 # kunveno stack: signaling + SFU server and nginx with the web client.
 # Both services use host networking: the SFU advertises the host's VPN address and one UDP port,
 # and nginx reaches the server on loopback. Settings come from .env (see .env.example).
+# Logs go to the host's systemd journal, so they outlive container recreation on every deploy:
+#   journalctl -t kunveno-server --since "7 days ago"
+# Retention follows the host journal (persistent in /var/log/journal), not Docker's json-file limits.
+x-logging: &journald
+  driver: journald
+
 services:
   server:
+    logging:
+      <<: *journald
+      options:
+        tag: kunveno-server
     build:
       context: .
       dockerfile: Dockerfile.server
@@ -15,6 +25,10 @@ services:
       - ./data:/var/lib/kunveno
 
   web:
+    logging:
+      <<: *journald
+      options:
+        tag: kunveno-web
     build:
       context: .
       dockerfile: Dockerfile.web
@@ -35,6 +49,10 @@ services:
   # Sound-check helper. Idle until someone presses "Эхо-тест" in a room; then it joins that room
   # and plays its audio back after ECHO_DELAY. Talks to the server over loopback only.
   echo:
+    logging:
+      <<: *journald
+      options:
+        tag: kunveno-echo
     build:
       context: .
       dockerfile: Dockerfile.echo
@@ -50,6 +68,10 @@ services:
 
   # Metrics: scrapes the server's /metrics on loopback. Listens on loopback only.
   prometheus:
+    logging:
+      <<: *journald
+      options:
+        tag: kunveno-prometheus
     image: prom/prometheus:v3.5.0
     network_mode: host
     restart: unless-stopped
@@ -67,6 +89,10 @@ services:
 
   # Dashboards at https://<host>/grafana/ (nginx proxies the subpath). Loopback only.
   grafana:
+    logging:
+      <<: *journald
+      options:
+        tag: kunveno-grafana
     image: grafana/grafana:12.1.1
     network_mode: host
     restart: unless-stopped
