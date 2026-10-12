@@ -45,7 +45,9 @@ type Peer struct {
 	upTransport string // transport counted in ActiveConnections while connected; guarded by mu
 	prevLost    int64  // cumulative uplink counters at the previous Sample; guarded by mu
 	prevRecv    int64
-	downLoss    float64       // latest fraction lost reported by the participant; guarded by mu
+	rrLast      map[uint32][2]uint32 // per SSRC: highest sequence and total lost of the last report; guarded by mu
+	downExp     int64                // packets expected and lost since the last Sample; guarded by mu
+	downLost    int64
 	rtt         time.Duration // latest round trip from its receiver reports; guarded by mu
 	id          string
 	pc          *webrtc.PeerConnection
@@ -402,10 +404,10 @@ func (p *Peer) Sample() (s quality.Sample, ok bool) {
 	p.prevLost, p.prevRecv = lost, received
 	if p.rtt > 0 {
 		ok = true
-		s.DownLoss = max(s.DownLoss, p.downLoss)
 		s.RTT = max(s.RTT, p.rtt)
 	}
 	p.mu.Unlock()
+	s.DownLoss = max(s.DownLoss, p.takeDownLoss())
 	if dLost > 0 && dLost+dRecv > 0 {
 		s.UpLoss = float64(dLost) / float64(dLost+dRecv)
 	}
@@ -417,15 +419,35 @@ func seconds(f float64) time.Duration { return time.Duration(f * float64(time.Se
 // noteReceiverReport records what the participant says about the audio we send it.
 func (p *Peer) noteReceiverReport(rr *rtcp.ReceiverReport) {
 	now := compactNTP(time.Now())
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.rrLast == nil {
+		p.rrLast = map[uint32][2]uint32{}
+	}
 	for _, r := range rr.Reports {
-		rtt := rttFromReport(now, r.LastSenderReport, r.Delay)
-		p.mu.Lock()
-		p.downLoss = float64(r.FractionLost) / 256
-		if rtt > 0 {
+		if rtt := rttFromReport(now, r.LastSenderReport, r.Delay); rtt > 0 {
 			p.rtt = rtt
 		}
-		p.mu.Unlock()
+		if prev, seen := p.rrLast[r.SSRC]; seen && r.LastSequenceNumber > prev[0] {
+			p.downExp += int64(r.LastSequenceNumber - prev[0])
+			if r.TotalLost > prev[1] {
+				p.downLost += int64(r.TotalLost - prev[1])
+			}
+		}
+		p.rrLast[r.SSRC] = [2]uint32{r.LastSequenceNumber, r.TotalLost}
 	}
+}
+
+// takeDownLoss returns the downlink loss ratio since the previous call and starts a new window.
+func (p *Peer) takeDownLoss() float64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	exp, lost := p.downExp, p.downLost
+	p.downExp, p.downLost = 0, 0
+	if exp <= 0 || lost <= 0 {
+		return 0
+	}
+	return min(1, float64(lost)/float64(exp))
 }
 
 // rttFromReport applies RFC 3550 6.4.1: round trip = arrival - LSR - DLSR, all in compact NTP
