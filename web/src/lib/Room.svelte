@@ -15,7 +15,7 @@
 
   const sharerName = $derived(rs.participants.find((p) => p.id === rs.sharer)?.name ?? '');
   const shareBusy = $derived(rs.sharer !== '' && !rs.isSharing);
-  const echoPresent = $derived(rs.participants.some((p) => p.bot));
+  const echoPresent = $derived(rs.participants.some((p) => p.botKind === 'echo'));
   const statusText = $derived(
     rs.status === 'connected' ? (rs.transport === 'tcp' ? t('status.backup') : t('status.connected'))
       : rs.status === 'reconnecting' ? t('status.reconnecting')

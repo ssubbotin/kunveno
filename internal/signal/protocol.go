@@ -32,6 +32,7 @@ const (
 const (
 	MaxNameLen = 32
 	RoleEcho   = "echo"
+	RolePlayer = "player"
 	MediaTCP   = "tcp"
 	MaxSDPLen  = 256 * 1024
 )
@@ -68,7 +69,7 @@ func ParseClient(data []byte) (ClientMessage, error) {
 			return m, fmt.Errorf("%w: join.room", ErrBadMessage)
 		case m.Media != "" && m.Media != MediaTCP:
 			return m, fmt.Errorf("%w: join.media", ErrBadMessage)
-		case m.Role != "" && m.Role != RoleEcho:
+		case m.Role != "" && m.Role != RoleEcho && m.Role != RolePlayer:
 			return m, fmt.Errorf("%w: join.role", ErrBadMessage)
 		case m.Role == "" && (len(m.PIN) < 1 || len(m.PIN) > 16):
 			return m, fmt.Errorf("%w: join.pin", ErrBadMessage)
@@ -113,6 +114,8 @@ type ParticipantInfo struct {
 	Name  string `json:"name"`
 	Muted bool   `json:"muted"`
 	Bot   bool   `json:"bot,omitempty"`
+	// BotKind: "echo" or "player" for helpers.
+	BotKind string `json:"bot_kind,omitempty"`
 	// Quality is the connection grade: "good", "fair" or "poor"; absent until measured.
 	Quality string `json:"quality,omitempty"`
 	Camera  bool   `json:"camera,omitempty"`

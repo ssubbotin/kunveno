@@ -80,6 +80,15 @@ room, it joins that room as a participant and plays the room's audio back after 
 (2 s by default), one speaker at a time. Pressing the button again, or the last person leaving,
 removes it. It reaches the server on loopback (`/internal/echo`, never proxied by nginx).
 
+### Looped video rooms (player)
+A room with `player: {file: <name>}` in `config.yaml` gets a participant that plays the file in a
+loop, video on its tile and sound as audio, always on. Put the file in `~/kunveno/media` (any format
+ffmpeg reads). On start the `player` service transcodes it once to VP8 640x360 at 15 fps with a
+keyframe every 2 s, and Opus, and caches the result in `data/player-cache`; changing the file
+re-encodes it. The player joins over loopback only, and only rooms with `player:` accept it. It
+takes one place in the room and sends about 0.5 Mbit/s to the server while running.
+`journalctl -t kunveno-player` shows the transcoding and the loop rounds.
+
 ### Monitoring (Prometheus and Grafana)
 `kunveno-server` exposes Prometheus metrics at `/metrics` to loopback clients only (nginx does not
 proxy it). The stack runs Prometheus on `127.0.0.1:${PROMETHEUS_PORT}` (default 9095, 30 days of

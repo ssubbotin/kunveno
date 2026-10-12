@@ -66,7 +66,9 @@ func run(cfgPath string, log *slog.Logger) error {
 
 	reg := room.NewRegistry()
 	for _, r := range cfg.Rooms {
-		reg.Add(room.New(r.Slug, r.Name, r.PIN, r.MaxParticipants))
+		rm := room.New(r.Slug, r.Name, r.PIN, r.MaxParticipants)
+		rm.SetPlayer(r.Player != nil)
+		reg.Add(rm)
 	}
 	saved, err := roomstore.Load(cfg.RoomsFile)
 	if err != nil {

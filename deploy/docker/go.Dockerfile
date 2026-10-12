@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Go services. Built in CI from the repository root:
+# Go services (server, echo, player). Built in CI from the repository root:
 #   docker build -f deploy/docker/go.Dockerfile --target server --build-arg APP=kunveno-server .
 # Only the final stage is published; it holds the static binary and nothing else.
 
@@ -25,3 +25,10 @@ ENTRYPOINT ["/usr/local/bin/kunveno-server", "-config", "/etc/kunveno/config.yam
 FROM base AS echo
 COPY --from=build /out/app /usr/local/bin/kunveno-echo
 ENTRYPOINT ["/usr/local/bin/kunveno-echo"]
+
+# The player transcodes media files once with ffmpeg, so its image carries ffmpeg.
+FROM alpine:3.22 AS player
+RUN apk add --no-cache ffmpeg && adduser -D -H -u 10001 kunveno
+COPY --from=build /out/app /usr/local/bin/kunveno-player
+USER kunveno
+ENTRYPOINT ["/usr/local/bin/kunveno-player"]

@@ -1,6 +1,7 @@
 // bot marks a server-side helper such as the echo; the parser always fills it in.
 export type Quality = 'good' | 'fair' | 'poor';
-export type Participant = { id: string; name: string; muted: boolean; bot?: boolean; quality?: Quality; camera?: boolean };
+export type BotKind = 'echo' | 'player';
+export type Participant = { id: string; name: string; muted: boolean; bot?: boolean; botKind?: BotKind; quality?: Quality; camera?: boolean };
 const QUALITIES: readonly string[] = ['good', 'fair', 'poor'];
 
 export type ServerMessage =
@@ -58,6 +59,8 @@ export function parseServerMessage(raw: string): ServerMessage {
           id: p.id, name: p.name, muted: p.muted, bot: p.bot === true,
           quality: QUALITIES.includes(p.quality as string) ? p.quality : undefined,
           camera: p.camera === true ? true : undefined,
+          botKind: (p as { bot_kind?: unknown }).bot_kind === 'echo' || (p as { bot_kind?: unknown }).bot_kind === 'player'
+            ? ((p as { bot_kind?: unknown }).bot_kind as BotKind) : undefined,
         })),
         sharer: v.sharer,
         echo: v.echo === true,

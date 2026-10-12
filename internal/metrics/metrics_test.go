@@ -18,7 +18,7 @@ func TestRoomCollectorReadsLiveState(t *testing.T) {
 	_ = r.Join("a", "Ann", "1234")
 	_ = r.Join("b", "Bob", "1234")
 	r.SetEcho(true)
-	_ = r.JoinBot("e", "Echo")
+	_ = r.JoinBot("e", "Echo", room.BotEcho)
 	_ = r.StartShare("b")
 	r.SetCamera("a", true)
 	r.SetDeclinesVideo("b", true)
