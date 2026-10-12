@@ -29,6 +29,8 @@ type Room struct {
 type Player struct {
 	// File is relative to the player's media directory (~/kunveno/media on the host).
 	File string `yaml:"file"`
+	// Name labels the player's tile; defaults to the file name without its extension.
+	Name string `yaml:"name"`
 }
 
 // Config is the whole configuration file.
@@ -110,6 +112,10 @@ func (c *Config) applyDefaults() {
 		c.Media.ShareMaxKbps = DefaultShareMaxKbps
 	}
 	for i := range c.Rooms {
+		if p := c.Rooms[i].Player; p != nil && strings.TrimSpace(p.Name) == "" {
+			base := filepath.Base(p.File)
+			p.Name = strings.TrimSuffix(base, filepath.Ext(base))
+		}
 		if c.Rooms[i].MaxParticipants == 0 {
 			c.Rooms[i].MaxParticipants = DefaultMaxParticipants
 		}

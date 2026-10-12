@@ -6,7 +6,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -19,21 +18,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/coder/websocket"
-	"github.com/coder/websocket/wsjson"
 	"github.com/pion/webrtc/v4"
 
+	"github.com/ssubbotin/kunveno/internal/botclient"
 	"github.com/ssubbotin/kunveno/internal/echo"
 )
 
 var version = "dev"
-
-type serverMsg struct {
-	Type    string `json:"type"`
-	Code    string `json:"code"`
-	Message string `json:"message"`
-	SDP     string `json:"sdp"`
-}
 
 func env(key, def string) string {
 	if v := os.Getenv(key); v != "" {
@@ -147,16 +138,11 @@ func run(ctx context.Context, log *slog.Logger, url, room, name string, delay ti
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	opts := &websocket.DialOptions{}
-	if insecure {
-		opts.HTTPClient = &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
-	}
-	conn, _, err := websocket.Dial(ctx, url, opts)
+	conn, err := botclient.Dial(ctx, url, insecure)
 	if err != nil {
 		return err
 	}
 	defer conn.CloseNow()
-	conn.SetReadLimit(256 * 1024)
 
 	m := &webrtc.MediaEngine{}
 	if err := m.RegisterDefaultCodecs(); err != nil {
@@ -232,39 +218,5 @@ func run(ctx context.Context, log *slog.Logger, url, room, name string, delay ti
 		}
 	}()
 
-	if err := wsjson.Write(ctx, conn, map[string]string{"type": "join", "room": room, "name": name, "role": "echo"}); err != nil {
-		return err
-	}
-	for {
-		_, data, err := conn.Read(ctx)
-		if err != nil {
-			return err
-		}
-		var msg serverMsg
-		if err := json.Unmarshal(data, &msg); err != nil {
-			return err
-		}
-		switch msg.Type {
-		case "joined":
-			log.Info("joined", "room", room)
-		case "error":
-			return fmt.Errorf("server error %s: %s", msg.Code, msg.Message)
-		case "offer":
-			if err := pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: msg.SDP}); err != nil {
-				return err
-			}
-			answer, err := pc.CreateAnswer(nil)
-			if err != nil {
-				return err
-			}
-			gathered := webrtc.GatheringCompletePromise(pc)
-			if err := pc.SetLocalDescription(answer); err != nil {
-				return err
-			}
-			<-gathered
-			if err := wsjson.Write(ctx, conn, map[string]string{"type": "answer", "sdp": pc.LocalDescription().SDP}); err != nil {
-				return err
-			}
-		}
-	}
+	return botclient.Serve(ctx, conn, pc, room, name, "echo", func(func(any) error) { log.Info("joined") })
 }

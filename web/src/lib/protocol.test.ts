@@ -34,4 +34,9 @@ describe('parseServerMessage', () => {
     expect(parseServerMessage('{"type":"error","code":"bad_pin","message":"x"}'))
       .toEqual({ type: 'error', code: 'bad_pin', message: 'x' });
   });
+  it('reads which helper a bot is', () => {
+    const m = parseServerMessage('{"type":"participants","participants":[{"id":"p","name":"Intro","muted":false,"bot":true,"bot_kind":"player"},{"id":"e","name":"x","muted":false,"bot":true,"bot_kind":"echo"},{"id":"b","name":"y","muted":false,"bot":true,"bot_kind":"other"}],"sharer":""}');
+    if (m.type !== 'participants') throw new Error('type');
+    expect(m.participants.map((p) => p.botKind)).toEqual(['player', 'echo', undefined]);
+  });
 });

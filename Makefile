@@ -33,6 +33,7 @@ deploy-bundle:
 	cp deploy/docker/docker-compose.yml deploy/docker/prometheus.yml.template dist/kunveno-docker/
 	cp deploy/docker/env.example deploy/config.example.yaml dist/kunveno-docker/
 	cp -r deploy/docker/grafana dist/kunveno-docker/grafana
+	mkdir -p dist/kunveno-docker/media
 
 clean:
 	rm -rf bin dist web/dist

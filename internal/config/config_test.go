@@ -109,7 +109,7 @@ func TestPlayerRoom(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Rooms[0].Player == nil || cfg.Rooms[0].Player.File != "intro.mp4" || cfg.Rooms[1].Player != nil {
+	if cfg.Rooms[0].Player == nil || cfg.Rooms[0].Player.File != "intro.mp4" || cfg.Rooms[0].Player.Name != "intro" || cfg.Rooms[1].Player != nil {
 		t.Fatalf("player = %+v / %+v", cfg.Rooms[0].Player, cfg.Rooms[1].Player)
 	}
 	for name, yaml := range map[string]string{

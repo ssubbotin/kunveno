@@ -58,6 +58,25 @@ services:
       ECHO_CONTROL_URL: http://${KUNVENO_UPSTREAM:-127.0.0.1:8080}/internal/echo
       ECHO_DELAY: ${ECHO_DELAY:-2s}
 
+  # Looped video for rooms with "player:" in config.yaml. Files come from ./media (read-only);
+  # the transcoded copies are cached in ./data/player-cache.
+  player:
+    logging:
+      <<: *journald
+      options:
+        tag: kunveno-player
+    image: ghcr.io/ssubbotin/kunveno-player:${KUNVENO_VERSION:?set KUNVENO_VERSION in .env}
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      - server
+    environment:
+      PLAYER_URL: ws://${KUNVENO_UPSTREAM:-127.0.0.1:8080}/ws
+    volumes:
+      - ./config.yaml:/etc/kunveno/config.yaml:ro
+      - ./media:/media:ro
+      - ./data:/var/lib/kunveno
+
   # Metrics: scrapes the server's /metrics on loopback. Listens on loopback only.
   prometheus:
     logging:

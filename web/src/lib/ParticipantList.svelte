@@ -31,10 +31,11 @@
         {/if}
       </span>
       <span class="who">
-        <span class="name">{p.bot ? t('people.echoName') : p.name}</span>
+        <span class="name">{p.botKind === 'echo' ? t('people.echoName') : p.name}</span>
         <span class="tags">
           {#if p.id === selfId}<span>{t('people.you')}</span>{/if}
-          {#if p.bot}<span>{t('people.echoTag')}</span>{/if}
+          {#if p.botKind === 'echo'}<span>{t('people.echoTag')}</span>{/if}
+          {#if p.botKind === 'player'}<span>{t('people.playerTag')}</span>{/if}
           {#if p.id === sharer}<span class="share">{t('people.sharing')}</span>{/if}
         </span>
       </span>

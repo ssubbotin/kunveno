@@ -1,6 +1,6 @@
 name: images
 
-# Builds the three service images, checks they leak no sources, maps or debug data, and
+# Builds the four service images, checks they leak no sources, maps or debug data, and
 # publishes them to GHCR (private, linked to this repository). Pull requests from branches of
 # this repository also publish a preview tag pr-<number>, for trying a change on the host before
 # merging; pull requests from forks build and check only (their token cannot write packages).
@@ -56,6 +56,10 @@ jobs:
             file: deploy/docker/go.Dockerfile
             target: echo
             app: kunveno-echo
+          - name: kunveno-player
+            file: deploy/docker/go.Dockerfile
+            target: player
+            app: kunveno-player
           - name: kunveno-web
             file: deploy/docker/web.Dockerfile
             target: ''
