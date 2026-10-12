@@ -8,6 +8,8 @@ import (
 	"net"
 	"os"
 	"regexp"
+	"strings"
+	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
 )
@@ -32,6 +34,10 @@ type Config struct {
 		AdvertiseIP  string `yaml:"advertise_ip"`
 		ShareMaxKbps int    `yaml:"share_max_kbps"`
 	} `yaml:"media"`
+	UI struct {
+		// Title names the service in the lobby and the browser tab, e.g. a company's name.
+		Title string `yaml:"title"`
+	} `yaml:"ui"`
 	Rooms []Room `yaml:"rooms"`
 	// RoomsFile stores rooms created through the API (JSON, mode 0600: it holds PINs).
 	RoomsFile string `yaml:"rooms_file"`
@@ -39,6 +45,8 @@ type Config struct {
 
 const (
 	DefaultListen          = "127.0.0.1:8080"
+	DefaultTitle           = "kunveno"
+	MaxTitleLen            = 80
 	DefaultRoomsFile       = "/var/lib/kunveno/rooms.json"
 	DefaultUDPPort         = 7000
 	DefaultShareMaxKbps    = 2500
@@ -73,6 +81,10 @@ func Parse(data []byte) (*Config, error) {
 }
 
 func (c *Config) applyDefaults() {
+	c.UI.Title = strings.TrimSpace(c.UI.Title)
+	if c.UI.Title == "" {
+		c.UI.Title = DefaultTitle
+	}
 	if c.RoomsFile == "" {
 		c.RoomsFile = DefaultRoomsFile
 	}
@@ -100,6 +112,9 @@ func (c *Config) Validate() error {
 	var errs []error
 	if c.Media.UDPPort < 1 || c.Media.UDPPort > 65535 {
 		errs = append(errs, fmt.Errorf("media.udp_port %d out of range", c.Media.UDPPort))
+	}
+	if n := utf8.RuneCountInString(c.UI.Title); n > MaxTitleLen {
+		errs = append(errs, fmt.Errorf("ui.title is %d characters, at most %d", n, MaxTitleLen))
 	}
 	if p := c.Media.TCPPort; p != -1 && (p < 1 || p > 65535) {
 		errs = append(errs, fmt.Errorf("media.tcp_port %d out of range (or -1 to disable)", p))
