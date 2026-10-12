@@ -486,33 +486,37 @@ func TestEchoBotNeedsARequest(t *testing.T) {
 
 func TestSignalingMetrics(t *testing.T) {
 	val := func(c prometheus.Collector) float64 { return testutil.ToFloat64(c) }
-	okBefore := val(metrics.Joins.WithLabelValues("ops", "ok"))
-	badPinBefore := val(metrics.Joins.WithLabelValues("ops", CodeBadPIN))
+	okBefore := val(metrics.Joins.WithLabelValues("metrics", "ok"))
+	badPinBefore := val(metrics.Joins.WithLabelValues("metrics", CodeBadPIN))
 	muteBefore := val(metrics.Messages.WithLabelValues("mute"))
 	badBefore := val(metrics.BadMessages)
-	leavesBefore := val(metrics.Leaves.WithLabelValues("ops"))
+	leavesBefore := val(metrics.Leaves.WithLabelValues("metrics"))
 
+	// A room of its own: sessions of earlier tests leave "ops" asynchronously and would be counted here.
 	e := newEnv(t, 15)
+	e.h.reg.Add(room.New("metrics", "Metrics", "1234", 15))
 	c := dial(t, e)
-	send(t, c, `{"type":"join","room":"ops","pin":"0000","name":"Ann"}`)
+	send(t, c, `{"type":"join","room":"metrics","pin":"0000","name":"Ann"}`)
 	expect(t, c, "error")
-	ca, _ := join(t, e, "Ann")
+	ca := dial(t, e)
+	send(t, ca, `{"type":"join","room":"metrics","pin":"1234","name":"Ann"}`)
+	expect(t, ca, "joined")
 	send(t, ca, `{"type":"mute","muted":true}`)
 	for !expectMuted(t, ca) {
 	}
 	send(t, ca, `{"type":"dance"}`)
 	expectClosed(t, ca)
 	deadline := time.Now().Add(3 * time.Second)
-	for val(metrics.Leaves.WithLabelValues("ops")) == leavesBefore && time.Now().Before(deadline) {
+	for val(metrics.Leaves.WithLabelValues("metrics")) == leavesBefore && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
 	for name, got := range map[string]float64{
-		"joins ok":      val(metrics.Joins.WithLabelValues("ops", "ok")) - okBefore,
-		"joins bad_pin": val(metrics.Joins.WithLabelValues("ops", CodeBadPIN)) - badPinBefore,
+		"joins ok":      val(metrics.Joins.WithLabelValues("metrics", "ok")) - okBefore,
+		"joins bad_pin": val(metrics.Joins.WithLabelValues("metrics", CodeBadPIN)) - badPinBefore,
 		"mute messages": val(metrics.Messages.WithLabelValues("mute")) - muteBefore,
 		"bad messages":  val(metrics.BadMessages) - badBefore,
-		"leaves":        val(metrics.Leaves.WithLabelValues("ops")) - leavesBefore,
+		"leaves":        val(metrics.Leaves.WithLabelValues("metrics")) - leavesBefore,
 	} {
 		if got != 1 {
 			t.Errorf("%s: delta %v, want 1", name, got)
@@ -626,4 +630,18 @@ func TestCamerasFollowTheReceivePreference(t *testing.T) {
 	waitFor(t, func() bool {
 		return e.media.peer(idb).subCount(ida, sfu.KindCamera) == 1 && e.media.peer(idb).subCount(idc, sfu.KindCamera) == 1
 	})
+}
+
+// A join is counted before the client hears "joined"; otherwise the count lags behind what the
+// client (and the next test) already saw.
+func TestJoinCountedBeforeJoinedIsSent(t *testing.T) {
+	e := newEnv(t, 60)
+	ok := metrics.Joins.WithLabelValues("ops", "ok")
+	for i := 0; i < 50; i++ {
+		before := testutil.ToFloat64(ok)
+		join(t, e, "Ann")
+		if d := testutil.ToFloat64(ok) - before; d != 1 {
+			t.Fatalf("join %d: counter moved by %v when joined arrived, want 1", i, d)
+		}
+	}
 }
