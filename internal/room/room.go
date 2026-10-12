@@ -21,6 +21,8 @@ type Participant struct {
 	Name  string
 	Muted bool
 	Bot   bool // a server-side helper such as the echo, not a person
+	// BotKind says which helper: BotEcho or BotPlayer.
+	BotKind string
 	// Quality is the connection grade ("good", "fair", "poor"), empty until measured.
 	Quality string
 	Camera  bool // the participant's camera is on
@@ -46,6 +48,7 @@ type Room struct {
 	order   []string
 	sharer  string
 	echo    bool
+	player  bool
 }
 
 func New(slug, name, pin string, max int) *Room {
@@ -82,9 +85,28 @@ func (r *Room) Join(id, name, pin string) error {
 	return r.add(&Participant{ID: id, Name: name})
 }
 
+// Helper kinds that join rooms as bots.
+const (
+	BotEcho   = "echo"
+	BotPlayer = "player"
+)
+
 // JoinBot admits a trusted server-side helper without a PIN; capacity still applies.
-func (r *Room) JoinBot(id, name string) error {
-	return r.add(&Participant{ID: id, Name: name, Bot: true})
+func (r *Room) JoinBot(id, name, kind string) error {
+	return r.add(&Participant{ID: id, Name: name, Bot: true, BotKind: kind})
+}
+
+// SetPlayer marks the room as one with a looped video player (from the configuration).
+func (r *Room) SetPlayer(on bool) {
+	r.mu.Lock()
+	r.player = on
+	r.mu.Unlock()
+}
+
+func (r *Room) HasPlayer() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.player
 }
 
 func (r *Room) add(p *Participant) error {

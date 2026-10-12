@@ -103,3 +103,21 @@ func TestTitleFromConfig(t *testing.T) {
 		t.Fatalf("title = %q, err = %v", cfg.UI.Title, err)
 	}
 }
+
+func TestPlayerRoom(t *testing.T) {
+	cfg, err := Parse([]byte("media: {advertise_ip: 10.8.0.1}\nrooms:\n  - {slug: tv, name: TV, pin: \"123456\", player: {file: intro.mp4}}\n  - {slug: a, name: A, pin: \"1234\"}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Rooms[0].Player == nil || cfg.Rooms[0].Player.File != "intro.mp4" || cfg.Rooms[1].Player != nil {
+		t.Fatalf("player = %+v / %+v", cfg.Rooms[0].Player, cfg.Rooms[1].Player)
+	}
+	for name, yaml := range map[string]string{
+		"empty file": "media: {advertise_ip: 10.8.0.1}\nrooms: [{slug: tv, name: TV, pin: \"123456\", player: {file: \"\"}}]\n",
+		"escape":     "media: {advertise_ip: 10.8.0.1}\nrooms: [{slug: tv, name: TV, pin: \"123456\", player: {file: ../etc/passwd}}]\n",
+	} {
+		if _, err := Parse([]byte(yaml)); err == nil || !strings.Contains(err.Error(), "player.file") {
+			t.Errorf("%s: err = %v, want player.file", name, err)
+		}
+	}
+}

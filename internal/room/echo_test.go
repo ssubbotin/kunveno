@@ -14,7 +14,7 @@ func TestEchoFlagAndBots(t *testing.T) {
 	if !r.Snapshot().Echo {
 		t.Fatal("echo flag not in snapshot")
 	}
-	if err := r.JoinBot("e", "Echo"); err != nil {
+	if err := r.JoinBot("e", "Echo", BotEcho); err != nil {
 		t.Fatal(err)
 	}
 	snap := r.Snapshot()
@@ -32,7 +32,7 @@ func TestBotRespectsCapacity(t *testing.T) {
 	r := New("testing", "Testing", "1234", 2)
 	_ = r.Join("a", "Ann", "1234")
 	_ = r.Join("b", "Bob", "1234")
-	if err := r.JoinBot("e", "Echo"); !errors.Is(err, ErrFull) {
+	if err := r.JoinBot("e", "Echo", BotEcho); !errors.Is(err, ErrFull) {
 		t.Fatalf("err = %v, want ErrFull", err)
 	}
 }
@@ -85,5 +85,19 @@ func TestSetDeclinesVideo(t *testing.T) {
 	}
 	if !r.Snapshot().Participants[0].DeclinesVideo {
 		t.Fatal("flag not in snapshot")
+	}
+}
+
+func TestPlayerBot(t *testing.T) {
+	r := New("tv", "TV", "123456", 5)
+	if r.HasPlayer() {
+		t.Fatal("player without configuration")
+	}
+	r.SetPlayer(true)
+	if err := r.JoinBot("p", "Видео", BotPlayer); err != nil {
+		t.Fatal(err)
+	}
+	if p := r.Snapshot().Participants[0]; !p.Bot || p.BotKind != BotPlayer {
+		t.Fatalf("participant = %+v", p)
 	}
 }

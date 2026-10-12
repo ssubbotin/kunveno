@@ -66,8 +66,9 @@ type liveRoom struct {
 
 type session struct {
 	id, name, slug string
-	bot            bool // the echo helper
-	noVideo        bool // declined other participants' cameras; guarded by Handler.mu
+	bot            bool   // a helper: the echo or a player
+	botKind        string // RoleEcho or RolePlayer
+	noVideo        bool   // declined other participants' cameras; guarded by Handler.mu
 	joined         time.Time
 	conn           *websocket.Conn
 	peer           MediaPeer
@@ -162,12 +163,12 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 		writeErrorAndClose(conn, CodeBadMessage, "first message must be join")
 		return
 	}
-	if first.Role == RoleEcho && !trusted {
-		h.log.Warn("echo role from a non-local connection")
-		writeErrorAndClose(conn, CodeBadMessage, "echo role is local only")
+	if first.Role != "" && !trusted {
+		h.log.Warn("helper role from a non-local connection", "role", first.Role)
+		writeErrorAndClose(conn, CodeBadMessage, "helper roles are local only")
 		return
 	}
-	if ok, wait := h.pins.Allow(ip); !ok && first.Role != RoleEcho {
+	if ok, wait := h.pins.Allow(ip); !ok && first.Role == "" {
 		metrics.Joins.WithLabelValues(h.roomLabel(first.Room), CodeTooManyAttempts).Inc()
 		ctx, cancel := context.WithTimeout(context.Background(), writeTimeout)
 		_ = wsjson.Write(ctx, conn, RetryLater(wait))
@@ -265,14 +266,17 @@ func (h *Handler) join(conn *websocket.Conn, cancel context.CancelFunc, m Client
 	if !ok {
 		return nil, CodeBadRoom, "no such room"
 	}
-	bot := m.Role == RoleEcho
-	if bot && !lr.room.Echo() {
+	bot := m.Role != ""
+	switch {
+	case m.Role == RoleEcho && !lr.room.Echo():
 		return nil, CodeBadRoom, "echo not requested in this room"
+	case m.Role == RolePlayer && !lr.room.HasPlayer():
+		return nil, CodeBadRoom, "no player configured for this room"
 	}
 	id := newID()
 	var err error
 	if bot {
-		err = lr.room.JoinBot(id, m.Name)
+		err = lr.room.JoinBot(id, m.Name, m.Role)
 	} else {
 		err = lr.room.Join(id, m.Name, m.PIN)
 	}
@@ -284,7 +288,7 @@ func (h *Handler) join(conn *websocket.Conn, cancel context.CancelFunc, m Client
 	case err != nil:
 		return nil, CodeBadMessage, err.Error()
 	}
-	s := &session{id: id, name: m.Name, slug: m.Room, bot: bot, joined: time.Now(), conn: conn, cancel: cancel, log: h.log.With("room", m.Room, "participant", id)}
+	s := &session{id: id, name: m.Name, slug: m.Room, bot: bot, botKind: m.Role, joined: time.Now(), conn: conn, cancel: cancel, log: h.log.With("room", m.Room, "participant", id)}
 	peer, err := h.media.NewPeer(id, s, sfu.Handlers{OnPublisher: h.onPublisher, OnFailed: h.onFailed, TCPOnly: m.Media == MediaTCP})
 	if err != nil {
 		lr.room.Leave(id)
@@ -364,7 +368,7 @@ func (h *Handler) dropBotsIfUnwanted(lr *liveRoom) {
 	h.mu.Lock()
 	var bots []*session
 	for _, o := range lr.members {
-		if o.bot {
+		if o.botKind == RoleEcho { // a room's player stays
 			bots = append(bots, o)
 		}
 	}
@@ -379,7 +383,7 @@ func (h *Handler) broadcast(lr *liveRoom) {
 	snap := lr.room.Snapshot()
 	list := make([]ParticipantInfo, len(snap.Participants))
 	for i, p := range snap.Participants {
-		list[i] = ParticipantInfo{ID: p.ID, Name: p.Name, Muted: p.Muted, Bot: p.Bot, Quality: p.Quality, Camera: p.Camera}
+		list[i] = ParticipantInfo{ID: p.ID, Name: p.Name, Muted: p.Muted, Bot: p.Bot, BotKind: p.BotKind, Quality: p.Quality, Camera: p.Camera}
 	}
 	msg := Participants(list, snap.Sharer, snap.Echo)
 	h.mu.Lock()

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -20,6 +21,14 @@ type Room struct {
 	Name            string `yaml:"name"`
 	PIN             string `yaml:"pin"`
 	MaxParticipants int    `yaml:"max_participants"`
+	// Player, when set, keeps a looped video playing in the room (see cmd/kunveno-player).
+	Player *Player `yaml:"player"`
+}
+
+// Player names the media file a room plays in a loop.
+type Player struct {
+	// File is relative to the player's media directory (~/kunveno/media on the host).
+	File string `yaml:"file"`
 }
 
 // Config is the whole configuration file.
@@ -142,6 +151,12 @@ func (c *Config) Validate() error {
 		}
 		if n := len(r.PIN); n < 4 || n > 16 {
 			errs = append(errs, fmt.Errorf("rooms[%d].pin must be 4..16 characters", i))
+		}
+		if r.Player != nil {
+			f := r.Player.File
+			if f == "" || filepath.IsAbs(f) || !filepath.IsLocal(f) {
+				errs = append(errs, fmt.Errorf("rooms[%d].player.file %q must be a file name inside the media directory", i, f))
+			}
 		}
 		if r.MaxParticipants < 2 || r.MaxParticipants > MaxParticipantsLimit {
 			errs = append(errs, fmt.Errorf("rooms[%d].max_participants %d out of range 2..%d", i, r.MaxParticipants, MaxParticipantsLimit))

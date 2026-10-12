@@ -645,3 +645,35 @@ func TestJoinCountedBeforeJoinedIsSent(t *testing.T) {
 		}
 	}
 }
+
+func TestPlayerJoinsOnlyItsRoomAndStaysWhenEchoGoesOff(t *testing.T) {
+	e := newEnv(t, 15)
+	bot := dial(t, e)
+	send(t, bot, `{"type":"join","room":"ops","name":"Видео","role":"player"}`)
+	if m := expect(t, bot, "error"); m.Code != CodeBadRoom {
+		t.Fatalf("player in a room without one: %q", m.Code)
+	}
+
+	r, _ := e.h.reg.Get("ops")
+	r.SetPlayer(true)
+	player := dial(t, e)
+	send(t, player, `{"type":"join","room":"ops","name":"Видео","role":"player"}`)
+	expect(t, player, "joined")
+
+	ca, _ := join(t, e, "Ann")
+	send(t, ca, `{"type":"echo","on":true}`)
+	echo := dial(t, e)
+	send(t, echo, `{"type":"join","room":"ops","name":"Echo","role":"echo"}`)
+	expect(t, echo, "joined")
+	send(t, ca, `{"type":"echo","on":false}`)
+	expectClosed(t, echo)
+	for {
+		m := expect(t, ca, "participants")
+		if !m.Echo && len(m.Participants) == 2 {
+			if m.Participants[0].BotKind != "player" {
+				t.Fatalf("first participant = %+v, want the player", m.Participants[0])
+			}
+			break
+		}
+	}
+}
