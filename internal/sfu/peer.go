@@ -2,9 +2,11 @@ package sfu
 
 import (
 	"errors"
+	"fmt"
 	"github.com/ssubbotin/kunveno/internal/metrics"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/pion/rtcp"
@@ -30,6 +32,9 @@ type Source interface {
 type Handlers struct {
 	OnPublisher func(Source, Kind) // first RTP of that kind arrived; the track is ready
 	OnFailed    func(Source)       // the connection failed or closed unexpectedly
+	// TCPOnly strips UDP candidates from this peer's offers, for a participant whose UDP path
+	// failed: the browser then has only the ICE-TCP candidate to connect to.
+	TCPOnly bool
 }
 
 // Peer is one participant's connection to the SFU.
@@ -66,6 +71,14 @@ func (e *Engine) NewPeer(id string, sig Signaler, h Handlers) (*Peer, error) {
 	pc.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
 		p.log.Info("connection state", "state", s.String())
 		metrics.PeerStates.WithLabelValues(s.String()).Inc()
+		if s == webrtc.PeerConnectionStateConnected {
+			if pair := p.selectedPair(); pair != nil {
+				transport := pair.Remote.Protocol.String()
+				p.log.Info("media path", "transport", transport,
+					"remote", fmt.Sprintf("%s:%d", pair.Remote.Address, pair.Remote.Port), "remote_type", pair.Remote.Typ.String())
+				metrics.Transports.WithLabelValues(transport).Inc()
+			}
+		}
 		if s == webrtc.PeerConnectionStateFailed {
 			if p.h.OnFailed != nil {
 				p.h.OnFailed(p)
@@ -231,7 +244,11 @@ func (p *Peer) sendOffer() {
 		return
 	}
 	<-gathered
-	if err := p.sig.SendOffer(p.pc.LocalDescription().SDP); err != nil {
+	sdp := p.pc.LocalDescription().SDP
+	if p.h.TCPOnly {
+		sdp = withoutUDPCandidates(sdp)
+	}
+	if err := p.sig.SendOffer(sdp); err != nil {
 		p.fail(err)
 		return
 	}
@@ -278,4 +295,39 @@ func (p *Peer) Close() error {
 	p.closed = true
 	p.mu.Unlock()
 	return p.pc.Close()
+}
+
+func (p *Peer) selectedPair() *webrtc.ICECandidatePair {
+	for _, tr := range p.pc.GetTransceivers() {
+		if r := tr.Receiver(); r != nil && r.Transport() != nil {
+			if pair, err := r.Transport().ICETransport().GetSelectedCandidatePair(); err == nil && pair != nil {
+				return pair
+			}
+		}
+	}
+	return nil
+}
+
+// Transport names the protocol of the selected ICE candidate pair ("udp" or "tcp"), or "" before
+// the connection is up.
+func (p *Peer) Transport() string {
+	if pair := p.selectedPair(); pair != nil {
+		return pair.Remote.Protocol.String()
+	}
+	return ""
+}
+
+// withoutUDPCandidates drops a=candidate lines whose transport is UDP.
+func withoutUDPCandidates(sdp string) string {
+	lines := strings.Split(sdp, "\r\n")
+	out := lines[:0]
+	for _, l := range lines {
+		if strings.HasPrefix(l, "a=candidate:") {
+			if f := strings.Fields(l); len(f) > 2 && strings.EqualFold(f[2], "udp") {
+				continue
+			}
+		}
+		out = append(out, l)
+	}
+	return strings.Join(out, "\r\n")
 }

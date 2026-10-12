@@ -573,6 +573,51 @@
           "mode": "multi"
         }
       }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Медиасоединения по транспорту",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Установленные соединения в час: tcp означает, что UDP-путь участника не работает",
+      "gridPos": {
+        "x": 0,
+        "y": 36,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (transport) (increase(kunveno_media_connections_total[1h]))",
+          "legendFormat": "{{transport}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
     }
   ],
   "templating": {

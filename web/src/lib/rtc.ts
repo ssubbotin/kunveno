@@ -1,4 +1,5 @@
 import type { ClientMessage } from './protocol';
+import { watchConnection } from './transport';
 
 export class Rtc {
   private readonly pc: RTCPeerConnection;
@@ -21,9 +22,8 @@ export class Rtc {
       const stream = ev.streams[0];
       this.onTrack(stream ? stream.id : '', ev.track);
     };
-    this.pc.onconnectionstatechange = () => {
-      if (this.pc.connectionState === 'failed') this.onFailed();
-    };
+    const watch = watchConnection(() => this.onFailed());
+    this.pc.onconnectionstatechange = () => watch(this.pc.connectionState);
   }
 
   async handleOffer(sdp: string): Promise<void> {

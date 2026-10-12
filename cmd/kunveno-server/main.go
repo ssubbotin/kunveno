@@ -56,7 +56,9 @@ func run(cfgPath string, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	engine, err := sfu.NewEngine(sfu.EngineConfig{UDPPort: cfg.Media.UDPPort, AdvertiseIP: cfg.Media.AdvertiseIP}, log)
+	engine, err := sfu.NewEngine(sfu.EngineConfig{
+		UDPPort: cfg.Media.UDPPort, TCP: cfg.Media.TCPPort > 0, TCPPort: cfg.Media.TCPPort, AdvertiseIP: cfg.Media.AdvertiseIP,
+	}, log)
 	if err != nil {
 		return err
 	}
@@ -95,7 +97,7 @@ func run(cfgPath string, log *slog.Logger) error {
 	srv := &http.Server{Addr: cfg.HTTP.Listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
-	log.Info("kunveno-server started", "version", version, "listen", cfg.HTTP.Listen, "udp_port", engine.Port(), "advertise_ip", cfg.Media.AdvertiseIP, "rooms", len(reg.All()), "rooms_file", cfg.RoomsFile)
+	log.Info("kunveno-server started", "version", version, "listen", cfg.HTTP.Listen, "udp_port", engine.Port(), "tcp_port", engine.TCPPort(), "advertise_ip", cfg.Media.AdvertiseIP, "rooms", len(reg.All()), "rooms_file", cfg.RoomsFile)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
