@@ -47,10 +47,10 @@ var (
 		Name: "kunveno_peer_state_changes_total", Help: "Peer connection state transitions, by new state.",
 	}, []string{"state"})
 	RTPSentPackets = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "kunveno_rtp_sent_packets_total", Help: "RTP packets sent to participants, by kind (audio or screen); one per subscriber.",
+		Name: "kunveno_rtp_sent_packets_total", Help: "RTP packets sent to participants, by media (audio or video: screen and cameras together); one per subscriber.",
 	}, []string{"kind"})
 	RTPSentBytes = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "kunveno_rtp_sent_bytes_total", Help: "RTP payload bytes sent to participants, by kind.",
+		Name: "kunveno_rtp_sent_bytes_total", Help: "RTP payload bytes sent to participants, by media (audio or video).",
 	}, []string{"kind"})
 	ActiveConnections = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "kunveno_media_connections", Help: "Media connections up right now, by transport (udp or tcp).",

@@ -126,3 +126,14 @@ func TestCameraFlowsBetweenTwoPeers(t *testing.T) {
 		t.Fatal("browser B never received A's camera")
 	}
 }
+
+// The send-side interceptor only sees the codec, not which slot a track came from, so outgoing
+// traffic is labelled by media type.
+func TestSentKind(t *testing.T) {
+	if got := sentKind("audio/opus"); got != "audio" {
+		t.Errorf("opus: %q", got)
+	}
+	if got := sentKind("video/VP8"); got != "video" {
+		t.Errorf("vp8: %q", got)
+	}
+}
