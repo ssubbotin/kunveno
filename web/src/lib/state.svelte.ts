@@ -19,12 +19,18 @@ export class RoomState {
     return this.sharer !== '' && this.sharer === this.selfId;
   }
 
+  get selfSpeaking(): boolean {
+    return this.selfId !== '' && !!this.speaking[this.selfId];
+  }
+
   get others(): Participant[] {
     return this.participants.filter((p) => p.id !== this.selfId);
   }
 
   reset(): void {
     this.selfId = '';
+    this.errorCode = '';
+    this.errorMessage = '';
     this.participants = [];
     this.sharer = '';
     this.speaking = {};

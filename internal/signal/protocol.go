@@ -67,7 +67,8 @@ func ParseClient(data []byte) (ClientMessage, error) {
 			return m, fmt.Errorf("%w: answer.sdp", ErrBadMessage)
 		}
 	case "candidate":
-		if m.Candidate == nil || m.Candidate.Candidate == "" {
+		// An empty candidate string is the end-of-candidates marker (Firefox sends it); it is valid.
+		if m.Candidate == nil {
 			return m, fmt.Errorf("%w: candidate", ErrBadMessage)
 		}
 	case "mute":

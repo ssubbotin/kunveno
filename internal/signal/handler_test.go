@@ -357,3 +357,17 @@ func waitFor(t *testing.T, cond func() bool) {
 	}
 	t.Fatal("condition not met in time")
 }
+
+// Firefox signals end-of-candidates with an empty candidate string; the session must survive it.
+func TestEndOfCandidatesKeepsSession(t *testing.T) {
+	e := newEnv(t, 15)
+	c, id := join(t, e, "Ann")
+	send(t, c, `{"type":"candidate","candidate":{"candidate":"","sdpMid":"0","sdpMLineIndex":0}}`)
+	send(t, c, `{"type":"mute","muted":true}`)
+	for {
+		m := expect(t, c, "participants")
+		if len(m.Participants) == 1 && m.Participants[0].ID == id && m.Participants[0].Muted {
+			return
+		}
+	}
+}

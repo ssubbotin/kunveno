@@ -20,4 +20,19 @@ describe('RoomState', () => {
     expect(s.status).toBe('error');
     expect(s.errorCode).toBe('room_full');
   });
+  it('reset clears a previous error so the lobby starts clean', () => {
+    const s = new RoomState();
+    s.apply({ type: 'error', code: 'bad_message', message: 'x' });
+    s.reset();
+    expect(s.errorCode).toBe('');
+    expect(s.errorMessage).toBe('');
+  });
+  it('selfSpeaking follows the speaking flag of the own participant id', () => {
+    const s = new RoomState();
+    s.speaking[''] = true;
+    expect(s.selfSpeaking).toBe(false);
+    s.apply({ type: 'joined', self: { id: 'a', name: 'Ann', muted: false }, room: { slug: 'ops', name: 'Operations' } });
+    s.speaking.a = true;
+    expect(s.selfSpeaking).toBe(true);
+  });
 });

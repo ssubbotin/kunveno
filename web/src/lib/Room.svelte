@@ -33,6 +33,7 @@
 
   <footer class="controls">
     <button class:active={rs.muted} onclick={() => session.setMuted(!rs.muted)}>
+      <span class="mic-dot" class:on={rs.selfSpeaking} aria-hidden="true"></span>
       {rs.muted ? 'Unmute' : 'Mute'}
     </button>
     {#if rs.isSharing}

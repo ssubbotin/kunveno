@@ -131,6 +131,7 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 			if !errors.Is(err, ErrBadMessage) {
 				return // socket closed or context cancelled
 			}
+			s.log.Warn("bad message", "err", err)
 			writeErrorAndClose(conn, CodeBadMessage, err.Error())
 			return
 		}
@@ -140,6 +141,9 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 				s.log.Warn("answer", "err", err)
 			}
 		case "candidate":
+			if m.Candidate.Candidate == "" {
+				continue // end of candidates; ICE lite needs nothing
+			}
 			if err := s.peer.AddICECandidate(*m.Candidate); err != nil {
 				s.log.Debug("candidate", "err", err)
 			}

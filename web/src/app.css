@@ -23,3 +23,6 @@ body { margin: 0; }
 .controls button.active { background: #b62324; }
 .controls button.leave { margin-left: auto; }
 .controls button:disabled { opacity: .5; cursor: default; }
+.participants li.me.speaking { background: #12361d; }
+.mic-dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 50%; margin-right: .4rem; background: #555; vertical-align: middle; }
+.mic-dot.on { background: #3fb950; box-shadow: 0 0 .5rem #3fb950; }
