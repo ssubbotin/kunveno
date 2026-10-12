@@ -92,6 +92,7 @@
   }
 </script>
 
+<div class="page">
 <div class="lobby">
   <header class="brand">
     <svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="17" /><circle cx="20" cy="20" r="9" /><path d="M20 3v8M20 29v8M3 20h8M29 20h8" /><circle class="dot" cx="20" cy="20" r="2.5" /></svg>
@@ -142,12 +143,13 @@
       </button>
     {/if}
   </form>
+</div>
 
-  <footer class="about">
-    <a href={repoUrl} target="_blank" rel="noopener noreferrer">kunveno</a>
-    <span>версия {build.version}</span>
-    {#if build.date}<span>сборка от {build.date}</span>{/if}
-  </footer>
+<footer class="about">
+  <a href={repoUrl} target="_blank" rel="noopener noreferrer">kunveno</a>
+  <span>версия {build.version}</span>
+  {#if build.date}<span>сборка от {build.date}</span>{/if}
+</footer>
 </div>
 
 <style>
@@ -184,12 +186,15 @@
   .enter h2 { margin: 0 0 -.25rem; }
   .wide { justify-content: center; width: 100%; }
 
+  /* The footer sits at the bottom of the viewport on short pages and spans its full width. */
+  .page { min-height: 100%; display: flex; flex-direction: column; }
+  .lobby { flex: 1 0 auto; width: 100%; align-content: start; }
   .about {
-    grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .25rem 1.25rem;
-    padding-top: 1.25rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem;
+    display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; padding: .7rem 1.5rem;
+    border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem; opacity: .8;
   }
-  .about a { color: var(--text); text-decoration: none; font-weight: 500; }
-  .about a:hover { text-decoration: underline; }
+  .about a { color: inherit; text-decoration: none; }
+  .about a:hover { color: var(--text); text-decoration: underline; }
   .about span { font-variant-numeric: tabular-nums; }
 
   @media (max-width: 720px) {
