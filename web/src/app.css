@@ -48,6 +48,9 @@ button, input { font: inherit; color: inherit; }
   border: 1px solid var(--line); background: var(--ink); width: 100%; min-width: 0;
 }
 .field input:focus-visible { outline-offset: 0; }
+/* Browsers paint autofilled fields their own way (Firefox with a colour filter, Chrome with a
+   yellow background); keep the field in the palette. */
+.field input:autofill { filter: none; box-shadow: 0 0 0 100px var(--ink) inset; -webkit-text-fill-color: var(--text); caret-color: var(--text); }
 .error { color: #f1b5b3; margin: 0; }
 
 @media (prefers-reduced-motion: reduce) {

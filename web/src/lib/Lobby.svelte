@@ -151,7 +151,7 @@
       <label class="field"><span>{t('enter.name')}</span><input bind:value={name} maxlength="32" autocomplete="name" required /></label>
       <label class="field"><span class="pin-label">{t('enter.pin')}
         {#if saved.includes(room)}<button type="button" class="link" onclick={forgetThisPin}>{t('enter.forgetPin')}</button>{/if}</span>
-        <input bind:value={pin} type="password" maxlength="16" autocomplete="off" required /></label>
+        <input bind:value={pin} type="password" maxlength="16" autocomplete="new-password" required /></label>
     </div>
     <button class="btn primary wide" type="submit" disabled={!selected}>
       {selected ? t('enter.join', { room: selected.name }) : t('enter.chooseRoom')}
