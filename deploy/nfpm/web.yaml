@@ -1,0 +1,16 @@
+name: kunveno-web
+arch: all
+platform: linux
+version: ${VERSION}
+section: web
+priority: optional
+maintainer: Sergey Subbotin <ssubbotin@gmail.com>
+description: kunveno web client (static files for nginx)
+depends:
+  - nginx
+contents:
+  - src: web/dist/
+    dst: /var/www/kunveno/
+  - src: deploy/nginx/kunveno.conf
+    dst: /etc/nginx/sites-available/kunveno.conf
+    type: config|noreplace

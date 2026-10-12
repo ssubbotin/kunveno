@@ -1,0 +1,22 @@
+[Unit]
+Description=kunveno meeting server (signaling + SFU)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=kunveno
+Group=kunveno
+ExecStart=/usr/local/bin/kunveno-server -config /etc/kunveno/config.yaml
+Restart=always
+RestartSec=2
+LimitNOFILE=65536
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

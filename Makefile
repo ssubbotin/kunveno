@@ -1,4 +1,5 @@
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 0.0.0)
+# Debian versions must start with a digit: tags look like v0.1.0; untagged trees get 0.0.0+git<hash>.
+VERSION ?= $(shell v=$$(git describe --tags --dirty 2>/dev/null | sed 's/^v//'); [ -n "$$v" ] && echo "$$v" || echo "0.0.0+git$$(git rev-parse --short HEAD 2>/dev/null)")
 
 .PHONY: fmt test-go test-web test build deb clean
 
