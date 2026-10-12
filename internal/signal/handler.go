@@ -176,7 +176,9 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 		return
 	}
 	s, code, msg := h.join(conn, cancel, first)
-	metrics.Joins.WithLabelValues(h.roomLabel(first.Room), resultLabel(code)).Inc()
+	if code != "" { // successful joins are counted inside join, before "joined" goes out
+		metrics.Joins.WithLabelValues(h.roomLabel(first.Room), code).Inc()
+	}
 	switch code {
 	case CodeBadPIN:
 		metrics.PINFailures.WithLabelValues("join").Inc()
@@ -309,6 +311,7 @@ func (h *Handler) join(conn *websocket.Conn, cancel context.CancelFunc, m Client
 			s.log.Warn("subscribe camera", "from", o.id, "err", err)
 		}
 	}
+	metrics.Joins.WithLabelValues(lr.room.Slug(), "ok").Inc()
 	if err := s.write(Joined(ParticipantInfo{ID: id, Name: m.Name}, lr.room.Slug(), lr.room.Name())); err != nil {
 		h.leave(s)
 		return nil, CodeMediaFailed, "write failed"
@@ -481,13 +484,6 @@ func (h *Handler) roomLabel(slug string) string {
 		return slug
 	}
 	return "unknown"
-}
-
-func resultLabel(code string) string {
-	if code == "" {
-		return "ok"
-	}
-	return code
 }
 
 // watchQuality samples the session's connection, publishes grade changes to the room and
