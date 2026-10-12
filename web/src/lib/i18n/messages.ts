@@ -25,6 +25,8 @@ const ru = {
   'enter.title': 'Проверка перед входом',
   'enter.name': 'Ваше имя',
   'enter.pin': 'PIN комнаты',
+  'enter.forgetPin': 'Забыть',
+  'rooms.pinKnown': 'PIN сохранён в этом браузере',
   'enter.join': 'Войти в «{room}»',
   'enter.chooseRoom': 'Выберите комнату',
 
@@ -127,6 +129,8 @@ const en: Messages = {
   'enter.title': 'Check before joining',
   'enter.name': 'Your name',
   'enter.pin': 'Room PIN',
+  'enter.forgetPin': 'Forget',
+  'rooms.pinKnown': 'PIN saved in this browser',
   'enter.join': 'Join “{room}”',
   'enter.chooseRoom': 'Choose a room',
 
@@ -226,6 +230,8 @@ const es: Messages = {
   'enter.title': 'Comprobación antes de entrar',
   'enter.name': 'Tu nombre',
   'enter.pin': 'PIN de la sala',
+  'enter.forgetPin': 'Olvidar',
+  'rooms.pinKnown': 'PIN guardado en este navegador',
   'enter.join': 'Entrar en «{room}»',
   'enter.chooseRoom': 'Elige una sala',
 

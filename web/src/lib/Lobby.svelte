@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { build, repoUrl } from './build';
+  import { forgetPin, knownRooms, pinFor } from './pins';
   import { formatDate, i18n, setLang, t } from './i18n/i18n.svelte';
   import { LANGS, LANG_NAMES, type Lang } from './i18n/messages';
   import { DEFAULT_TITLE, loadTitle } from './site';
@@ -12,7 +13,12 @@
   let rooms = $state<RoomItem[]>([]);
   let title = $state(DEFAULT_TITLE);
   let room = $state('');
-  let pin = $state(sessionStorage.getItem('kunveno.pin') ?? '');
+  // The PIN field follows the chosen room: the PIN this browser last entered it with, if any.
+  let pin = $state('');
+  let saved = $state<string[]>(knownRooms(localStorage));
+  $effect(() => {
+    pin = pinFor(localStorage, room);
+  });
   let name = $state(localStorage.getItem('kunveno.name') ?? '');
   let loadError = $state('');
   let creating = $state(false);
@@ -83,8 +89,13 @@
     ev.preventDefault();
     localStorage.setItem('kunveno.name', name.trim());
     sessionStorage.setItem('kunveno.room', room);
-    sessionStorage.setItem('kunveno.pin', pin);
     onJoin(room, pin, name.trim());
+  }
+
+  function forgetThisPin() {
+    forgetPin(localStorage, room);
+    saved = knownRooms(localStorage);
+    pin = '';
   }
 
   function occupancy(r: RoomItem): string {
@@ -108,7 +119,10 @@
           <input type="radio" name="room" value={r.slug} bind:group={room} />
           <span class="live" class:on={r.participants > 0} aria-hidden="true"></span>
           <span class="room-name">{r.name}</span>
-          <span class="count">{occupancy(r)}</span>
+          <span class="count">
+            {#if saved.includes(r.slug)}<svg class="key" viewBox="0 0 24 24" role="img" aria-label={t('rooms.pinKnown')}><title>{t('rooms.pinKnown')}</title><circle cx="8" cy="12" r="4" /><path d="M12 12h9M18 12v3M21 12v2" /></svg>{/if}
+            {occupancy(r)}
+          </span>
         </label>
       {/each}
       {#if creating}
@@ -135,7 +149,9 @@
     <MicCheck {name} />
     <div class="pair">
       <label class="field"><span>{t('enter.name')}</span><input bind:value={name} maxlength="32" autocomplete="name" required /></label>
-      <label class="field"><span>{t('enter.pin')}</span><input bind:value={pin} type="password" maxlength="16" required /></label>
+      <label class="field"><span class="pin-label">{t('enter.pin')}
+        {#if saved.includes(room)}<button type="button" class="link" onclick={forgetThisPin}>{t('enter.forgetPin')}</button>{/if}</span>
+        <input bind:value={pin} type="password" maxlength="16" autocomplete="new-password" required /></label>
     </div>
     <button class="btn primary wide" type="submit" disabled={!selected}>
       {selected ? t('enter.join', { room: selected.name }) : t('enter.chooseRoom')}
@@ -181,7 +197,11 @@
   .room:has(input:focus-visible) { outline: 2px solid var(--live); outline-offset: -2px; }
   .room.selected { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--live); }
   .room-name { font-weight: 500; }
-  .count { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .9rem; }
+  .count { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .9rem; display: inline-flex; align-items: center; gap: .4rem; }
+  .key { width: .95rem; height: .95rem; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; }
+  .pin-label { display: flex; justify-content: space-between; align-items: baseline; }
+  .link { background: none; border: 0; padding: 0; color: var(--muted); font: inherit; font-size: .85rem; text-decoration: underline; cursor: pointer; }
+  .link:hover { color: var(--text); }
   .live { width: .55rem; height: .55rem; border-radius: 50%; background: var(--line); }
   .live.on { background: var(--live); }
   .add { color: var(--muted); }
