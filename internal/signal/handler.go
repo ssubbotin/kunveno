@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"github.com/ssubbotin/kunveno/internal/metrics"
 	"log/slog"
 	"net"
 	"net/http"
@@ -60,6 +61,7 @@ type liveRoom struct {
 type session struct {
 	id, name, slug string
 	bot            bool // the echo helper
+	joined         time.Time
 	conn           *websocket.Conn
 	peer           MediaPeer
 	cancel         context.CancelFunc
@@ -106,6 +108,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn.SetReadLimit(readLimit)
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
+	metrics.Sessions.Inc()
+	defer metrics.Sessions.Dec()
 	h.serve(ctx, cancel, conn, local(r))
 }
 
@@ -146,6 +150,7 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 	first, err := readClient(joinCtx, conn)
 	joinCancel()
 	if err != nil || first.Type != "join" {
+		metrics.BadMessages.Inc()
 		writeErrorAndClose(conn, CodeBadMessage, "first message must be join")
 		return
 	}
@@ -155,6 +160,7 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 		return
 	}
 	s, code, msg := h.join(conn, cancel, first)
+	metrics.Joins.WithLabelValues(h.roomLabel(first.Room), resultLabel(code)).Inc()
 	if s == nil {
 		writeErrorAndClose(conn, code, msg)
 		return
@@ -167,9 +173,11 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 				return // socket closed or context cancelled
 			}
 			s.log.Warn("bad message", "err", err)
+			metrics.BadMessages.Inc()
 			writeErrorAndClose(conn, CodeBadMessage, err.Error())
 			return
 		}
+		metrics.Messages.WithLabelValues(m.Type).Inc()
 		switch m.Type {
 		case "answer":
 			if err := s.peer.HandleAnswer(m.SDP); err != nil {
@@ -239,7 +247,7 @@ func (h *Handler) join(conn *websocket.Conn, cancel context.CancelFunc, m Client
 	case err != nil:
 		return nil, CodeBadMessage, err.Error()
 	}
-	s := &session{id: id, name: m.Name, slug: m.Room, bot: bot, conn: conn, cancel: cancel, log: h.log.With("room", m.Room, "participant", id)}
+	s := &session{id: id, name: m.Name, slug: m.Room, bot: bot, joined: time.Now(), conn: conn, cancel: cancel, log: h.log.With("room", m.Room, "participant", id)}
 	peer, err := h.media.NewPeer(id, s, sfu.Handlers{OnPublisher: h.onPublisher, OnFailed: h.onFailed})
 	if err != nil {
 		lr.room.Leave(id)
@@ -300,6 +308,8 @@ func (h *Handler) leave(s *session) {
 	}
 	_ = s.peer.Close()
 	s.log.Info("left")
+	metrics.Leaves.WithLabelValues(s.slug).Inc()
+	metrics.SessionSeconds.Observe(time.Since(s.joined).Seconds())
 	h.dropBotsIfUnwanted(lr)
 	h.broadcast(lr)
 }
@@ -407,6 +417,7 @@ func (h *Handler) onFailed(src sfu.Source) {
 		return
 	}
 	s.log.Warn("media failed; closing session")
+	metrics.MediaFailed.Inc()
 	_ = s.write(ErrorMsg(CodeMediaFailed, "media connection failed"))
 	_ = s.conn.Close(websocket.StatusInternalError, CodeMediaFailed)
 	s.cancel()
@@ -420,4 +431,19 @@ func (h *Handler) count(slug string) int {
 		return len(lr.members)
 	}
 	return 0
+}
+
+// roomLabel keeps metric labels bounded: slugs of unknown rooms collapse into one value.
+func (h *Handler) roomLabel(slug string) string {
+	if _, ok := h.reg.Get(slug); ok {
+		return slug
+	}
+	return "unknown"
+}
+
+func resultLabel(code string) string {
+	if code == "" {
+		return "ok"
+	}
+	return code
 }
