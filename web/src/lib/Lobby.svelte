@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { build, repoUrl } from './build';
+  import MicCheck from './MicCheck.svelte';
 
   type RoomItem = { slug: string; name: string; participants: number; capacity: number; created: boolean };
   let { onJoin, error = '' }: { onJoin: (room: string, pin: string, name: string) => void; error?: string } = $props();
@@ -130,10 +131,13 @@
   </section>
 
   <form class="enter" onsubmit={submit}>
-    <h2>Вход</h2>
+    <h2>Проверка перед входом</h2>
     {#if error}<p class="error">{error}</p>{/if}
-    <label class="field"><span>Ваше имя</span><input bind:value={name} maxlength="32" autocomplete="name" required /></label>
-    <label class="field"><span>PIN комнаты</span><input bind:value={pin} type="password" maxlength="16" required /></label>
+    <MicCheck {name} />
+    <div class="pair">
+      <label class="field"><span>Ваше имя</span><input bind:value={name} maxlength="32" autocomplete="name" required /></label>
+      <label class="field"><span>PIN комнаты</span><input bind:value={pin} type="password" maxlength="16" required /></label>
+    </div>
     <button class="btn primary wide" type="submit" disabled={!selected}>
       {selected ? `Войти в «${selected.name}»` : 'Выберите комнату'}
     </button>
@@ -154,8 +158,8 @@
 
 <style>
   .lobby {
-    max-width: 56rem; margin: 0 auto; padding: clamp(1.5rem, 6vh, 4rem) 1.25rem;
-    display: grid; grid-template-columns: 1.2fr 1fr; gap: 2rem 2.5rem; align-items: start;
+    max-width: 66rem; margin: 0 auto; padding: clamp(1.5rem, 5vh, 3.5rem) 1.5rem;
+    display: grid; grid-template-columns: 19rem minmax(0, 1fr); gap: 2rem 2.5rem; align-items: start;
   }
   .brand { grid-column: 1 / -1; display: flex; align-items: center; gap: 1rem; }
   .brand svg { width: 2.75rem; height: 2.75rem; fill: none; stroke: var(--muted); stroke-width: 1.5; flex: none; }
@@ -182,7 +186,11 @@
   .create { display: grid; gap: .75rem; padding: 1rem; background: var(--panel-2); }
   .row { display: flex; gap: .5rem; flex-wrap: wrap; }
 
-  .enter { display: grid; gap: 1rem; }
+  .enter {
+    display: grid; gap: 1.1rem; min-width: 0; padding: 1.25rem 1.5rem 1.5rem;
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+  }
+  .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 12rem); gap: 1rem; }
   .enter h2 { margin: 0 0 -.25rem; }
   .wide { justify-content: center; width: 100%; }
 
@@ -197,7 +205,8 @@
   .about a:hover { color: var(--text); text-decoration: underline; }
   .about span { font-variant-numeric: tabular-nums; }
 
-  @media (max-width: 720px) {
+  @media (max-width: 760px) {
     .lobby { grid-template-columns: 1fr; }
+    .pair { grid-template-columns: 1fr; }
   }
 </style>

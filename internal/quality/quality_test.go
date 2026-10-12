@@ -16,10 +16,11 @@ func TestGrade(t *testing.T) {
 		{"some loss up", Sample{UpLoss: 0.02, RTT: 30 * ms}, Fair},
 		{"some loss down", Sample{DownLoss: 0.02, RTT: 30 * ms}, Fair},
 		{"slow", Sample{RTT: 250 * ms}, Fair},
-		{"jittery", Sample{Jitter: 30 * ms}, Fair},
+		{"tcp-like jitter stays good", Sample{Jitter: 27 * ms}, Good},
+		{"jittery", Sample{Jitter: 45 * ms}, Fair},
 		{"heavy loss", Sample{UpLoss: 0.08}, Poor},
 		{"very slow", Sample{RTT: 500 * ms}, Poor},
-		{"very jittery", Sample{Jitter: 60 * ms}, Poor},
+		{"very jittery", Sample{Jitter: 90 * ms}, Poor},
 	}
 	for _, c := range cases {
 		if got := Grade(c.s); got != c.want {

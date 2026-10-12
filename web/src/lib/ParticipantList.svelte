@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { initials } from './initials';
   import type { Participant } from './protocol';
   let { participants, selfId, sharer, speaking, compact = false }: {
     participants: Participant[]; selfId: string; sharer: string; speaking: Record<string, boolean>; compact?: boolean;
@@ -7,10 +8,6 @@
   const qualityText = { good: 'Связь хорошая', fair: 'Связь средняя: возможны задержки и пропуски', poor: 'Связь плохая: звук может прерываться' };
   const bars = { good: 3, fair: 2, poor: 1 };
 
-  function initials(name: string): string {
-    const parts = name.trim().split(/\s+/).filter(Boolean);
-    return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '?';
-  }
 </script>
 
 <ul class="people" class:compact aria-label="Участники">

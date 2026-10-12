@@ -3,6 +3,7 @@ import { RoomState } from './state.svelte';
 import { Signaling } from './signaling';
 import { Rtc } from './rtc';
 import { watchLevel } from './levels';
+import { MIC_KEY, audioConstraints } from './micLevel';
 import { prefersTcp, rememberTcp } from './transport';
 
 const FATAL_CODES = new Set(['bad_pin', 'bad_room', 'room_full', 'bad_message']);
@@ -32,9 +33,7 @@ export class Session {
     this.wanted = { room, pin, name };
     this.attempt = 0;
     if (!this.mic) {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-      });
+      const stream = await openMic(localStorage.getItem(MIC_KEY) ?? '');
       this.mic = stream.getAudioTracks()[0];
       this.mic.enabled = !this.state.muted;
       // Own level drives the speaking highlight of our row; a muted (disabled) track reads as silence.
@@ -218,5 +217,15 @@ export class Session {
     this.state.speaking = {};
     this.state.participants = [];
     this.state.sharer = '';
+  }
+}
+
+// openMic opens the microphone chosen in the lobby, or the default one if it is gone.
+async function openMic(deviceId: string): Promise<MediaStream> {
+  try {
+    return await navigator.mediaDevices.getUserMedia({ audio: audioConstraints(deviceId) });
+  } catch (e) {
+    if (!deviceId || (e as Error).name !== 'OverconstrainedError') throw e;
+    return navigator.mediaDevices.getUserMedia({ audio: audioConstraints('') });
   }
 }
