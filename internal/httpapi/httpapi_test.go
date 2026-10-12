@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"encoding/json"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/ssubbotin/kunveno/internal/metrics"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -53,6 +55,8 @@ func TestCreateAndDeleteRoom(t *testing.T) {
 	reg.Add(room.New("ops", "Operations", "1234", 15))
 	saves := 0
 	h := Rooms(reg, func() error { saves++; return nil })
+	createdBefore := testutil.ToFloat64(metrics.RoomsCreated)
+	deletedBefore := testutil.ToFloat64(metrics.RoomsDeleted)
 
 	rec := do(t, h, "POST", "/api/rooms", `{"name":"Retro","pin":"4321"}`)
 	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"slug":"retro"`) {
@@ -94,6 +98,12 @@ func TestCreateAndDeleteRoom(t *testing.T) {
 	}
 	if saves != 2 {
 		t.Fatalf("saves = %d after delete", saves)
+	}
+	if d := testutil.ToFloat64(metrics.RoomsCreated) - createdBefore; d != 1 {
+		t.Errorf("rooms created counted %v, want 1", d)
+	}
+	if d := testutil.ToFloat64(metrics.RoomsDeleted) - deletedBefore; d != 1 {
+		t.Errorf("rooms deleted counted %v, want 1", d)
 	}
 }
 

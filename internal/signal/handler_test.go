@@ -3,6 +3,9 @@ package signal
 import (
 	"context"
 	"encoding/json"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/ssubbotin/kunveno/internal/metrics"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -460,4 +463,45 @@ func TestEchoBotNeedsARequest(t *testing.T) {
 	if m := expect(t, bot, "error"); m.Code != CodeBadRoom {
 		t.Fatalf("code = %q", m.Code)
 	}
+}
+
+func TestSignalingMetrics(t *testing.T) {
+	val := func(c prometheus.Collector) float64 { return testutil.ToFloat64(c) }
+	okBefore := val(metrics.Joins.WithLabelValues("ops", "ok"))
+	badPinBefore := val(metrics.Joins.WithLabelValues("ops", CodeBadPIN))
+	muteBefore := val(metrics.Messages.WithLabelValues("mute"))
+	badBefore := val(metrics.BadMessages)
+	leavesBefore := val(metrics.Leaves.WithLabelValues("ops"))
+
+	e := newEnv(t, 15)
+	c := dial(t, e)
+	send(t, c, `{"type":"join","room":"ops","pin":"0000","name":"Ann"}`)
+	expect(t, c, "error")
+	ca, _ := join(t, e, "Ann")
+	send(t, ca, `{"type":"mute","muted":true}`)
+	for !expectMuted(t, ca) {
+	}
+	send(t, ca, `{"type":"dance"}`)
+	expectClosed(t, ca)
+	deadline := time.Now().Add(3 * time.Second)
+	for val(metrics.Leaves.WithLabelValues("ops")) == leavesBefore && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	for name, got := range map[string]float64{
+		"joins ok":      val(metrics.Joins.WithLabelValues("ops", "ok")) - okBefore,
+		"joins bad_pin": val(metrics.Joins.WithLabelValues("ops", CodeBadPIN)) - badPinBefore,
+		"mute messages": val(metrics.Messages.WithLabelValues("mute")) - muteBefore,
+		"bad messages":  val(metrics.BadMessages) - badBefore,
+		"leaves":        val(metrics.Leaves.WithLabelValues("ops")) - leavesBefore,
+	} {
+		if got != 1 {
+			t.Errorf("%s: delta %v, want 1", name, got)
+		}
+	}
+}
+
+func expectMuted(t *testing.T, c *websocket.Conn) bool {
+	m := expect(t, c, "participants")
+	return len(m.Participants) == 1 && m.Participants[0].Muted
 }

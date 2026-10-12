@@ -1,6 +1,8 @@
 package sfu
 
 import (
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/ssubbotin/kunveno/internal/metrics"
 	"log/slog"
 	"sync"
 	"testing"
@@ -69,6 +71,8 @@ func TestAudioFlowsBetweenTwoPeers(t *testing.T) {
 	}
 	defer eng.Close()
 
+	packetsBefore := testutil.ToFloat64(metrics.RTPPackets.WithLabelValues("audio"))
+	offersBefore := testutil.ToFloat64(metrics.Offers)
 	sigA, sigB := &chanSignaler{offers: make(chan string, 8)}, &chanSignaler{offers: make(chan string, 8)}
 	var peerA, peerB *Peer
 	var once sync.Once
@@ -140,6 +144,12 @@ func TestAudioFlowsBetweenTwoPeers(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("browser B never received A's audio")
 	}
+	if got := testutil.ToFloat64(metrics.RTPPackets.WithLabelValues("audio")) - packetsBefore; got < 1 {
+		t.Errorf("rtp audio packets counted = %v", got)
+	}
+	if got := testutil.ToFloat64(metrics.Offers) - offersBefore; got < 2 {
+		t.Errorf("offers counted = %v, want at least one per peer", got)
+	}
 }
 
 func TestNegotiateCoalesces(t *testing.T) {
@@ -190,9 +200,9 @@ type staticSource struct {
 	tracks map[Kind]*webrtc.TrackLocalStaticRTP
 }
 
-func (s staticSource) ID() string                                { return s.id }
+func (s staticSource) ID() string                               { return s.id }
 func (s staticSource) Track(k Kind) *webrtc.TrackLocalStaticRTP { return s.tracks[k] }
-func (s staticSource) RequestKeyframe(Kind)                      {}
+func (s staticSource) RequestKeyframe(Kind)                     {}
 
 // The two receive slots (mid 0 audio, mid 1 video) carry the participant's own media; a
 // forwarded track placed there reaches a browser whose slot is sendonly and is never played.

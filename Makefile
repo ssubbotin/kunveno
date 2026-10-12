@@ -30,6 +30,8 @@ docker-bundle: build
 	rm -rf dist/kunveno-docker && mkdir -p dist/kunveno-docker
 	cp bin/kunveno-server bin/kunveno-echo deploy/docker/Dockerfile.server deploy/docker/Dockerfile.echo deploy/docker/Dockerfile.web deploy/docker/nginx.conf.template deploy/docker/docker-compose.yml dist/kunveno-docker/
 	cp deploy/docker/env.example dist/kunveno-docker/env.example
+	cp deploy/docker/prometheus.yml.template dist/kunveno-docker/
+	cp -r deploy/docker/grafana dist/kunveno-docker/grafana
 	cp deploy/config.example.yaml dist/kunveno-docker/config.example.yaml
 	cp -r web/dist dist/kunveno-docker/web
 	find dist/kunveno-docker/web -name '*.map' -delete

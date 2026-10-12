@@ -62,3 +62,9 @@ The `echo` service runs next to the server and stays idle. When someone presses 
 room, it joins that room as a participant and plays the room's audio back after `ECHO_DELAY`
 (2 s by default), one speaker at a time. Pressing the button again, or the last person leaving,
 removes it. It reaches the server on loopback (`/internal/echo`, never proxied by nginx).
+
+### Monitoring (Prometheus and Grafana)
+`kunveno-server` exposes Prometheus metrics at `/metrics` to loopback clients only (nginx does not
+proxy it). The stack runs Prometheus on `127.0.0.1:${PROMETHEUS_PORT}` (default 9095, 30 days of
+data) and Grafana behind nginx at `https://<PUBLIC_HOST>/grafana/` with the "kunveno" dashboard
+provisioned. Set `PUBLIC_HOST` and `GRAFANA_ADMIN_PASSWORD` in `.env`; log in as `admin`.

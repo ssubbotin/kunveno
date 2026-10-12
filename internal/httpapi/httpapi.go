@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/ssubbotin/kunveno/internal/metrics"
 	"github.com/ssubbotin/kunveno/internal/room"
 )
 
@@ -79,6 +80,7 @@ func create(w http.ResponseWriter, r *http.Request, reg *room.Registry, persist 
 	if !save(w, persist) {
 		return
 	}
+	metrics.RoomsCreated.Inc()
 	writeJSON(w, http.StatusCreated, map[string]string{"slug": rm.Slug(), "name": rm.Name()})
 }
 
@@ -98,6 +100,7 @@ func remove(w http.ResponseWriter, r *http.Request, reg *room.Registry, persist 
 	case err != nil:
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	default:
+		metrics.RoomsDeleted.Inc()
 		if save(w, persist) {
 			w.WriteHeader(http.StatusNoContent)
 		}

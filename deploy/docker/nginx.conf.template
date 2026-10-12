@@ -1,5 +1,10 @@
 # Rendered by the nginx image entrypoint into /etc/nginx/conf.d/kunveno.conf.
 # The container runs with host networking, so the upstream is the server's loopback listener.
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
 server {
     listen ${HTTP_PORT};
     server_name ${SERVER_NAME};
@@ -37,6 +42,16 @@ server {
     location /api/ {
         proxy_pass http://${KUNVENO_UPSTREAM};
         proxy_set_header Host $http_host;
+    }
+
+    # Grafana serves itself from the /grafana/ subpath; it needs the original host and upgrades for live updates.
+    location /grafana/ {
+        proxy_pass http://127.0.0.1:${GRAFANA_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host $http_host;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header X-Forwarded-For $remote_addr;
     }
 
     location = /healthz {

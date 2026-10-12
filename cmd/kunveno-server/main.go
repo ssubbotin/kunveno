@@ -16,6 +16,7 @@ import (
 
 	"github.com/ssubbotin/kunveno/internal/config"
 	"github.com/ssubbotin/kunveno/internal/httpapi"
+	"github.com/ssubbotin/kunveno/internal/metrics"
 	"github.com/ssubbotin/kunveno/internal/room"
 	"github.com/ssubbotin/kunveno/internal/roomstore"
 	"github.com/ssubbotin/kunveno/internal/sfu"
@@ -88,7 +89,8 @@ func run(cfgPath string, log *slog.Logger) error {
 	mux.Handle("/api/rooms", rooms)
 	mux.Handle("/api/rooms/", rooms)
 	mux.Handle("/healthz", httpapi.Health())
-	mux.Handle("/internal/echo", httpapi.EchoRooms(reg)) // never proxied by nginx
+	mux.Handle("/internal/echo", httpapi.EchoRooms(reg))                       // never proxied by nginx
+	mux.Handle("/metrics", metrics.Handler(metrics.NewRegistry(reg, version))) // local scrapers only
 
 	srv := &http.Server{Addr: cfg.HTTP.Listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 1)

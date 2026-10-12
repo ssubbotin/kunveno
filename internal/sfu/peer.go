@@ -2,6 +2,7 @@ package sfu
 
 import (
 	"errors"
+	"github.com/ssubbotin/kunveno/internal/metrics"
 	"io"
 	"log/slog"
 	"sync"
@@ -64,6 +65,7 @@ func (e *Engine) NewPeer(id string, sig Signaler, h Handlers) (*Peer, error) {
 	pc.OnTrack(p.onTrack)
 	pc.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
 		p.log.Info("connection state", "state", s.String())
+		metrics.PeerStates.WithLabelValues(s.String()).Inc()
 		if s == webrtc.PeerConnectionStateFailed {
 			if p.h.OnFailed != nil {
 				p.h.OnFailed(p)
@@ -91,7 +93,9 @@ func (p *Peer) RequestKeyframe(kind Kind) {
 	}
 	if err := p.pc.WriteRTCP([]rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: ssrc}}); err != nil {
 		p.log.Debug("pli", "err", err)
+		return
 	}
+	metrics.KeyframeRequests.Inc()
 }
 
 func (p *Peer) onTrack(remote *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
@@ -112,11 +116,15 @@ func (p *Peer) onTrack(remote *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 	if p.h.OnPublisher != nil {
 		p.h.OnPublisher(p, kind)
 	}
+	packets := metrics.RTPPackets.WithLabelValues(kind.String())
+	bytes := metrics.RTPBytes.WithLabelValues(kind.String())
 	for {
 		pkt, _, err := remote.ReadRTP()
 		if err != nil {
 			return
 		}
+		packets.Inc()
+		bytes.Add(float64(len(pkt.Payload)))
 		if err := local.WriteRTP(pkt); err != nil && !errors.Is(err, io.ErrClosedPipe) {
 			p.log.Debug("forward", "err", err)
 		}
@@ -225,7 +233,9 @@ func (p *Peer) sendOffer() {
 	<-gathered
 	if err := p.sig.SendOffer(p.pc.LocalDescription().SDP); err != nil {
 		p.fail(err)
+		return
 	}
+	metrics.Offers.Inc()
 }
 
 // HandleAnswer applies the client's answer to the outstanding offer.
@@ -254,6 +264,7 @@ func (p *Peer) AddICECandidate(c webrtc.ICECandidateInit) error { return p.pc.Ad
 
 func (p *Peer) fail(err error) {
 	p.log.Error("negotiation failed", "err", err)
+	metrics.NegotiationErrors.Inc()
 	p.mu.Lock()
 	p.negotiating = false
 	p.mu.Unlock()
