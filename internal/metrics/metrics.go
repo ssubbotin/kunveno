@@ -46,6 +46,19 @@ var (
 	PeerStates = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "kunveno_peer_state_changes_total", Help: "Peer connection state transitions, by new state.",
 	}, []string{"state"})
+	RTPSentPackets = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "kunveno_rtp_sent_packets_total", Help: "RTP packets sent to participants, by kind (audio or screen); one per subscriber.",
+	}, []string{"kind"})
+	RTPSentBytes = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "kunveno_rtp_sent_bytes_total", Help: "RTP payload bytes sent to participants, by kind.",
+	}, []string{"kind"})
+	ActiveConnections = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "kunveno_media_connections", Help: "Media connections up right now, by transport (udp or tcp).",
+	}, []string{"transport"})
+	ConnectSeconds = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name: "kunveno_connect_seconds", Help: "Time from join to an established media connection, by transport.",
+		Buckets: []float64{0.25, 0.5, 1, 2, 5, 10, 20, 45},
+	}, []string{"transport"})
 	Transports = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "kunveno_media_connections_total", Help: "Established media connections by transport (udp or tcp).",
 	}, []string{"transport"})
@@ -78,7 +91,8 @@ func NewRegistry(rooms *room.Registry, version string) *prometheus.Registry {
 		collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		build, roomCollector{rooms},
 		Joins, Leaves, Sessions, SessionSeconds, Messages, BadMessages, MediaFailed,
-		RTPPackets, RTPBytes, PeerStates, Transports, Offers, NegotiationErrors, KeyframeRequests,
+		RTPPackets, RTPBytes, RTPSentPackets, RTPSentBytes, ActiveConnections, ConnectSeconds,
+		PeerStates, Transports, Offers, NegotiationErrors, KeyframeRequests,
 		RoomsCreated, RoomsDeleted,
 	)
 	return r

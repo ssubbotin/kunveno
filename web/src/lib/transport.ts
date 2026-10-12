@@ -42,3 +42,19 @@ export function watchConnection(onFailed: () => void, graceMs = 5000): (state: R
     }
   };
 }
+
+type Stat = { id: string; type: string; [k: string]: unknown };
+
+// transportFromStats names the protocol ("udp" or "tcp") of the candidate pair in use, or ""
+// before one is chosen. Chrome points at it from the transport stat; Firefox marks the pair.
+export function transportFromStats(stats: Iterable<Stat>): 'udp' | 'tcp' | '' {
+  const byId = new Map<string, Stat>();
+  for (const s of stats) byId.set(s.id, s);
+  let pair: Stat | undefined;
+  for (const s of byId.values()) {
+    if (s.type === 'transport' && typeof s.selectedCandidatePairId === 'string') pair = byId.get(s.selectedCandidatePairId);
+  }
+  pair ??= [...byId.values()].find((s) => s.type === 'candidate-pair' && (s.selected === true || (s.nominated === true && s.state === 'succeeded')));
+  const local = pair && typeof pair.localCandidateId === 'string' ? byId.get(pair.localCandidateId) : undefined;
+  return local?.protocol === 'udp' || local?.protocol === 'tcp' ? local.protocol : '';
+}

@@ -15,6 +15,7 @@ export class RoomState {
   muted = $state(false);
   speaking = $state<Record<string, boolean>>({});
   echo = $state(false);
+  transport = $state<'udp' | 'tcp' | ''>(''); // media path of this browser, once connected
 
   get isSharing(): boolean {
     return this.sharer !== '' && this.sharer === this.selfId;
@@ -40,6 +41,7 @@ export class RoomState {
     this.sharer = '';
     this.speaking = {};
     this.echo = false;
+    this.transport = '';
   }
 
   apply(msg: ServerMessage): void {

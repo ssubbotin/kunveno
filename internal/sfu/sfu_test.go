@@ -1,7 +1,9 @@
 package sfu
 
 import (
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/ssubbotin/kunveno/internal/metrics"
 	"log/slog"
 	"strings"
@@ -73,6 +75,9 @@ func TestAudioFlowsBetweenTwoPeers(t *testing.T) {
 	defer eng.Close()
 
 	packetsBefore := testutil.ToFloat64(metrics.RTPPackets.WithLabelValues("audio"))
+	sentBefore := testutil.ToFloat64(metrics.RTPSentPackets.WithLabelValues("audio"))
+	activeBefore := testutil.ToFloat64(metrics.ActiveConnections.WithLabelValues("udp"))
+	connectsBefore := histogramCount(t, metrics.ConnectSeconds.WithLabelValues("udp"))
 	offersBefore := testutil.ToFloat64(metrics.Offers)
 	sigA, sigB := &chanSignaler{offers: make(chan string, 8)}, &chanSignaler{offers: make(chan string, 8)}
 	var peerA, peerB *Peer
@@ -151,6 +156,33 @@ func TestAudioFlowsBetweenTwoPeers(t *testing.T) {
 	if got := testutil.ToFloat64(metrics.Offers) - offersBefore; got < 2 {
 		t.Errorf("offers counted = %v, want at least one per peer", got)
 	}
+	if got := testutil.ToFloat64(metrics.RTPSentPackets.WithLabelValues("audio")) - sentBefore; got < 1 {
+		t.Errorf("rtp audio packets sent = %v", got)
+	}
+	if got := testutil.ToFloat64(metrics.ActiveConnections.WithLabelValues("udp")) - activeBefore; got != 2 {
+		t.Errorf("active udp connections delta = %v, want 2", got)
+	}
+	if got := histogramCount(t, metrics.ConnectSeconds.WithLabelValues("udp")) - connectsBefore; got != 2 {
+		t.Errorf("connect time observations = %v, want 2", got)
+	}
+	_ = peerA.Close()
+	_ = peerB.Close()
+	deadline := time.Now().Add(3 * time.Second)
+	for testutil.ToFloat64(metrics.ActiveConnections.WithLabelValues("udp")) != activeBefore && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := testutil.ToFloat64(metrics.ActiveConnections.WithLabelValues("udp")) - activeBefore; got != 0 {
+		t.Errorf("active udp connections after close delta = %v, want 0", got)
+	}
+}
+
+func histogramCount(t *testing.T, o prometheus.Observer) float64 {
+	t.Helper()
+	var m dto.Metric
+	if err := o.(prometheus.Metric).Write(&m); err != nil {
+		t.Fatal(err)
+	}
+	return float64(m.GetHistogram().GetSampleCount())
 }
 
 func TestNegotiateCoalesces(t *testing.T) {

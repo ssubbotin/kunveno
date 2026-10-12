@@ -1,5 +1,5 @@
 import type { ClientMessage } from './protocol';
-import { watchConnection } from './transport';
+import { transportFromStats, watchConnection } from './transport';
 
 export class Rtc {
   private readonly pc: RTCPeerConnection;
@@ -12,6 +12,7 @@ export class Rtc {
     private readonly onTrack: (participantId: string, track: MediaStreamTrack) => void,
     private readonly onFailed: () => void,
     private readonly shareMaxKbps = 2500,
+    private readonly onTransport: (t: 'udp' | 'tcp' | '') => void = () => {},
   ) {
     this.pc = new RTCPeerConnection({ iceServers: [] });
     this.pc.onicecandidate = (ev) => {
@@ -23,7 +24,12 @@ export class Rtc {
       this.onTrack(stream ? stream.id : '', ev.track);
     };
     const watch = watchConnection(() => this.onFailed());
-    this.pc.onconnectionstatechange = () => watch(this.pc.connectionState);
+    this.pc.onconnectionstatechange = () => {
+      watch(this.pc.connectionState);
+      if (this.pc.connectionState === 'connected') {
+        void this.pc.getStats().then((r) => this.onTransport(transportFromStats(r.values() as Iterable<{ id: string; type: string }>)));
+      }
+    };
   }
 
   async handleOffer(sdp: string): Promise<void> {

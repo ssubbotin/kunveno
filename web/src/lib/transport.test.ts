@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { prefersTcp, rememberTcp, watchConnection } from './transport';
+import { prefersTcp, rememberTcp, transportFromStats, watchConnection } from './transport';
 
 class MemoryStorage {
   private m = new Map<string, string>();
@@ -56,5 +56,30 @@ describe('watchConnection', () => {
     w('failed');
     vi.advanceTimersByTime(10_000);
     expect(onFailed).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('transportFromStats', () => {
+  it('follows the selected pair of the transport (Chrome)', () => {
+    const stats = [
+      { id: 'T1', type: 'transport', selectedCandidatePairId: 'P2' },
+      { id: 'P1', type: 'candidate-pair', localCandidateId: 'L1', state: 'failed' },
+      { id: 'P2', type: 'candidate-pair', localCandidateId: 'L2', state: 'succeeded', nominated: true },
+      { id: 'L1', type: 'local-candidate', protocol: 'udp' },
+      { id: 'L2', type: 'local-candidate', protocol: 'tcp' },
+    ];
+    expect(transportFromStats(stats)).toBe('tcp');
+  });
+
+  it('falls back to the selected candidate pair (Firefox)', () => {
+    const stats = [
+      { id: 'P1', type: 'candidate-pair', localCandidateId: 'L1', state: 'succeeded', selected: true },
+      { id: 'L1', type: 'local-candidate', protocol: 'udp' },
+    ];
+    expect(transportFromStats(stats)).toBe('udp');
+  });
+
+  it('is empty before a pair is chosen', () => {
+    expect(transportFromStats([{ id: 'P1', type: 'candidate-pair', localCandidateId: 'L1', state: 'in-progress' }])).toBe('');
   });
 });

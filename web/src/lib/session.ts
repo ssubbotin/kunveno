@@ -68,6 +68,8 @@ export class Session {
         this.useTcp();
         sig.close();
       },
+      2500,
+      (t) => (this.state.transport = t),
     );
     sig.send({ type: 'join', ...this.wanted, ...(this.preferTcp ? { media: 'tcp' as const } : {}) });
   }

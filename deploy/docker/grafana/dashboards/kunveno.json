@@ -262,7 +262,7 @@
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Входящий медиапоток",
+      "title": "Медиапоток сервера",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -281,7 +281,16 @@
             "uid": "prometheus"
           },
           "expr": "sum by (kind) (rate(kunveno_rtp_received_bytes_total[1m])) * 8",
-          "legendFormat": "{{kind}}"
+          "legendFormat": "{{kind}}, входящий"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (kind) (rate(kunveno_rtp_sent_bytes_total[1m])) * 8",
+          "legendFormat": "{{kind}}, исходящий"
         }
       ],
       "fieldConfig": {
@@ -303,7 +312,7 @@
           "mode": "multi"
         }
       },
-      "description": "Полезная нагрузка RTP от выступающих; исходящий поток примерно в (участников - 1) раз больше"
+      "description": "Полезная нагрузка RTP: входящая от выступающих и исходящая к слушателям"
     },
     {
       "id": 8,
@@ -577,12 +586,12 @@
     {
       "id": 13,
       "type": "timeseries",
-      "title": "Медиасоединения по транспорту",
+      "title": "Соединения по каналу",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "Установленные соединения в час: tcp означает, что UDP-путь участника не работает",
+      "description": "Сейчас на связи: udp обычный канал, tcp резервный (сеть участника не пропускает UDP)",
       "gridPos": {
         "x": 0,
         "y": 36,
@@ -596,12 +605,67 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (transport) (increase(kunveno_media_connections_total[1h]))",
+          "expr": "sum by (transport) (kunveno_media_connections)",
           "legendFormat": "{{transport}}"
         }
       ],
       "fieldConfig": {
         "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Время подключения",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "От входа в комнату до установленного медиасоединения",
+      "gridPos": {
+        "x": 12,
+        "y": 36,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le, transport) (rate(kunveno_connect_seconds_bucket[1h])))",
+          "legendFormat": "медиана, {{transport}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.9, sum by (le, transport) (rate(kunveno_connect_seconds_bucket[1h])))",
+          "legendFormat": "90-й процентиль, {{transport}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 10
