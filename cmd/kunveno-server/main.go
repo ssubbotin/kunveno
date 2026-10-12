@@ -88,6 +88,7 @@ func run(cfgPath string, log *slog.Logger) error {
 	mux.Handle("/api/rooms", rooms)
 	mux.Handle("/api/rooms/", rooms)
 	mux.Handle("/healthz", httpapi.Health())
+	mux.Handle("/internal/echo", httpapi.EchoRooms(reg)) // never proxied by nginx
 
 	srv := &http.Server{Addr: cfg.HTTP.Listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 1)

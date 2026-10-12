@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -168,6 +169,7 @@ type anyMsg struct {
 	Sharer       string            `json:"sharer"`
 	Participants []ParticipantInfo `json:"participants"`
 	Self         ParticipantInfo   `json:"self"`
+	Echo         bool              `json:"echo"`
 }
 
 // expect reads frames until one of the wanted type arrives.
@@ -381,4 +383,81 @@ func TestJoinRoomCreatedAtRuntime(t *testing.T) {
 	c := dial(t, e)
 	send(t, c, `{"type":"join","room":"retro","pin":"4321","name":"Ann"}`)
 	expect(t, c, "joined")
+}
+
+func dialWith(t *testing.T, e *env, header http.Header) *websocket.Conn {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	c, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(e.srv.URL, "http")+"/ws", &websocket.DialOptions{HTTPHeader: header})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.CloseNow() })
+	return c
+}
+
+func TestEchoToggle(t *testing.T) {
+	e := newEnv(t, 15)
+	ca, _ := join(t, e, "Ann")
+	send(t, ca, `{"type":"echo","on":true}`)
+	for !expect(t, ca, "participants").Echo {
+	}
+	if got := e.h.reg.EchoRooms(); len(got) != 1 || got[0] != "ops" {
+		t.Fatalf("EchoRooms = %v", got)
+	}
+
+	bot := dial(t, e) // loopback, no proxy header: trusted
+	send(t, bot, `{"type":"join","room":"ops","name":"Echo","role":"echo"}`)
+	expect(t, bot, "joined")
+	for {
+		m := expect(t, ca, "participants")
+		if len(m.Participants) == 2 && m.Participants[1].Bot {
+			break
+		}
+	}
+
+	send(t, ca, `{"type":"echo","on":false}`)
+	expectClosed(t, bot)
+	for {
+		m := expect(t, ca, "participants")
+		if !m.Echo && len(m.Participants) == 1 {
+			break
+		}
+	}
+}
+
+func TestEchoRoleRejectedThroughProxy(t *testing.T) {
+	e := newEnv(t, 15)
+	c := dialWith(t, e, http.Header{"X-Forwarded-For": {"10.8.0.5"}})
+	send(t, c, `{"type":"join","room":"ops","name":"Echo","role":"echo"}`)
+	if m := expect(t, c, "error"); m.Code != CodeBadMessage {
+		t.Fatalf("code = %q", m.Code)
+	}
+	if n := e.h.count("ops"); n != 0 {
+		t.Fatalf("room count = %d", n)
+	}
+}
+
+func TestLastPersonLeavingDropsEcho(t *testing.T) {
+	e := newEnv(t, 15)
+	ca, _ := join(t, e, "Ann")
+	send(t, ca, `{"type":"echo","on":true}`)
+	for !expect(t, ca, "participants").Echo {
+	}
+	bot := dial(t, e)
+	send(t, bot, `{"type":"join","room":"ops","name":"Echo","role":"echo"}`)
+	expect(t, bot, "joined")
+	_ = ca.Close(websocket.StatusNormalClosure, "")
+	expectClosed(t, bot)
+}
+
+func TestEchoBotNeedsARequest(t *testing.T) {
+	e := newEnv(t, 15)
+	join(t, e, "Ann")
+	bot := dial(t, e)
+	send(t, bot, `{"type":"join","room":"ops","name":"Echo","role":"echo"}`)
+	if m := expect(t, bot, "error"); m.Code != CodeBadRoom {
+		t.Fatalf("code = %q", m.Code)
+	}
 }

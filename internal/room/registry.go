@@ -148,3 +148,14 @@ func slugify(name string) string {
 	}
 	return s
 }
+
+// EchoRooms lists the slugs of rooms that want the echo helper.
+func (g *Registry) EchoRooms() []string {
+	out := []string{}
+	for _, r := range g.All() {
+		if r.Echo() {
+			out = append(out, r.slug)
+		}
+	}
+	return out
+}

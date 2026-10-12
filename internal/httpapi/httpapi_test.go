@@ -96,3 +96,34 @@ func TestCreateAndDeleteRoom(t *testing.T) {
 		t.Fatalf("saves = %d after delete", saves)
 	}
 }
+
+func TestEchoRoomsIsLocalOnly(t *testing.T) {
+	reg := room.NewRegistry()
+	r := room.New("testing", "Testing", "1234", 15)
+	reg.Add(r)
+	r.SetEcho(true)
+	h := EchoRooms(reg)
+
+	req := httptest.NewRequest("GET", "/internal/echo", nil)
+	req.RemoteAddr = "127.0.0.1:5555"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != `["testing"]` {
+		t.Fatalf("local: %d %s", rec.Code, rec.Body)
+	}
+
+	for _, c := range []struct {
+		addr, xff string
+	}{{"10.8.0.5:5555", ""}, {"127.0.0.1:5555", "10.8.0.5"}} {
+		req := httptest.NewRequest("GET", "/internal/echo", nil)
+		req.RemoteAddr = c.addr
+		if c.xff != "" {
+			req.Header.Set("X-Forwarded-For", c.xff)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("addr=%s xff=%q: %d, want 403", c.addr, c.xff, rec.Code)
+		}
+	}
+}

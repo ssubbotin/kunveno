@@ -31,10 +31,9 @@ services:
     volumes:
       - ./certs:/etc/ssl/kunveno:ro
 
-  # Sound check: joins ECHO_ROOM as "Echo" and plays the room's audio back after ECHO_DELAY.
-  # Optional. Enable: docker compose --profile echo up -d echo. Disable: docker compose stop echo.
+  # Sound-check helper. Idle until someone presses "Эхо-тест" in a room; then it joins that room
+  # and plays its audio back after ECHO_DELAY. Talks to the server over loopback only.
   echo:
-    profiles: [echo]
     build:
       context: .
       dockerfile: Dockerfile.echo
@@ -45,7 +44,5 @@ services:
       - server
     environment:
       ECHO_URL: ws://${KUNVENO_UPSTREAM:-127.0.0.1:8080}/ws
-      ECHO_ROOM: ${ECHO_ROOM:-}
-      ECHO_PIN: ${ECHO_PIN:-}
-      ECHO_NAME: ${ECHO_NAME:-Echo (2 s delay)}
+      ECHO_CONTROL_URL: http://${KUNVENO_UPSTREAM:-127.0.0.1:8080}/internal/echo
       ECHO_DELAY: ${ECHO_DELAY:-2s}

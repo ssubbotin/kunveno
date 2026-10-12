@@ -4,6 +4,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"strings"
 
@@ -126,4 +127,29 @@ func Health() http.Handler {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte("ok\n"))
 	})
+}
+
+// EchoRooms tells the local echo helper which rooms want it: GET /internal/echo returns a JSON
+// list of slugs. Only loopback requests that did not pass through nginx are served.
+func EchoRooms(reg *room.Registry) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !local(r) {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		writeJSON(w, http.StatusOK, reg.EchoRooms())
+	})
+}
+
+// local mirrors the check in internal/signal: loopback peer and no proxy header.
+func local(r *http.Request) bool {
+	if r.Header.Get("X-Forwarded-For") != "" {
+		return false
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

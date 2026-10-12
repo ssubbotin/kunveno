@@ -1,5 +1,6 @@
-// Command kunveno-echo joins a room as an ordinary participant and plays the room's audio
-// back with a delay, so people can check that their voice reaches the server and others.
+// Command kunveno-echo is the sound-check helper. It asks the server which rooms want an echo
+// (GET /internal/echo, loopback only), joins each of them as a participant, and plays the
+// room's audio back with a delay. People switch it on and off with the room's echo button.
 // Every flag can also be set by the environment variable named in its help text.
 package main
 
@@ -7,7 +8,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -35,9 +35,6 @@ type serverMsg struct {
 	SDP     string `json:"sdp"`
 }
 
-// errFatal marks errors that a reconnect cannot fix (wrong room or PIN).
-var errFatal = errors.New("fatal")
-
 func env(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -61,31 +58,81 @@ func envInt(key string, def int) int {
 
 func main() {
 	url := flag.String("url", env("ECHO_URL", "ws://127.0.0.1:8080/ws"), "signaling URL (ECHO_URL)")
-	room := flag.String("room", env("ECHO_ROOM", ""), "room slug (ECHO_ROOM)")
-	pin := flag.String("pin", env("ECHO_PIN", ""), "room PIN (ECHO_PIN)")
-	name := flag.String("name", env("ECHO_NAME", "Echo"), "participant name (ECHO_NAME)")
+	control := flag.String("control", env("ECHO_CONTROL_URL", "http://127.0.0.1:8080/internal/echo"), "rooms-wanting-echo endpoint (ECHO_CONTROL_URL)")
+	name := flag.String("name", env("ECHO_NAME", "Эхо-тест"), "participant name (ECHO_NAME)")
 	delay := flag.Duration("delay", envDuration("ECHO_DELAY", 2*time.Second), "echo delay (ECHO_DELAY)")
 	minSpeech := flag.Int("min-speech", envInt("ECHO_MIN_SPEECH_BYTES", 30), "Opus payload bytes that count as speech (ECHO_MIN_SPEECH_BYTES)")
 	insecure := flag.Bool("insecure", os.Getenv("ECHO_INSECURE") == "1", "skip TLS verification (ECHO_INSECURE=1)")
 	flag.Parse()
 
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
-	if *room == "" || *pin == "" {
-		log.Error("room and pin are required (ECHO_ROOM, ECHO_PIN)")
-		os.Exit(2)
-	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	log.Info("kunveno-echo started", "version", version, "url", *url, "room", *room, "delay", delay.String())
+	log.Info("kunveno-echo started", "version", version, "url", *url, "control", *control, "delay", delay.String())
 
+	// One goroutine per room that wants the echo; cancelled when the room stops asking.
+	running := map[string]context.CancelFunc{}
+	client := &http.Client{Timeout: 3 * time.Second}
+	tick := time.NewTicker(2 * time.Second)
+	defer tick.Stop()
 	for {
-		err := run(ctx, log, *url, *room, *pin, *name, *delay, *minSpeech, *insecure)
+		if want, err := wanted(ctx, client, *control); err != nil {
+			log.Warn("control poll", "err", err)
+		} else {
+			for slug, cancel := range running {
+				if !want[slug] {
+					cancel()
+					delete(running, slug)
+				}
+			}
+			for slug := range want {
+				if running[slug] == nil {
+					rctx, cancel := context.WithCancel(ctx)
+					running[slug] = cancel
+					go serveRoom(rctx, log.With("room", slug), *url, slug, *name, *delay, *minSpeech, *insecure)
+				}
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+	}
+}
+
+func wanted(ctx context.Context, client *http.Client, url string) (map[string]bool, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	res, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("status %s", res.Status)
+	}
+	var slugs []string
+	if err := json.NewDecoder(res.Body).Decode(&slugs); err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(slugs))
+	for _, s := range slugs {
+		out[s] = true
+	}
+	return out, nil
+}
+
+// serveRoom keeps the echo in one room until ctx is cancelled, rejoining after drops.
+func serveRoom(ctx context.Context, log *slog.Logger, url, room, name string, delay time.Duration, minSpeech int, insecure bool) {
+	log.Info("echo on")
+	defer log.Info("echo off")
+	for {
+		err := run(ctx, log, url, room, name, delay, minSpeech, insecure)
 		if ctx.Err() != nil {
 			return
-		}
-		if errors.Is(err, errFatal) {
-			log.Error("giving up", "err", err)
-			os.Exit(1)
 		}
 		log.Warn("disconnected; retrying in 3 s", "err", err)
 		select {
@@ -96,7 +143,7 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, log *slog.Logger, url, room, pin, name string, delay time.Duration, minSpeech int, insecure bool) error {
+func run(ctx context.Context, log *slog.Logger, url, room, name string, delay time.Duration, minSpeech int, insecure bool) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -185,7 +232,7 @@ func run(ctx context.Context, log *slog.Logger, url, room, pin, name string, del
 		}
 	}()
 
-	if err := wsjson.Write(ctx, conn, map[string]string{"type": "join", "room": room, "pin": pin, "name": name}); err != nil {
+	if err := wsjson.Write(ctx, conn, map[string]string{"type": "join", "room": room, "name": name, "role": "echo"}); err != nil {
 		return err
 	}
 	for {
@@ -201,10 +248,6 @@ func run(ctx context.Context, log *slog.Logger, url, room, pin, name string, del
 		case "joined":
 			log.Info("joined", "room", room)
 		case "error":
-			switch msg.Code {
-			case "bad_room", "bad_pin":
-				return fmt.Errorf("%w: %s: %s", errFatal, msg.Code, msg.Message)
-			}
 			return fmt.Errorf("server error %s: %s", msg.Code, msg.Message)
 		case "offer":
 			if err := pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: msg.SDP}); err != nil {
