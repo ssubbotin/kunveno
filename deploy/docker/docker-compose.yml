@@ -11,6 +11,8 @@ services:
     restart: unless-stopped
     volumes:
       - ./config.yaml:/etc/kunveno/config.yaml:ro
+      # Rooms created in the lobby (rooms.json). Must be writable by uid 10001.
+      - ./data:/var/lib/kunveno
 
   web:
     build:

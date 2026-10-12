@@ -51,6 +51,7 @@ On the host, in `~/kunveno`:
 cp config.example.yaml config.yaml   # advertise_ip, rooms, PINs; pick a free http.listen port
 cp env.example .env                  # KUNVENO_UPSTREAM must match http.listen
 mkdir -p certs                       # fullchain.pem and privkey.pem (see section 2)
+mkdir -p data && sudo chown 10001 data && chmod 700 data   # rooms created in the lobby
 docker compose up -d --build
 ```
 Upgrade: rsync a new bundle (it never overwrites `config.yaml`, `.env` or `certs/`), then

@@ -32,6 +32,7 @@ type Snapshot struct {
 type Room struct {
 	slug, name, pin string
 	max             int
+	created         bool // made through the API, not from the config file
 
 	mu      sync.Mutex
 	members map[string]*Participant
@@ -44,6 +45,12 @@ func New(slug, name, pin string, max int) *Room {
 }
 
 func (r *Room) Slug() string  { return r.slug }
+func (r *Room) Created() bool { return r.created }
+
+// CheckPIN compares in constant time.
+func (r *Room) CheckPIN(pin string) bool {
+	return subtle.ConstantTimeCompare([]byte(pin), []byte(r.pin)) == 1
+}
 func (r *Room) Name() string  { return r.name }
 func (r *Room) Capacity() int { return r.max }
 
@@ -61,7 +68,7 @@ func (r *Room) Sharer() string {
 
 // Join admits id with the given display name when the pin matches and there is room.
 func (r *Room) Join(id, name, pin string) error {
-	if subtle.ConstantTimeCompare([]byte(pin), []byte(r.pin)) != 1 {
+	if !r.CheckPIN(pin) {
 		return ErrBadPIN
 	}
 	r.mu.Lock()
@@ -145,23 +152,3 @@ func (r *Room) Snapshot() Snapshot {
 	}
 	return s
 }
-
-// Registry is the fixed set of configured rooms.
-type Registry struct {
-	rooms map[string]*Room
-	order []*Room
-}
-
-func NewRegistry() *Registry { return &Registry{rooms: map[string]*Room{}} }
-
-func (g *Registry) Add(r *Room) {
-	g.rooms[r.slug] = r
-	g.order = append(g.order, r)
-}
-
-func (g *Registry) Get(slug string) (*Room, bool) {
-	r, ok := g.rooms[slug]
-	return r, ok
-}
-
-func (g *Registry) All() []*Room { return append([]*Room(nil), g.order...) }

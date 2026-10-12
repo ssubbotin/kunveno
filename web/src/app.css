@@ -26,3 +26,7 @@ body { margin: 0; }
 .participants li.me.speaking { background: #12361d; }
 .mic-dot { display: inline-block; width: .6rem; height: .6rem; border-radius: 50%; margin-right: .4rem; background: #555; vertical-align: middle; }
 .mic-dot.on { background: #3fb950; box-shadow: 0 0 .5rem #3fb950; }
+.lobby form { display: grid; gap: 1rem; }
+.lobby h2 { margin: 0; font-size: 1.1rem; }
+.lobby button { padding: .5rem; font-size: 1rem; }
+.lobby button.secondary { background: transparent; border: 1px solid #555; color: inherit; }

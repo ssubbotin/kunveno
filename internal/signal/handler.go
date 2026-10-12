@@ -65,11 +65,25 @@ type session struct {
 }
 
 func New(reg *room.Registry, media Media, origins []string, log *slog.Logger) *Handler {
-	h := &Handler{reg: reg, media: media, origins: origins, log: log, live: map[string]*liveRoom{}}
-	for _, r := range reg.All() {
-		h.live[r.Slug()] = &liveRoom{room: r, members: map[string]*session{}}
+	return &Handler{reg: reg, media: media, origins: origins, log: log, live: map[string]*liveRoom{}}
+}
+
+// lookup returns the live state of a registered room, creating it on first use. Rooms can be
+// created and deleted at runtime; a re-created slug gets fresh state.
+func (h *Handler) lookup(slug string) (*liveRoom, bool) {
+	r, ok := h.reg.Get(slug)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	lr, have := h.live[slug]
+	if !ok {
+		// A deleted room keeps serving the sessions still inside it.
+		return lr, have && len(lr.members) > 0
 	}
-	return h
+	if !have || lr.room != r {
+		lr = &liveRoom{room: r, members: map[string]*session{}}
+		h.live[slug] = lr
+	}
+	return lr, true
 }
 
 // SendOffer implements sfu.Signaler for one session.
@@ -148,7 +162,7 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 				s.log.Debug("candidate", "err", err)
 			}
 		case "mute":
-			lr := h.live[s.slug]
+			lr, _ := h.lookup(s.slug)
 			if lr.room.SetMuted(s.id, *m.Muted) {
 				h.broadcast(lr)
 			}
@@ -173,7 +187,7 @@ func newID() string {
 // join validates the request, admits the participant and starts media. On
 // failure it returns a nil session plus the error code and message.
 func (h *Handler) join(conn *websocket.Conn, cancel context.CancelFunc, m ClientMessage) (*session, string, string) {
-	lr, ok := h.live[m.Room]
+	lr, ok := h.lookup(m.Room)
 	if !ok {
 		return nil, CodeBadRoom, "no such room"
 	}
@@ -231,7 +245,7 @@ func (lr *liveRoom) membersExcept(id string) []*session {
 }
 
 func (h *Handler) leave(s *session) {
-	lr := h.live[s.slug]
+	lr, _ := h.lookup(s.slug)
 	h.mu.Lock()
 	if _, ok := lr.members[s.id]; !ok {
 		h.mu.Unlock()
@@ -269,7 +283,7 @@ func (h *Handler) broadcast(lr *liveRoom) {
 }
 
 func (h *Handler) handleShare(s *session, action string) {
-	lr := h.live[s.slug]
+	lr, _ := h.lookup(s.slug)
 	switch action {
 	case "start":
 		if err := lr.room.StartShare(s.id); err != nil {

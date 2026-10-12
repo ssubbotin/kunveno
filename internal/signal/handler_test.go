@@ -371,3 +371,14 @@ func TestEndOfCandidatesKeepsSession(t *testing.T) {
 		}
 	}
 }
+
+// Rooms created through the API after the handler started must accept joins.
+func TestJoinRoomCreatedAtRuntime(t *testing.T) {
+	e := newEnv(t, 15)
+	if _, err := e.h.reg.Create("Retro", "4321"); err != nil {
+		t.Fatal(err)
+	}
+	c := dial(t, e)
+	send(t, c, `{"type":"join","room":"retro","pin":"4321","name":"Ann"}`)
+	expect(t, c, "joined")
+}

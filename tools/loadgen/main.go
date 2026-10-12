@@ -27,7 +27,7 @@ type serverMsg struct {
 }
 
 var (
-	tracksReceived atomic.Int64
+	tracksReceived  atomic.Int64
 	packetsReceived atomic.Int64
 	joined          atomic.Int64
 )

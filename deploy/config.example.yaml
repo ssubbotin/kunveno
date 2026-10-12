@@ -6,6 +6,7 @@ media:
   udp_port: 7000                # one UDP port for all media; open it on the VPN interface only
   advertise_ip: 10.8.0.1        # the VPN address browsers will send media to
   share_max_kbps: 2500
+# rooms_file: /var/lib/kunveno/rooms.json   # rooms created in the lobby; default shown
 rooms:
   - slug: ops
     name: Operations
