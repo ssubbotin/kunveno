@@ -21,6 +21,8 @@ type Participant struct {
 	Name  string
 	Muted bool
 	Bot   bool // a server-side helper such as the echo, not a person
+	// Quality is the connection grade ("good", "fair", "poor"), empty until measured.
+	Quality string
 }
 
 // Snapshot is the full public state of a room.
@@ -188,4 +190,16 @@ func (r *Room) Snapshot() Snapshot {
 		s.Participants = append(s.Participants, *r.members[id])
 	}
 	return s
+}
+
+// SetQuality records a participant's connection grade and reports whether it changed.
+func (r *Room) SetQuality(id, q string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	p, ok := r.members[id]
+	if !ok || p.Quality == q {
+		return false
+	}
+	p.Quality = q
+	return true
 }

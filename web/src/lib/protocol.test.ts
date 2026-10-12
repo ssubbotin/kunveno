@@ -23,4 +23,9 @@ describe('parseServerMessage', () => {
     const old = parseServerMessage('{"type":"participants","participants":[],"sharer":""}');
     expect(old).toEqual({ type: 'participants', participants: [], sharer: '', echo: false });
   });
+  it('keeps known quality grades and drops anything else', () => {
+    const m = parseServerMessage('{"type":"participants","participants":[{"id":"a","name":"Ann","muted":false,"quality":"poor"},{"id":"b","name":"Bob","muted":false,"quality":"excellent"},{"id":"c","name":"Cid","muted":false}],"sharer":""}');
+    if (m.type !== 'participants') throw new Error('type');
+    expect(m.participants.map((p) => p.quality)).toEqual(['poor', undefined, undefined]);
+  });
 });

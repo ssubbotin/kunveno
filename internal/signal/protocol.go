@@ -105,6 +105,8 @@ type ParticipantInfo struct {
 	Name  string `json:"name"`
 	Muted bool   `json:"muted"`
 	Bot   bool   `json:"bot,omitempty"`
+	// Quality is the connection grade: "good", "fair" or "poor"; absent until measured.
+	Quality string `json:"quality,omitempty"`
 }
 
 type roomInfo struct {

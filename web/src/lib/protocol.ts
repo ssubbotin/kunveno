@@ -1,5 +1,7 @@
 // bot marks a server-side helper such as the echo; the parser always fills it in.
-export type Participant = { id: string; name: string; muted: boolean; bot?: boolean };
+export type Quality = 'good' | 'fair' | 'poor';
+export type Participant = { id: string; name: string; muted: boolean; bot?: boolean; quality?: Quality };
+const QUALITIES: readonly string[] = ['good', 'fair', 'poor'];
 
 export type ServerMessage =
   | { type: 'joined'; self: Participant; room: { slug: string; name: string } }
@@ -47,7 +49,10 @@ export function parseServerMessage(raw: string): ServerMessage {
       if (!Array.isArray(v.participants) || !v.participants.every(isParticipant) || typeof v.sharer !== 'string') bad('participants');
       return {
         type: 'participants',
-        participants: v.participants.map((p: Participant) => ({ id: p.id, name: p.name, muted: p.muted, bot: p.bot === true })),
+        participants: v.participants.map((p: Participant) => ({
+          id: p.id, name: p.name, muted: p.muted, bot: p.bot === true,
+          quality: QUALITIES.includes(p.quality as string) ? p.quality : undefined,
+        })),
         sharer: v.sharer,
         echo: v.echo === true,
       };

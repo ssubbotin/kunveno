@@ -4,6 +4,9 @@
     participants: Participant[]; selfId: string; sharer: string; speaking: Record<string, boolean>; compact?: boolean;
   } = $props();
 
+  const qualityText = { good: 'Связь хорошая', fair: 'Связь средняя: возможны задержки и пропуски', poor: 'Связь плохая: звук может прерываться' };
+  const bars = { good: 3, fair: 2, poor: 1 };
+
   function initials(name: string): string {
     const parts = name.trim().split(/\s+/).filter(Boolean);
     return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase() || '?';
@@ -28,6 +31,14 @@
           {#if p.id === sharer}<span class="share">показывает экран</span>{/if}
         </span>
       </span>
+      {#if p.quality && !p.bot}
+        <span class="signal {p.quality}" title={qualityText[p.quality]}>
+          <svg viewBox="0 0 16 14" aria-hidden="true">
+            {#each [1, 2, 3] as i (i)}<rect x={(i - 1) * 5.5} y={14 - i * 4.5} width="4" height={i * 4.5} rx="1" class:on={i <= bars[p.quality]} />{/each}
+          </svg>
+          <span class="sr">{qualityText[p.quality]}</span>
+        </span>
+      {/if}
       {#if p.muted}
         <span class="muted" title="Микрофон выключен">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5a3 3 0 0 1 6 0v6M5 11a7 7 0 0 0 11.5 5.4M12 18v3M4 4l16 16" /></svg>
@@ -68,6 +79,13 @@
     display: grid; place-items: center; background: rgba(227, 161, 59, .15);
   }
   .muted svg { width: 1rem; height: 1rem; fill: none; stroke: var(--caution); stroke-width: 2; stroke-linecap: round; }
+  .signal { position: absolute; top: .7rem; left: .7rem; display: grid; }
+  .signal svg { width: 1rem; height: .9rem; }
+  .signal rect { fill: var(--line); }
+  .signal.good rect.on { fill: var(--ok); }
+  .signal.fair rect.on { fill: var(--caution); }
+  .signal.poor rect.on { fill: var(--danger); }
+  .compact .signal { top: 50%; left: auto; right: 2.9rem; transform: translateY(-50%); }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
   .compact { grid-template-columns: 1fr; gap: .4rem; }

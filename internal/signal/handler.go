@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"github.com/ssubbotin/kunveno/internal/metrics"
+	"github.com/ssubbotin/kunveno/internal/quality"
 	"log/slog"
 	"net"
 	"net/http"
@@ -29,6 +30,7 @@ type MediaPeer interface {
 	Subscribe(from sfu.Source, kind sfu.Kind) error
 	Unsubscribe(from sfu.Source, kind sfu.Kind) error
 	Close() error
+	Sample() (quality.Sample, bool)
 }
 
 // Media creates media peers; the sfu.Engine is wrapped to satisfy it in main.
@@ -48,6 +50,8 @@ type Handler struct {
 	media   Media
 	origins []string
 	log     *slog.Logger
+
+	qualityEvery time.Duration // how often connection quality is sampled
 
 	mu   sync.Mutex
 	live map[string]*liveRoom // slug -> members
@@ -69,7 +73,7 @@ type session struct {
 }
 
 func New(reg *room.Registry, media Media, origins []string, log *slog.Logger) *Handler {
-	return &Handler{reg: reg, media: media, origins: origins, log: log, live: map[string]*liveRoom{}}
+	return &Handler{reg: reg, media: media, origins: origins, log: log, live: map[string]*liveRoom{}, qualityEvery: 3 * time.Second}
 }
 
 // lookup returns the live state of a registered room, creating it on first use. Rooms can be
@@ -166,6 +170,7 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 		return
 	}
 	defer h.leave(s)
+	go h.watchQuality(ctx, s)
 	for {
 		m, err := readClient(ctx, conn)
 		if err != nil {
@@ -337,7 +342,7 @@ func (h *Handler) broadcast(lr *liveRoom) {
 	snap := lr.room.Snapshot()
 	list := make([]ParticipantInfo, len(snap.Participants))
 	for i, p := range snap.Participants {
-		list[i] = ParticipantInfo{ID: p.ID, Name: p.Name, Muted: p.Muted, Bot: p.Bot}
+		list[i] = ParticipantInfo{ID: p.ID, Name: p.Name, Muted: p.Muted, Bot: p.Bot, Quality: p.Quality}
 	}
 	msg := Participants(list, snap.Sharer, snap.Echo)
 	h.mu.Lock()
@@ -446,4 +451,41 @@ func resultLabel(code string) string {
 		return "ok"
 	}
 	return code
+}
+
+// watchQuality samples the session's connection, publishes grade changes to the room and
+// records the raw numbers in metrics.
+func (h *Handler) watchQuality(ctx context.Context, s *session) {
+	t := time.NewTicker(h.qualityEvery)
+	defer t.Stop()
+	var tr quality.Tracker
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		sample, ok := s.peer.Sample()
+		if !ok {
+			continue
+		}
+		if !s.bot {
+			metrics.LossRatio.WithLabelValues("up").Observe(sample.UpLoss)
+			metrics.LossRatio.WithLabelValues("down").Observe(sample.DownLoss)
+			metrics.JitterSeconds.Observe(sample.Jitter.Seconds())
+			if sample.RTT > 0 {
+				metrics.RTTSeconds.Observe(sample.RTT.Seconds())
+			}
+		}
+		grade, changed := tr.Update(sample)
+		if !changed {
+			continue
+		}
+		lr, ok := h.lookup(s.slug)
+		if ok && lr.room.SetQuality(s.id, grade) {
+			s.log.Info("connection quality", "grade", grade, "up_loss", sample.UpLoss, "down_loss", sample.DownLoss,
+				"rtt", sample.RTT.String(), "jitter", sample.Jitter.String())
+			h.broadcast(lr)
+		}
+	}
 }

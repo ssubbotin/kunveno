@@ -59,6 +59,18 @@ var (
 		Name: "kunveno_connect_seconds", Help: "Time from join to an established media connection, by transport.",
 		Buckets: []float64{0.25, 0.5, 1, 2, 5, 10, 20, 45},
 	}, []string{"transport"})
+	RTTSeconds = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name: "kunveno_rtt_seconds", Help: "Round trip between server and participants, sampled every few seconds.",
+		Buckets: []float64{0.01, 0.025, 0.05, 0.1, 0.2, 0.4, 0.8},
+	})
+	LossRatio = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name: "kunveno_packet_loss_ratio", Help: "Audio packet loss, sampled every few seconds, by direction (up: participant to server, down: server to participant).",
+		Buckets: []float64{0.001, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2},
+	}, []string{"direction"})
+	JitterSeconds = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name: "kunveno_jitter_seconds", Help: "Jitter of participants' audio as received by the server, sampled every few seconds.",
+		Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1},
+	})
 	Transports = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "kunveno_media_connections_total", Help: "Established media connections by transport (udp or tcp).",
 	}, []string{"transport"})
@@ -91,6 +103,7 @@ func NewRegistry(rooms *room.Registry, version string) *prometheus.Registry {
 		collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		build, roomCollector{rooms},
 		Joins, Leaves, Sessions, SessionSeconds, Messages, BadMessages, MediaFailed,
+		RTTSeconds, LossRatio, JitterSeconds,
 		RTPPackets, RTPBytes, RTPSentPackets, RTPSentBytes, ActiveConnections, ConnectSeconds,
 		PeerStates, Transports, Offers, NegotiationErrors, KeyframeRequests,
 		RoomsCreated, RoomsDeleted,
@@ -128,6 +141,7 @@ var (
 	participantsDesc = prometheus.NewDesc("kunveno_room_participants", "Participants in the room by kind (person or bot).", []string{"room", "kind"}, nil)
 	capacityDesc     = prometheus.NewDesc("kunveno_room_capacity", "Maximum participants of the room.", []string{"room"}, nil)
 	sharingDesc      = prometheus.NewDesc("kunveno_room_sharing", "1 while someone shares a screen in the room.", []string{"room"}, nil)
+	qualityDesc      = prometheus.NewDesc("kunveno_participants_by_quality", "People in calls by connection grade (good, fair, poor, unknown).", []string{"grade"}, nil)
 	echoDesc         = prometheus.NewDesc("kunveno_room_echo", "1 when the room asked for the echo helper.", []string{"room"}, nil)
 )
 
@@ -135,7 +149,7 @@ var (
 type roomCollector struct{ reg *room.Registry }
 
 func (c roomCollector) Describe(ch chan<- *prometheus.Desc) {
-	for _, d := range []*prometheus.Desc{roomsDesc, participantsDesc, capacityDesc, sharingDesc, echoDesc} {
+	for _, d := range []*prometheus.Desc{roomsDesc, participantsDesc, capacityDesc, sharingDesc, echoDesc, qualityDesc} {
 		ch <- d
 	}
 }
@@ -143,14 +157,25 @@ func (c roomCollector) Describe(ch chan<- *prometheus.Desc) {
 func (c roomCollector) Collect(ch chan<- prometheus.Metric) {
 	rooms := c.reg.All()
 	ch <- prometheus.MustNewConstMetric(roomsDesc, prometheus.GaugeValue, float64(len(rooms)))
+	grades := map[string]float64{"good": 0, "fair": 0, "poor": 0, "unknown": 0}
+	defer func() {
+		for g, n := range grades {
+			ch <- prometheus.MustNewConstMetric(qualityDesc, prometheus.GaugeValue, n, g)
+		}
+	}()
 	for _, r := range rooms {
 		snap := r.Snapshot()
 		var people, bots float64
 		for _, p := range snap.Participants {
 			if p.Bot {
 				bots++
+				continue
+			}
+			people++
+			if p.Quality == "" {
+				grades["unknown"]++
 			} else {
-				people++
+				grades[p.Quality]++
 			}
 		}
 		slug := r.Slug()

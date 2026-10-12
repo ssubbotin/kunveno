@@ -1,10 +1,12 @@
 package sfu
 
 import (
+	"github.com/pion/interceptor"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/ssubbotin/kunveno/internal/metrics"
+	"github.com/ssubbotin/kunveno/internal/quality"
 	"log/slog"
 	"strings"
 	"sync"
@@ -28,7 +30,12 @@ func newBrowser(t *testing.T) *webrtc.PeerConnection {
 	}
 	se := webrtc.SettingEngine{}
 	se.SetIncludeLoopbackCandidate(true)
-	pc, err := webrtc.NewAPI(webrtc.WithMediaEngine(m), webrtc.WithSettingEngine(se)).NewPeerConnection(webrtc.Configuration{})
+	// Real browsers send RTCP receiver reports; the default interceptors make the test client do so.
+	reg := &interceptor.Registry{}
+	if err := webrtc.RegisterDefaultInterceptors(m, reg); err != nil {
+		t.Fatal(err)
+	}
+	pc, err := webrtc.NewAPI(webrtc.WithMediaEngine(m), webrtc.WithSettingEngine(se), webrtc.WithInterceptorRegistry(reg)).NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +118,17 @@ func TestAudioFlowsBetweenTwoPeers(t *testing.T) {
 		t.Fatal(err)
 	}
 	gotTrack := make(chan *webrtc.TrackRemote, 1)
-	browserB.OnTrack(func(tr *webrtc.TrackRemote, _ *webrtc.RTPReceiver) { gotTrack <- tr })
+	browserB.OnTrack(func(tr *webrtc.TrackRemote, r *webrtc.RTPReceiver) {
+		// Like a browser, process the server's sender reports so receiver reports echo them.
+		go func() {
+			for {
+				if _, _, err := r.ReadRTCP(); err != nil {
+					return
+				}
+			}
+		}()
+		gotTrack <- tr
+	})
 
 	done := make(chan struct{})
 	defer close(done)
@@ -165,9 +182,28 @@ func TestAudioFlowsBetweenTwoPeers(t *testing.T) {
 	if got := histogramCount(t, metrics.ConnectSeconds.WithLabelValues("udp")) - connectsBefore; got != 2 {
 		t.Errorf("connect time observations = %v, want 2", got)
 	}
+	// Quality sample: A's audio arrives without loss; B reports on what it receives, giving an RTT.
+	var sa, sb quality.Sample
+	var okA, okB bool
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		sa, okA = peerA.Sample()
+		sb, okB = peerB.Sample()
+		if okA && okB && sb.RTT > 0 {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if !okA || sa.UpLoss != 0 {
+		t.Errorf("peer A sample = %+v ok=%v, want lossless uplink", sa, okA)
+	}
+	if !okB || sb.RTT <= 0 || sb.RTT > time.Second {
+		t.Errorf("peer B sample = %+v ok=%v, want an RTT from its receiver reports", sb, okB)
+	}
+
 	_ = peerA.Close()
 	_ = peerB.Close()
-	deadline := time.Now().Add(3 * time.Second)
+	deadline = time.Now().Add(3 * time.Second)
 	for testutil.ToFloat64(metrics.ActiveConnections.WithLabelValues("udp")) != activeBefore && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}

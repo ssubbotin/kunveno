@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/ssubbotin/kunveno/internal/metrics"
+	"github.com/ssubbotin/kunveno/internal/quality"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -28,15 +30,17 @@ type fakeMedia struct {
 }
 
 type fakePeer struct {
-	id      string
-	sig     sfu.Signaler
-	m       *fakeMedia
-	mu      sync.Mutex
-	tracks  map[sfu.Kind]*webrtc.TrackLocalStaticRTP
-	subs    map[string]int // "from/kind" -> subscribe count minus unsubscribe count
-	tcpOnly bool
-	closed  bool
-	offers  int
+	id       string
+	sig      sfu.Signaler
+	m        *fakeMedia
+	mu       sync.Mutex
+	tracks   map[sfu.Kind]*webrtc.TrackLocalStaticRTP
+	subs     map[string]int // "from/kind" -> subscribe count minus unsubscribe count
+	tcpOnly  bool
+	sample   quality.Sample
+	sampleOK bool
+	closed   bool
+	offers   int
 }
 
 func newFakeMedia() *fakeMedia { return &fakeMedia{peers: map[string]*fakePeer{}} }
@@ -68,7 +72,19 @@ func (p *fakePeer) Negotiate() {
 	p.mu.Unlock()
 	_ = p.sig.SendOffer("v=0 fake offer")
 }
-func (p *fakePeer) HandleAnswer(string) error                     { return nil }
+func (p *fakePeer) HandleAnswer(string) error { return nil }
+
+func (p *fakePeer) Sample() (quality.Sample, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.sample, p.sampleOK
+}
+
+func (p *fakePeer) setSample(s quality.Sample) {
+	p.mu.Lock()
+	p.sample, p.sampleOK = s, true
+	p.mu.Unlock()
+}
 func (p *fakePeer) AddICECandidate(webrtc.ICECandidateInit) error { return nil }
 func (p *fakePeer) Subscribe(from sfu.Source, k sfu.Kind) error {
 	if from.Track(k) == nil {
@@ -122,6 +138,7 @@ func newEnv(t *testing.T, capacity int) *env {
 	tw := &testWriter{t: t}
 	t.Cleanup(tw.stop)
 	h := New(reg, media, nil, slog.New(slog.NewTextHandler(tw, nil)))
+	h.qualityEvery = 20 * time.Millisecond
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	return &env{srv: srv, media: media, h: h}
@@ -519,4 +536,31 @@ func TestJoinRequestingTCPMakesATCPOnlyPeer(t *testing.T) {
 	if e.media.peer(id).tcpOnly {
 		t.Fatal("default peer is TCP-only")
 	}
+}
+
+func TestQualityGradeReachesTheRoom(t *testing.T) {
+	rttBefore := histogramCount(t, metrics.RTTSeconds)
+	e := newEnv(t, 15)
+	ca, ida := join(t, e, "Ann")
+	e.media.peer(ida).setSample(quality.Sample{UpLoss: 0.1, RTT: 80 * time.Millisecond})
+	for {
+		m := expect(t, ca, "participants")
+		if len(m.Participants) == 1 && m.Participants[0].Quality == quality.Poor {
+			break
+		}
+	}
+	if histogramCount(t, metrics.RTTSeconds) <= rttBefore {
+		t.Error("rtt not observed")
+	}
+}
+
+func histogramCount(t *testing.T, c prometheus.Collector) uint64 {
+	t.Helper()
+	ch := make(chan prometheus.Metric, 1)
+	c.Collect(ch)
+	var m dto.Metric
+	if err := (<-ch).Write(&m); err != nil {
+		t.Fatal(err)
+	}
+	return m.GetHistogram().GetSampleCount()
 }

@@ -23,6 +23,12 @@ func TestRoomCollectorReadsLiveState(t *testing.T) {
 	reg.Add(room.New("empty", "Empty", "1234", 30))
 
 	want := `
+# HELP kunveno_participants_by_quality People in calls by connection grade (good, fair, poor, unknown).
+# TYPE kunveno_participants_by_quality gauge
+kunveno_participants_by_quality{grade="fair"} 0
+kunveno_participants_by_quality{grade="good"} 0
+kunveno_participants_by_quality{grade="poor"} 0
+kunveno_participants_by_quality{grade="unknown"} 2
 # HELP kunveno_room_capacity Maximum participants of the room.
 # TYPE kunveno_room_capacity gauge
 kunveno_room_capacity{room="empty"} 30
