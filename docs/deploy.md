@@ -48,7 +48,9 @@ sudo systemctl start kunveno-server
 ## Docker Compose (alternative to the deb packages)
 nginx with the client, the server and the echo helper run from images that CI builds and publishes
 to GHCR (`.github/workflows/images.yml`): `ghcr.io/ssubbotin/kunveno-server`, `-web`, `-echo`.
-A tag `vX.Y.Z` publishes `X.Y.Z` and `latest`; pushes to `main` publish `main` and `sha-<commit>`.
+A tag `vX.Y.Z` publishes `X.Y.Z` and `latest`; pushes to `main` publish `main` and `sha-<commit>`;
+a pull request from a branch of this repository publishes a preview `pr-<number>` (set
+`KUNVENO_VERSION=pr-<number>` to try it on the host, then switch back to a release).
 CI checks every image before pushing (`deploy/docker/check-image.sh`): no sources, no source maps,
 Go binaries built with `-trimpath -s -w`. The images are private.
 
