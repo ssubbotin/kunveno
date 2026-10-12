@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ssubbotin/kunveno/internal/metrics"
+	"github.com/ssubbotin/kunveno/internal/quality"
 	"io"
 	"log/slog"
 	"strings"
@@ -42,6 +43,12 @@ type Handlers struct {
 type Peer struct {
 	created     time.Time
 	upTransport string // transport counted in ActiveConnections while connected; guarded by mu
+	prevLost    int64  // cumulative uplink counters at the previous Sample; guarded by mu
+	prevRecv    int64
+	rrLast      map[uint32][2]uint32 // per SSRC: highest sequence and total lost of the last report; guarded by mu
+	downExp     int64                // packets expected and lost since the last Sample; guarded by mu
+	downLost    int64
+	rtt         time.Duration // latest round trip from its receiver reports; guarded by mu
 	id          string
 	pc          *webrtc.PeerConnection
 	sig         Signaler
@@ -226,12 +233,16 @@ func (p *Peer) readRTCP(sender *webrtc.RTPSender, from Source, kind Kind) {
 		if err != nil {
 			return
 		}
-		if kind != KindScreen {
-			continue
-		}
 		for _, pkt := range pkts {
-			if _, ok := pkt.(*rtcp.PictureLossIndication); ok {
-				from.RequestKeyframe(kind)
+			switch v := pkt.(type) {
+			case *rtcp.PictureLossIndication:
+				if kind == KindScreen {
+					from.RequestKeyframe(kind)
+				}
+			case *rtcp.ReceiverReport:
+				if kind == KindAudio {
+					p.noteReceiverReport(v)
+				}
 			}
 		}
 	}
@@ -352,4 +363,110 @@ func withoutUDPCandidates(sdp string) string {
 		out = append(out, l)
 	}
 	return strings.Join(out, "\r\n")
+}
+
+// Sample measures this participant's connection from the peer connection statistics. Uplink
+// loss covers the time since the previous call. ok is false until there is anything to measure.
+func (p *Peer) Sample() (s quality.Sample, ok bool) {
+	var lost, received int64
+	inbound := func(v webrtc.InboundRTPStreamStats) {
+		if v.Kind != "audio" {
+			return
+		}
+		ok = true
+		lost += int64(v.PacketsLost)
+		received += int64(v.PacketsReceived)
+		s.Jitter = max(s.Jitter, seconds(v.Jitter))
+	}
+	// pion v4.2 does not report remote-inbound stats; kept in case a later version does.
+	remote := func(v webrtc.RemoteInboundRTPStreamStats) {
+		if v.Kind != "audio" {
+			return
+		}
+		ok = true
+		s.DownLoss = max(s.DownLoss, v.FractionLost)
+		s.RTT = max(s.RTT, seconds(v.RoundTripTime))
+	}
+	for _, st := range p.pc.GetStats() {
+		switch v := st.(type) {
+		case webrtc.InboundRTPStreamStats:
+			inbound(v)
+		case *webrtc.InboundRTPStreamStats:
+			inbound(*v)
+		case webrtc.RemoteInboundRTPStreamStats:
+			remote(v)
+		case *webrtc.RemoteInboundRTPStreamStats:
+			remote(*v)
+		}
+	}
+	p.mu.Lock()
+	dLost, dRecv := lost-p.prevLost, received-p.prevRecv
+	p.prevLost, p.prevRecv = lost, received
+	if p.rtt > 0 {
+		ok = true
+		s.RTT = max(s.RTT, p.rtt)
+	}
+	p.mu.Unlock()
+	s.DownLoss = max(s.DownLoss, p.takeDownLoss())
+	if dLost > 0 && dLost+dRecv > 0 {
+		s.UpLoss = float64(dLost) / float64(dLost+dRecv)
+	}
+	return s, ok
+}
+
+func seconds(f float64) time.Duration { return time.Duration(f * float64(time.Second)) }
+
+// noteReceiverReport records what the participant says about the audio we send it.
+func (p *Peer) noteReceiverReport(rr *rtcp.ReceiverReport) {
+	now := compactNTP(time.Now())
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.rrLast == nil {
+		p.rrLast = map[uint32][2]uint32{}
+	}
+	for _, r := range rr.Reports {
+		if rtt := rttFromReport(now, r.LastSenderReport, r.Delay); rtt > 0 {
+			p.rtt = rtt
+		}
+		if prev, seen := p.rrLast[r.SSRC]; seen && r.LastSequenceNumber > prev[0] {
+			p.downExp += int64(r.LastSequenceNumber - prev[0])
+			if r.TotalLost > prev[1] {
+				p.downLost += int64(r.TotalLost - prev[1])
+			}
+		}
+		p.rrLast[r.SSRC] = [2]uint32{r.LastSequenceNumber, r.TotalLost}
+	}
+}
+
+// takeDownLoss returns the downlink loss ratio since the previous call and starts a new window.
+func (p *Peer) takeDownLoss() float64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	exp, lost := p.downExp, p.downLost
+	p.downExp, p.downLost = 0, 0
+	if exp <= 0 || lost <= 0 {
+		return 0
+	}
+	return min(1, float64(lost)/float64(exp))
+}
+
+// rttFromReport applies RFC 3550 6.4.1: round trip = arrival - LSR - DLSR, all in compact NTP
+// (1/65536 s). Zero when no sender report was echoed yet or the result is not positive.
+func rttFromReport(nowCompact, lsr, dlsr uint32) time.Duration {
+	if lsr == 0 {
+		return 0
+	}
+	d := int64(nowCompact) - int64(lsr) - int64(dlsr)
+	if d <= 0 {
+		return 0
+	}
+	return time.Duration(d * int64(time.Second) / 65536)
+}
+
+// compactNTP is the middle 32 bits of the NTP timestamp of t.
+func compactNTP(t time.Time) uint32 {
+	const ntpEpochOffset = 2208988800
+	secs := uint64(t.Unix()) + ntpEpochOffset
+	frac := uint64(t.Nanosecond()) << 32 / 1e9
+	return uint32((secs<<32 | frac) >> 16)
 }

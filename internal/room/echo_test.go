@@ -48,3 +48,20 @@ func TestEchoRooms(t *testing.T) {
 		t.Fatalf("EchoRooms = %v", got)
 	}
 }
+
+func TestSetQuality(t *testing.T) {
+	r := New("testing", "Testing", "1234", 3)
+	_ = r.Join("a", "Ann", "1234")
+	if !r.SetQuality("a", "poor") {
+		t.Fatal("first grade not reported as a change")
+	}
+	if r.SetQuality("a", "poor") {
+		t.Fatal("same grade reported as a change")
+	}
+	if r.SetQuality("nobody", "good") {
+		t.Fatal("unknown participant changed")
+	}
+	if got := r.Snapshot().Participants[0].Quality; got != "poor" {
+		t.Fatalf("snapshot quality = %q", got)
+	}
+}
