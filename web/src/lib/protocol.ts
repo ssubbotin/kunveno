@@ -1,10 +1,11 @@
-export type Participant = { id: string; name: string; muted: boolean };
+// bot marks a server-side helper such as the echo; the parser always fills it in.
+export type Participant = { id: string; name: string; muted: boolean; bot?: boolean };
 
 export type ServerMessage =
   | { type: 'joined'; self: Participant; room: { slug: string; name: string } }
   | { type: 'error'; code: string; message: string }
   | { type: 'offer'; sdp: string }
-  | { type: 'participants'; participants: Participant[]; sharer: string };
+  | { type: 'participants'; participants: Participant[]; sharer: string; echo: boolean };
 
 export type ClientMessage =
   | { type: 'join'; room: string; pin: string; name: string }
@@ -12,6 +13,7 @@ export type ClientMessage =
   | { type: 'candidate'; candidate: RTCIceCandidateInit }
   | { type: 'mute'; muted: boolean }
   | { type: 'share'; action: 'start' | 'stop' }
+  | { type: 'echo'; on: boolean }
   | { type: 'leave' };
 
 function bad(what: string): never {
@@ -43,7 +45,12 @@ export function parseServerMessage(raw: string): ServerMessage {
       return { type: 'offer', sdp: v.sdp };
     case 'participants':
       if (!Array.isArray(v.participants) || !v.participants.every(isParticipant) || typeof v.sharer !== 'string') bad('participants');
-      return { type: 'participants', participants: v.participants, sharer: v.sharer };
+      return {
+        type: 'participants',
+        participants: v.participants.map((p: Participant) => ({ id: p.id, name: p.name, muted: p.muted, bot: p.bot === true })),
+        sharer: v.sharer,
+        echo: v.echo === true,
+      };
     default:
       return bad(`type ${v.type}`);
   }

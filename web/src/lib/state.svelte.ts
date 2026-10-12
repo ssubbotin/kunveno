@@ -14,6 +14,7 @@ export class RoomState {
   sharer = $state('');
   muted = $state(false);
   speaking = $state<Record<string, boolean>>({});
+  echo = $state(false);
 
   get isSharing(): boolean {
     return this.sharer !== '' && this.sharer === this.selfId;
@@ -21,6 +22,10 @@ export class RoomState {
 
   get selfSpeaking(): boolean {
     return this.selfId !== '' && !!this.speaking[this.selfId];
+  }
+
+  get peopleCount(): number {
+    return this.participants.filter((p) => !p.bot).length;
   }
 
   get others(): Participant[] {
@@ -34,6 +39,7 @@ export class RoomState {
     this.participants = [];
     this.sharer = '';
     this.speaking = {};
+    this.echo = false;
   }
 
   apply(msg: ServerMessage): void {
@@ -49,6 +55,7 @@ export class RoomState {
       case 'participants':
         this.participants = msg.participants;
         this.sharer = msg.sharer;
+        this.echo = msg.echo;
         break;
       case 'error':
         this.status = 'error';

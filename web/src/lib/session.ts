@@ -131,6 +131,11 @@ export class Session {
     this.sig?.send({ type: 'mute', muted });
   }
 
+  // Asks the server to bring the echo helper into this room, or to remove it.
+  setEcho(on: boolean): void {
+    this.sig?.send({ type: 'echo', on });
+  }
+
   async startShare(): Promise<void> {
     if (this.screenTrack) return;
     let stream: MediaStream;

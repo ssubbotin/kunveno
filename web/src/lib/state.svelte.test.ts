@@ -7,10 +7,10 @@ describe('RoomState', () => {
     s.apply({ type: 'joined', self: { id: 'a', name: 'Ann', muted: false }, room: { slug: 'ops', name: 'Operations' } });
     expect(s.selfId).toBe('a');
     expect(s.roomName).toBe('Operations');
-    s.apply({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: false }, { id: 'b', name: 'Bob', muted: true }], sharer: 'b' });
+    s.apply({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: false }, { id: 'b', name: 'Bob', muted: true }], sharer: 'b', echo: false });
     expect(s.others.map((p) => p.id)).toEqual(['b']);
     expect(s.isSharing).toBe(false);
-    s.apply({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: false }], sharer: 'a' });
+    s.apply({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: false }], sharer: 'a', echo: false });
     expect(s.isSharing).toBe(true);
   });
 
@@ -34,5 +34,13 @@ describe('RoomState', () => {
     s.apply({ type: 'joined', self: { id: 'a', name: 'Ann', muted: false }, room: { slug: 'ops', name: 'Operations' } });
     s.speaking.a = true;
     expect(s.selfSpeaking).toBe(true);
+  });
+  it('tracks the echo flag and keeps bots out of the people count', () => {
+    const s = new RoomState();
+    s.apply({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: false, bot: false }, { id: 'e', name: 'Echo', muted: false, bot: true }], sharer: '', echo: true });
+    expect(s.echo).toBe(true);
+    expect(s.peopleCount).toBe(1);
+    s.reset();
+    expect(s.echo).toBe(false);
   });
 });
