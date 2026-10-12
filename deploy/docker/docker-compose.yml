@@ -30,3 +30,22 @@ services:
       KUNVENO_UPSTREAM: ${KUNVENO_UPSTREAM:-127.0.0.1:8080}
     volumes:
       - ./certs:/etc/ssl/kunveno:ro
+
+  # Sound check: joins ECHO_ROOM as "Echo" and plays the room's audio back after ECHO_DELAY.
+  # Optional. Enable: docker compose --profile echo up -d echo. Disable: docker compose stop echo.
+  echo:
+    profiles: [echo]
+    build:
+      context: .
+      dockerfile: Dockerfile.echo
+    image: kunveno-echo:${KUNVENO_VERSION:-local}
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      - server
+    environment:
+      ECHO_URL: ws://${KUNVENO_UPSTREAM:-127.0.0.1:8080}/ws
+      ECHO_ROOM: ${ECHO_ROOM:-}
+      ECHO_PIN: ${ECHO_PIN:-}
+      ECHO_NAME: ${ECHO_NAME:-Echo (2 s delay)}
+      ECHO_DELAY: ${ECHO_DELAY:-2s}

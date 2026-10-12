@@ -16,6 +16,7 @@ test: test-go test-web
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o bin/kunveno-server ./cmd/kunveno-server
+	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o bin/kunveno-echo ./cmd/kunveno-echo
 	cd web && npm run build
 
 deb: build
@@ -27,7 +28,7 @@ deb: build
 # source maps removed (they embed the client sources).
 docker-bundle: build
 	rm -rf dist/kunveno-docker && mkdir -p dist/kunveno-docker
-	cp bin/kunveno-server deploy/docker/Dockerfile.server deploy/docker/Dockerfile.web deploy/docker/nginx.conf.template deploy/docker/docker-compose.yml dist/kunveno-docker/
+	cp bin/kunveno-server bin/kunveno-echo deploy/docker/Dockerfile.server deploy/docker/Dockerfile.echo deploy/docker/Dockerfile.web deploy/docker/nginx.conf.template deploy/docker/docker-compose.yml dist/kunveno-docker/
 	cp deploy/docker/env.example dist/kunveno-docker/env.example
 	cp deploy/config.example.yaml dist/kunveno-docker/config.example.yaml
 	cp -r web/dist dist/kunveno-docker/web

@@ -56,3 +56,11 @@ docker compose up -d --build
 ```
 Upgrade: rsync a new bundle (it never overwrites `config.yaml`, `.env` or `certs/`), then
 `docker compose up -d --build`. Logs: `docker compose logs -f server`.
+
+### Sound check (echo participant)
+`kunveno-echo` joins one room as an ordinary participant and plays the room's audio back after a
+delay (2 s by default), one speaker at a time. Set `ECHO_ROOM` and `ECHO_PIN` in `.env`, then:
+```
+docker compose --profile echo up -d echo   # enable
+docker compose stop echo                   # disable
+```
