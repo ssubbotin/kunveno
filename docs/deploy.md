@@ -54,6 +54,11 @@ mkdir -p certs                       # fullchain.pem and privkey.pem (see sectio
 mkdir -p data && sudo chown 10001 data && chmod 700 data   # rooms created in the lobby
 docker compose up -d --build
 ```
+Logs go to the host's systemd journal (Docker `journald` driver), so they survive container
+recreation and reboots; retention follows the journal. Last week of server logs:
+`journalctl -t kunveno-server --since "7 days ago" -o cat`; follow live with `-f`. The other
+services log as `kunveno-web`, `kunveno-echo`, `kunveno-prometheus`, `kunveno-grafana`.
+
 Upgrade: rsync a new bundle (it never overwrites `config.yaml`, `.env` or `certs/`), then
 `docker compose up -d --build`. Logs: `docker compose logs -f server`.
 
