@@ -23,6 +23,7 @@ type Participant struct {
 	Bot   bool // a server-side helper such as the echo, not a person
 	// Quality is the connection grade ("good", "fair", "poor"), empty until measured.
 	Quality string
+	Camera  bool // the participant's camera is on
 }
 
 // Snapshot is the full public state of a room.
@@ -201,5 +202,17 @@ func (r *Room) SetQuality(id, q string) bool {
 		return false
 	}
 	p.Quality = q
+	return true
+}
+
+// SetCamera records whether a participant's camera is on and reports whether it changed.
+func (r *Room) SetCamera(id string, on bool) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	p, ok := r.members[id]
+	if !ok || p.Camera == on {
+		return false
+	}
+	p.Camera = on
 	return true
 }

@@ -67,6 +67,7 @@ type liveRoom struct {
 type session struct {
 	id, name, slug string
 	bot            bool // the echo helper
+	noVideo        bool // declined other participants' cameras; guarded by Handler.mu
 	joined         time.Time
 	conn           *websocket.Conn
 	peer           MediaPeer
@@ -224,6 +225,13 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 			}
 		case "share":
 			h.handleShare(s, m.Action)
+		case "camera":
+			lr, _ := h.lookup(s.slug)
+			if lr.room.SetCamera(s.id, *m.On) {
+				h.broadcast(lr)
+			}
+		case "video":
+			h.setReceiveVideo(s, *m.Receive)
 		case "echo":
 			if s.bot {
 				continue
@@ -297,6 +305,9 @@ func (h *Handler) join(conn *websocket.Conn, cancel context.CancelFunc, m Client
 				s.log.Warn("subscribe screen", "from", o.id, "err", err)
 			}
 		}
+		if err := peer.Subscribe(o.peer, sfu.KindCamera); err != nil && !errors.Is(err, sfu.ErrNoTrack) {
+			s.log.Warn("subscribe camera", "from", o.id, "err", err)
+		}
 	}
 	if err := s.write(Joined(ParticipantInfo{ID: id, Name: m.Name}, lr.room.Slug(), lr.room.Name())); err != nil {
 		h.leave(s)
@@ -332,6 +343,7 @@ func (h *Handler) leave(s *session) {
 	for _, o := range others {
 		_ = o.peer.Unsubscribe(s.peer, sfu.KindAudio)
 		_ = o.peer.Unsubscribe(s.peer, sfu.KindScreen)
+		_ = o.peer.Unsubscribe(s.peer, sfu.KindCamera)
 	}
 	_ = s.peer.Close()
 	s.log.Info("left")
@@ -364,7 +376,7 @@ func (h *Handler) broadcast(lr *liveRoom) {
 	snap := lr.room.Snapshot()
 	list := make([]ParticipantInfo, len(snap.Participants))
 	for i, p := range snap.Participants {
-		list[i] = ParticipantInfo{ID: p.ID, Name: p.Name, Muted: p.Muted, Bot: p.Bot, Quality: p.Quality}
+		list[i] = ParticipantInfo{ID: p.ID, Name: p.Name, Muted: p.Muted, Bot: p.Bot, Quality: p.Quality, Camera: p.Camera}
 	}
 	msg := Participants(list, snap.Sharer, snap.Echo)
 	h.mu.Lock()
@@ -408,6 +420,9 @@ func (h *Handler) subscribeAll(lr *liveRoom, from *session, kind sfu.Kind) {
 	others := lr.membersExcept(from.id)
 	h.mu.Unlock()
 	for _, o := range others {
+		if kind == sfu.KindCamera && h.declinesVideo(o) {
+			continue
+		}
 		if err := o.peer.Subscribe(from.peer, kind); err != nil {
 			o.log.Warn("subscribe", "from", from.id, "kind", kind.String(), "err", err)
 		}
@@ -514,3 +529,31 @@ func (h *Handler) watchQuality(ctx context.Context, s *session) {
 
 // PINLimiter is the wrong-PIN limiter, for sharing with the room API.
 func (h *Handler) PINLimiter() *ratelimit.Limiter { return h.pins }
+
+func (h *Handler) declinesVideo(s *session) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return s.noVideo
+}
+
+// setReceiveVideo drops or restores the session's subscriptions to everyone's camera, for
+// participants on a weak link who keep audio and the shared screen only.
+func (h *Handler) setReceiveVideo(s *session, receive bool) {
+	lr, _ := h.lookup(s.slug)
+	h.mu.Lock()
+	s.noVideo = !receive
+	others := lr.membersExcept(s.id)
+	h.mu.Unlock()
+	for _, o := range others {
+		var err error
+		if receive {
+			err = s.peer.Subscribe(o.peer, sfu.KindCamera)
+		} else {
+			err = s.peer.Unsubscribe(o.peer, sfu.KindCamera)
+		}
+		if err != nil && !errors.Is(err, sfu.ErrNoTrack) {
+			s.log.Warn("camera subscription", "from", o.id, "receive", receive, "err", err)
+		}
+	}
+	s.log.Info("receive video", "on", receive)
+}

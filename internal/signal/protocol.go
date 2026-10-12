@@ -48,9 +48,10 @@ type ClientMessage struct {
 	Candidate *webrtc.ICECandidateInit `json:"candidate,omitempty"`
 	Muted     *bool                    `json:"muted,omitempty"`
 	Action    string                   `json:"action,omitempty"`
-	Role      string                   `json:"role,omitempty"`  // "echo" for the local echo helper
-	Media     string                   `json:"media,omitempty"` // "tcp" after a failed UDP path
-	On        *bool                    `json:"on,omitempty"`
+	Role      string                   `json:"role,omitempty"`    // "echo" for the local echo helper
+	Media     string                   `json:"media,omitempty"`   // "tcp" after a failed UDP path
+	On        *bool                    `json:"on,omitempty"`      // echo, camera
+	Receive   *bool                    `json:"receive,omitempty"` // video: whether to receive cameras
 }
 
 // ParseClient decodes and validates one client frame.
@@ -83,9 +84,13 @@ func ParseClient(data []byte) (ClientMessage, error) {
 		if m.Candidate == nil {
 			return m, fmt.Errorf("%w: candidate", ErrBadMessage)
 		}
-	case "echo":
+	case "echo", "camera":
 		if m.On == nil {
-			return m, fmt.Errorf("%w: echo.on", ErrBadMessage)
+			return m, fmt.Errorf("%w: %s.on", ErrBadMessage, m.Type)
+		}
+	case "video":
+		if m.Receive == nil {
+			return m, fmt.Errorf("%w: video.receive", ErrBadMessage)
 		}
 	case "mute":
 		if m.Muted == nil {
@@ -110,6 +115,7 @@ type ParticipantInfo struct {
 	Bot   bool   `json:"bot,omitempty"`
 	// Quality is the connection grade: "good", "fair" or "poor"; absent until measured.
 	Quality string `json:"quality,omitempty"`
+	Camera  bool   `json:"camera,omitempty"`
 }
 
 type roomInfo struct {

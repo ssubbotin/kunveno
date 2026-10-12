@@ -16,6 +16,8 @@ func TestParseClientAccepts(t *testing.T) {
 		"share":     `{"type":"share","action":"start"}`,
 		"leave":     `{"type":"leave"}`,
 		"echo":      `{"type":"echo","on":true}`,
+		"camera":    `{"type":"camera","on":true}`,
+		"video":     `{"type":"video","receive":false}`,
 	}
 	for name, raw := range cases {
 		m, err := ParseClient([]byte(raw))
@@ -45,6 +47,8 @@ func TestParseClientRejects(t *testing.T) {
 		"mute no flag":    `{"type":"mute"}`,
 		"share bad":       `{"type":"share","action":"maybe"}`,
 		"echo no flag":    `{"type":"echo"}`,
+		"camera no flag":  `{"type":"camera"}`,
+		"video no flag":   `{"type":"video"}`,
 		"join bad media":  `{"type":"join","room":"ops","pin":"1234","name":"Ann","media":"carrier-pigeon"}`,
 		"join bad role":   `{"type":"join","room":"ops","pin":"1234","name":"Ann","role":"admin"}`,
 	}
