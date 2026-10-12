@@ -18,13 +18,14 @@ type Sample struct {
 }
 
 // Thresholds follow common VoIP guidance: under 1-2% loss and 150-200 ms of delay a call feels
-// fine; past 5% loss or 400 ms speech breaks up or people talk over each other.
+// fine; past 5% loss or 400 ms speech breaks up or people talk over each other. Jitter up to
+// ~40 ms is absorbed by the browser's jitter buffer; ICE-TCP alone runs at ~25 ms.
 func Grade(s Sample) string {
 	loss := max(s.UpLoss, s.DownLoss)
 	switch {
-	case loss >= 0.05 || s.RTT >= 400*time.Millisecond || s.Jitter >= 50*time.Millisecond:
+	case loss >= 0.05 || s.RTT >= 400*time.Millisecond || s.Jitter >= 80*time.Millisecond:
 		return Poor
-	case loss >= 0.015 || s.RTT >= 200*time.Millisecond || s.Jitter >= 25*time.Millisecond:
+	case loss >= 0.015 || s.RTT >= 200*time.Millisecond || s.Jitter >= 40*time.Millisecond:
 		return Fair
 	}
 	return Good

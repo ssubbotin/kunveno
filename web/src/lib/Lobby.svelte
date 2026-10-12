@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { build, repoUrl } from './build';
+  import MicCheck from './MicCheck.svelte';
 
   type RoomItem = { slug: string; name: string; participants: number; capacity: number; created: boolean };
   let { onJoin, error = '' }: { onJoin: (room: string, pin: string, name: string) => void; error?: string } = $props();
@@ -134,6 +135,7 @@
     {#if error}<p class="error">{error}</p>{/if}
     <label class="field"><span>Ваше имя</span><input bind:value={name} maxlength="32" autocomplete="name" required /></label>
     <label class="field"><span>PIN комнаты</span><input bind:value={pin} type="password" maxlength="16" required /></label>
+    <MicCheck />
     <button class="btn primary wide" type="submit" disabled={!selected}>
       {selected ? `Войти в «${selected.name}»` : 'Выберите комнату'}
     </button>
