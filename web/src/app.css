@@ -45,7 +45,7 @@ button, input { font: inherit; color: inherit; }
 .field span { color: var(--muted); font-size: .9rem; }
 .field input {
   padding: .65rem .75rem; border-radius: var(--radius-sm);
-  border: 1px solid var(--line); background: var(--ink);
+  border: 1px solid var(--line); background: var(--ink); width: 100%; min-width: 0;
 }
 .field input:focus-visible { outline-offset: 0; }
 .error { color: #f1b5b3; margin: 0; }

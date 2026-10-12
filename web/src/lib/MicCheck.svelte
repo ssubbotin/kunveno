@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { initials } from './initials';
   import { MIC_KEY, audioConstraints, dbfs, meterPercent, rmsOf } from './micLevel';
+
+  let { name = '' }: { name?: string } = $props();
 
   type Status = 'idle' | 'asking' | 'live' | 'denied';
   let status = $state<Status>('idle');
@@ -81,42 +84,65 @@
   });
 </script>
 
-<div class="mic">
-  <span class="label">Микрофон</span>
-  {#if status === 'live'}
-    <select value={selected} onchange={choose} aria-label="Микрофон">
-      {#each devices as d (d.deviceId)}
-        <option value={d.deviceId}>{d.deviceId === 'default' ? 'По умолчанию' : d.label || 'Микрофон'}</option>
-      {/each}
-    </select>
-    <div class="meter" role="meter" aria-label="Уровень микрофона" aria-valuemin="0" aria-valuemax="100" aria-valuenow={level}>
-      <span class="fill" class:hot={level >= 75} class:clip={level >= 92} style:width="{level}%"></span>
-      <span class="peak" style:left="{peak}%"></span>
-    </div>
-    <p class="hint" class:ok={heard} class:warn={silentTooLong && !heard}>
-      {#if heard}
-        Микрофон работает.
-      {:else if silentTooLong}
-        Звука нет. Выберите другой микрофон или проверьте, не выключен ли он в системе.
-      {:else}
-        Скажите что-нибудь: полоса должна двигаться.
-      {/if}
-    </p>
-  {:else}
-    <button class="btn quiet" type="button" onclick={start} disabled={status === 'asking'}>
-      {status === 'asking' ? 'Ждём разрешения браузера…' : 'Проверить микрофон'}
-    </button>
-    {#if status === 'denied'}
-      <p class="hint warn">Браузер не дал доступ к микрофону. Разрешите его в настройках сайта (значок слева от адреса).</p>
+<div class="check">
+  <!-- Preview: the avatar others will see; the camera picture goes here later (object-fit: cover). -->
+  <div class="preview">
+    <span class="avatar" class:live={status === 'live'} style:--ring="{Math.round(level * 0.22)}px" aria-hidden="true">{initials(name)}</span>
+    {#if status !== 'live'}
+      <button class="btn start" type="button" onclick={start} disabled={status === 'asking'}>
+        {status === 'asking' ? 'Ждём разрешения браузера…' : 'Проверить микрофон'}
+      </button>
     {/if}
+  </div>
+
+  {#if status === 'live'}
+    <label class="field"><span>Микрофон</span>
+      <select value={selected} onchange={choose}>
+        {#each devices as d (d.deviceId)}
+          <option value={d.deviceId}>{d.deviceId === 'default' ? 'По умолчанию' : d.label || 'Микрофон'}</option>
+        {/each}
+      </select>
+    </label>
+    <div class="level">
+      <div class="meter" role="meter" aria-label="Уровень микрофона" aria-valuemin="0" aria-valuemax="100" aria-valuenow={level}>
+        <span class="fill" class:hot={level >= 75} class:clip={level >= 92} style:width="{level}%"></span>
+        <span class="peak" style:left="{peak}%"></span>
+      </div>
+      <p class="hint" class:ok={heard} class:warn={silentTooLong && !heard}>
+        {#if heard}
+          Микрофон работает
+        {:else if silentTooLong}
+          Звука нет. Выберите другой микрофон или проверьте, не выключен ли он в системе.
+        {:else}
+          Скажите что-нибудь
+        {/if}
+      </p>
+    </div>
+  {:else if status === 'denied'}
+    <p class="hint warn">Браузер не дал доступ к микрофону. Разрешите его в настройках сайта (значок слева от адреса).</p>
   {/if}
 </div>
 
 <style>
-  .mic { display: grid; gap: .4rem; }
-  .label { color: var(--muted); font-size: .9rem; }
-  select { padding: .6rem .75rem; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--ink); color: inherit; font: inherit; }
-  .meter { position: relative; height: .6rem; border-radius: 999px; background: var(--ink); border: 1px solid var(--line); overflow: hidden; }
+  .check { display: grid; gap: .9rem; min-width: 0; }
+  .preview {
+    position: relative; height: clamp(10rem, 30vh, 17rem); display: grid; place-items: center; gap: 1rem;
+    background: radial-gradient(circle at 50% 45%, var(--panel-2), var(--ink) 70%);
+    border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
+  }
+  .avatar {
+    width: 6rem; height: 6rem; border-radius: 50%; display: grid; place-items: center;
+    background: var(--panel-2); font-size: 2rem; font-weight: 600;
+    box-shadow: 0 0 0 3px var(--line); transition: box-shadow 80ms linear;
+  }
+  .avatar.live { box-shadow: 0 0 0 3px var(--live), 0 0 0 var(--ring) var(--live-soft); }
+  .start { position: absolute; bottom: 1rem; }
+  select {
+    width: 100%; min-width: 0; padding: .6rem .75rem; border-radius: var(--radius-sm); border: 1px solid var(--line);
+    background: var(--ink); color: inherit; font: inherit; text-overflow: ellipsis;
+  }
+  .level { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .75rem; }
+  .meter { position: relative; height: .5rem; border-radius: 999px; background: var(--ink); border: 1px solid var(--line); overflow: hidden; }
   .fill { position: absolute; inset: 0 auto 0 0; background: var(--ok); transition: width 60ms linear; }
   .fill.hot { background: var(--caution); }
   .fill.clip { background: var(--danger); }
@@ -124,4 +150,5 @@
   .hint { margin: 0; font-size: .85rem; color: var(--muted); }
   .hint.ok { color: var(--ok); }
   .hint.warn { color: #f3cf92; }
+  .level .hint.warn { grid-column: 1 / -1; }
 </style>
