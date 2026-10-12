@@ -114,18 +114,32 @@ func newEnv(t *testing.T, capacity int) *env {
 	reg := room.NewRegistry()
 	reg.Add(room.New("ops", "Operations", "1234", capacity))
 	media := newFakeMedia()
-	h := New(reg, media, nil, slog.New(slog.NewTextHandler(testWriter{t}, nil)))
+	tw := &testWriter{t: t}
+	t.Cleanup(tw.stop)
+	h := New(reg, media, nil, slog.New(slog.NewTextHandler(tw, nil)))
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	return &env{srv: srv, media: media, h: h}
 }
 
-type testWriter struct{ t *testing.T }
+// testWriter routes server logs to t.Log until the test ends; session goroutines
+// on hijacked connections can outlive the test and must not call t.Log after it.
+type testWriter struct {
+	mu   sync.Mutex
+	t    *testing.T
+	done bool
+}
 
-func (w testWriter) Write(b []byte) (int, error) {
-	w.t.Log(strings.TrimSpace(string(b)))
+func (w *testWriter) Write(b []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.done {
+		w.t.Log(strings.TrimSpace(string(b)))
+	}
 	return len(b), nil
 }
+
+func (w *testWriter) stop() { w.mu.Lock(); w.done = true; w.mu.Unlock() }
 
 func dial(t *testing.T, e *env) *websocket.Conn {
 	t.Helper()
