@@ -100,6 +100,7 @@ func TestCameraFlowsBetweenTwoPeers(t *testing.T) {
 				return
 			case <-tick.C:
 				_ = cam.WriteSample(media.Sample{Data: []byte{0x10, 0x02, 0x00, 0x9d, 0x01, 0x2a}, Duration: 33 * time.Millisecond})
+				_ = screen.WriteSample(media.Sample{Data: []byte{0x10, 0x02, 0x00, 0x9d, 0x01, 0x2a}, Duration: 33 * time.Millisecond})
 			}
 		}
 	}()
@@ -108,8 +109,13 @@ func TestCameraFlowsBetweenTwoPeers(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("camera never published")
 	}
-	if peerA.Track(KindScreen) != nil {
-		t.Error("camera RTP was taken for a screen")
+	// Both slots carry VP8; only the slot tells them apart.
+	deadline := time.Now().Add(5 * time.Second)
+	for peerA.Track(KindScreen) == nil && time.Now().Before(deadline) {
+		time.Sleep(50 * time.Millisecond)
+	}
+	if peerA.Track(KindScreen) == nil || peerA.Track(KindCamera) == nil || peerA.Track(KindScreen) == peerA.Track(KindCamera) {
+		t.Error("screen (mid 1) and camera (mid 2) were not published as two separate tracks")
 	}
 	select {
 	case tr := <-gotTrack:

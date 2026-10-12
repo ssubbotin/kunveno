@@ -43,7 +43,7 @@
     {#if screenTrack}
       <ScreenView track={screenTrack} label={rs.isSharing ? 'Вы показываете экран' : `Экран показывает ${sharerName}`} />
     {/if}
-    <ParticipantList participants={rs.participants} selfId={rs.selfId} sharer={rs.sharer} speaking={rs.speaking} compact={screenTrack !== null} />
+    <ParticipantList participants={rs.participants} selfId={rs.selfId} sharer={rs.sharer} speaking={rs.speaking} videos={rs.videos} compact={screenTrack !== null} />
   </div>
 
   <footer class="controls">
@@ -56,6 +56,13 @@
         Микрофон
         <span class="level" class:on={rs.selfSpeaking} aria-hidden="true"></span>
       {/if}
+    </button>
+
+    <button class="btn" class:active={rs.cameraOn} aria-pressed={rs.cameraOn} disabled={rs.status !== 'connected' || !rs.hasCamera}
+      title={!rs.hasCamera ? 'Камера не найдена' : rs.cameraError}
+      onclick={() => void session.setCamera(!rs.cameraOn)}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2" /><path d="m16 10 5-3v10l-5-3" />{#if !rs.cameraOn}<path d="M3 3l18 18" />{/if}</svg>
+      {!rs.hasCamera ? 'Камеры нет' : rs.cameraOn ? 'Камера' : 'Камера выключена'}
     </button>
 
     {#if rs.isSharing}
@@ -76,6 +83,13 @@
       title="Эхо повторяет звук комнаты с задержкой 2 секунды: так можно проверить, что вас слышно">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h2l2-5 3 10 3-8 2 3h4" /></svg>
       {rs.echo ? (echoPresent ? 'Выключить эхо' : 'Эхо подключается…') : 'Эхо-тест'}
+    </button>
+
+    <button class="btn" class:active={!rs.receiveVideo} aria-pressed={!rs.receiveVideo}
+      onclick={() => session.setReceiveVideo(!rs.receiveVideo)}
+      title="Не получать видео с камер других участников: звук и показ экрана останутся. Помогает на слабой связи.">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="2.5" />{#if !rs.receiveVideo}<path d="M3 3l18 18" />{/if}</svg>
+      {rs.receiveVideo ? 'Без видео' : 'Видео других выключено'}
     </button>
 
     <button class="btn danger leave" onclick={() => session.leave()}>
@@ -99,6 +113,7 @@
   .count { margin-left: auto; color: var(--muted); font-size: .9rem; font-variant-numeric: tabular-nums; }
 
   .stage { min-height: 0; overflow: auto; padding: 1.5rem; }
+  .room:not(.sharing) .stage { display: grid; align-content: center; }
   .sharing .stage { display: grid; grid-template-columns: 1fr 17rem; gap: 1.25rem; overflow: hidden; }
   .sharing .stage :global(.people) { overflow: auto; }
 

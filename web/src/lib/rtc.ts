@@ -1,3 +1,4 @@
+import { CAMERA_MAX_KBPS } from './media';
 import type { ClientMessage } from './protocol';
 import { transportFromStats, watchConnection } from './transport';
 
@@ -5,6 +6,10 @@ export class Rtc {
   private readonly pc: RTCPeerConnection;
   private micSender: RTCRtpSender | null = null;
   private screenSender: RTCRtpSender | null = null;
+  private cameraSender: RTCRtpSender | null = null;
+  private resolveReady: () => void = () => {};
+  // ready resolves once the send slots are bound, after the first offer.
+  readonly ready = new Promise<void>((r) => (this.resolveReady = r));
 
   constructor(
     private readonly mic: MediaStreamTrack,
@@ -42,7 +47,7 @@ export class Rtc {
 
   // The server's first two transceivers (mid 0 audio, mid 1 video) are our send slots.
   private async ensureSendSlots(): Promise<void> {
-    if (this.micSender && this.screenSender) return;
+    if (this.micSender && this.screenSender && this.cameraSender) return;
     for (const t of this.pc.getTransceivers()) {
       if (t.mid === '0' && !this.micSender) {
         t.direction = 'sendonly';
@@ -51,8 +56,12 @@ export class Rtc {
       } else if (t.mid === '1' && !this.screenSender) {
         t.direction = 'sendonly';
         this.screenSender = t.sender;
+      } else if (t.mid === '2' && !this.cameraSender) {
+        t.direction = 'sendonly';
+        this.cameraSender = t.sender;
       }
     }
+    if (this.micSender && this.screenSender && this.cameraSender) this.resolveReady();
   }
 
   async startShare(track: MediaStreamTrack): Promise<void> {
@@ -68,6 +77,24 @@ export class Rtc {
     } catch (e) {
       console.warn('setParameters', e);
     }
+  }
+
+  // The camera slot never renegotiates: turning it on or off swaps the track.
+  async startCamera(track: MediaStreamTrack): Promise<void> {
+    if (!this.cameraSender) throw new Error('not negotiated yet');
+    await this.cameraSender.replaceTrack(track);
+    const params = this.cameraSender.getParameters();
+    if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
+    params.encodings[0].maxBitrate = CAMERA_MAX_KBPS * 1000;
+    try {
+      await this.cameraSender.setParameters(params);
+    } catch (e) {
+      console.warn('camera setParameters', e);
+    }
+  }
+
+  async stopCamera(): Promise<void> {
+    await this.cameraSender?.replaceTrack(null);
   }
 
   async stopShare(): Promise<void> {
