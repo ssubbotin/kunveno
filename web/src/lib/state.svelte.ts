@@ -6,6 +6,7 @@ export class RoomState {
   status = $state<Status>('idle');
   errorCode = $state('');
   errorMessage = $state('');
+  retryAfter = $state(0); // seconds, for too_many_attempts
   selfId = $state('');
   selfName = $state('');
   roomSlug = $state('');
@@ -63,6 +64,7 @@ export class RoomState {
         this.status = 'error';
         this.errorCode = msg.code;
         this.errorMessage = msg.message;
+        this.retryAfter = msg.retryAfter ?? 0;
         break;
       case 'offer':
         break;

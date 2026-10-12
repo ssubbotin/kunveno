@@ -6,7 +6,7 @@ import { watchLevel } from './levels';
 import { MIC_KEY, audioConstraints } from './micLevel';
 import { prefersTcp, rememberTcp } from './transport';
 
-const FATAL_CODES = new Set(['bad_pin', 'bad_room', 'room_full', 'bad_message']);
+const FATAL_CODES = new Set(['bad_pin', 'bad_room', 'room_full', 'bad_message', 'too_many_attempts']);
 
 type Wanted = { room: string; pin: string; name: string };
 

@@ -74,7 +74,9 @@
       body: JSON.stringify({ pin }),
     });
     if (!res.ok) {
-      actionError = res.status === 403 ? 'Чтобы удалить комнату, введите её PIN.' : 'Комната не удалена: ' + (await errorOf(res));
+      actionError = res.status === 403 ? 'Чтобы удалить комнату, введите её PIN.'
+        : res.status === 429 ? `Слишком много неверных PIN. Попробуйте через ${res.headers.get('Retry-After') ?? 60} с.`
+        : 'Комната не удалена: ' + (await errorOf(res));
       return;
     }
     await loadRooms();
@@ -115,7 +117,7 @@
       {#if creating}
         <form class="create" onsubmit={createRoom}>
           <label class="field"><span>Название</span><input bind:value={newName} maxlength="48" required /></label>
-          <label class="field"><span>PIN (4–16 символов)</span><input bind:value={newPin} minlength="4" maxlength="16" required /></label>
+          <label class="field"><span>PIN (6–16 символов)</span><input bind:value={newPin} minlength="6" maxlength="16" required /></label>
           <div class="row">
             <button class="btn primary" type="submit">Создать комнату</button>
             <button class="btn quiet" type="button" onclick={() => (creating = false)}>Отмена</button>

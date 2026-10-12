@@ -6,9 +6,12 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ssubbotin/kunveno/internal/metrics"
+	"github.com/ssubbotin/kunveno/internal/ratelimit"
 	"github.com/ssubbotin/kunveno/internal/room"
 )
 
@@ -26,8 +29,9 @@ type roomItem struct {
 //	POST   /api/rooms          {"name","pin"} creates a room, 201 {"slug","name"}
 //	DELETE /api/rooms/{slug}   {"pin"} deletes an empty created room, 204
 //
-// persist (may be nil) is called after every change to save the created rooms.
-func Rooms(reg *room.Registry, persist func() error) http.Handler {
+// persist (may be nil) is called after every change to save the created rooms. pins (may be
+// nil) limits wrong PINs per client address, shared with joining.
+func Rooms(reg *room.Registry, persist func() error, pins *ratelimit.Limiter) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		slug := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/rooms"), "/")
 		switch {
@@ -36,7 +40,7 @@ func Rooms(reg *room.Registry, persist func() error) http.Handler {
 		case r.Method == http.MethodPost && slug == "":
 			create(w, r, reg, persist)
 		case r.Method == http.MethodDelete && slug != "":
-			remove(w, r, reg, persist, slug)
+			remove(w, r, reg, persist, pins, slug)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
@@ -84,12 +88,28 @@ func create(w http.ResponseWriter, r *http.Request, reg *room.Registry, persist 
 	writeJSON(w, http.StatusCreated, map[string]string{"slug": rm.Slug(), "name": rm.Name()})
 }
 
-func remove(w http.ResponseWriter, r *http.Request, reg *room.Registry, persist func() error, slug string) {
+func remove(w http.ResponseWriter, r *http.Request, reg *room.Registry, persist func() error, pins *ratelimit.Limiter, slug string) {
+	ip := ratelimit.ClientIP(r)
+	if pins != nil {
+		if ok, wait := pins.Allow(ip); !ok {
+			w.Header().Set("Retry-After", strconv.Itoa(int((wait+time.Second-1)/time.Second)))
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many wrong PINs; try again later"})
+			return
+		}
+	}
 	req, ok := decode(w, r)
 	if !ok {
 		return
 	}
 	err := reg.Delete(slug, req.PIN)
+	if errors.Is(err, room.ErrBadPIN) {
+		metrics.PINFailures.WithLabelValues("delete").Inc()
+		if pins != nil && pins.Fail(ip) {
+			metrics.PINBlocks.Inc()
+		}
+	} else if err == nil && pins != nil {
+		pins.Success(ip)
+	}
 	switch {
 	case errors.Is(err, room.ErrNotFound):
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})

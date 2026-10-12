@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/ssubbotin/kunveno/internal/metrics"
+	"github.com/ssubbotin/kunveno/internal/ratelimit"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ssubbotin/kunveno/internal/room"
 )
@@ -20,7 +22,7 @@ func TestRoomsListsWithoutPINs(t *testing.T) {
 	reg.Add(room.New("dev", "Development", "5678", 20))
 
 	rec := httptest.NewRecorder()
-	Rooms(reg, nil).ServeHTTP(rec, httptest.NewRequest("GET", "/api/rooms", nil))
+	Rooms(reg, nil, nil).ServeHTTP(rec, httptest.NewRequest("GET", "/api/rooms", nil))
 	if rec.Code != 200 {
 		t.Fatalf("status %d", rec.Code)
 	}
@@ -37,7 +39,7 @@ func TestRoomsListsWithoutPINs(t *testing.T) {
 		}
 	}
 	rec = httptest.NewRecorder()
-	Rooms(reg, nil).ServeHTTP(rec, httptest.NewRequest("PUT", "/api/rooms", nil))
+	Rooms(reg, nil, nil).ServeHTTP(rec, httptest.NewRequest("PUT", "/api/rooms", nil))
 	if rec.Code != 405 {
 		t.Fatalf("PUT status %d, want 405", rec.Code)
 	}
@@ -54,11 +56,11 @@ func TestCreateAndDeleteRoom(t *testing.T) {
 	reg := room.NewRegistry()
 	reg.Add(room.New("ops", "Operations", "1234", 15))
 	saves := 0
-	h := Rooms(reg, func() error { saves++; return nil })
+	h := Rooms(reg, func() error { saves++; return nil }, nil)
 	createdBefore := testutil.ToFloat64(metrics.RoomsCreated)
 	deletedBefore := testutil.ToFloat64(metrics.RoomsDeleted)
 
-	rec := do(t, h, "POST", "/api/rooms", `{"name":"Retro","pin":"4321"}`)
+	rec := do(t, h, "POST", "/api/rooms", `{"name":"Retro","pin":"432100"}`)
 	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"slug":"retro"`) {
 		t.Fatalf("create: %d %s", rec.Code, rec.Body)
 	}
@@ -76,7 +78,7 @@ func TestCreateAndDeleteRoom(t *testing.T) {
 		method, path, body string
 		want               int
 	}{
-		{"POST", "/api/rooms", `{"name":"","pin":"4321"}`, http.StatusBadRequest},
+		{"POST", "/api/rooms", `{"name":"","pin":"432100"}`, http.StatusBadRequest},
 		{"POST", "/api/rooms", `not json`, http.StatusBadRequest},
 		{"DELETE", "/api/rooms/retro", `{"pin":"0000"}`, http.StatusForbidden},
 		{"DELETE", "/api/rooms/ops", `{"pin":"1234"}`, http.StatusForbidden},
@@ -88,12 +90,12 @@ func TestCreateAndDeleteRoom(t *testing.T) {
 	}
 
 	r, _ := reg.Get("retro")
-	_ = r.Join("a", "Ann", "4321")
-	if rec := do(t, h, "DELETE", "/api/rooms/retro", `{"pin":"4321"}`); rec.Code != http.StatusConflict {
+	_ = r.Join("a", "Ann", "432100")
+	if rec := do(t, h, "DELETE", "/api/rooms/retro", `{"pin":"432100"}`); rec.Code != http.StatusConflict {
 		t.Fatalf("delete non-empty: %d", rec.Code)
 	}
 	r.Leave("a")
-	if rec := do(t, h, "DELETE", "/api/rooms/retro", `{"pin":"4321"}`); rec.Code != http.StatusNoContent {
+	if rec := do(t, h, "DELETE", "/api/rooms/retro", `{"pin":"432100"}`); rec.Code != http.StatusNoContent {
 		t.Fatalf("delete: %d %s", rec.Code, rec.Body)
 	}
 	if saves != 2 {
@@ -135,5 +137,33 @@ func TestEchoRoomsIsLocalOnly(t *testing.T) {
 		if rec.Code != http.StatusForbidden {
 			t.Errorf("addr=%s xff=%q: %d, want 403", c.addr, c.xff, rec.Code)
 		}
+	}
+}
+
+func TestDeleteGuessingIsBlocked(t *testing.T) {
+	reg := room.NewRegistry()
+	if _, err := reg.Create("Retro", "432100"); err != nil {
+		t.Fatal(err)
+	}
+	h := Rooms(reg, nil, ratelimit.New(5, 10*time.Minute, time.Minute))
+	try := func(pin string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("DELETE", "/api/rooms/retro", strings.NewReader(`{"pin":"`+pin+`"}`))
+		req.RemoteAddr = "127.0.0.1:1"
+		req.Header.Set("X-Forwarded-For", "10.0.0.66")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	for i := 0; i < 5; i++ {
+		if rec := try("000000"); rec.Code != http.StatusForbidden {
+			t.Fatalf("attempt %d: %d", i, rec.Code)
+		}
+	}
+	rec := try("432100")
+	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" {
+		t.Fatalf("blocked delete: %d retry-after=%q", rec.Code, rec.Header().Get("Retry-After"))
+	}
+	if _, ok := reg.Get("retro"); !ok {
+		t.Fatal("room deleted while blocked")
 	}
 }

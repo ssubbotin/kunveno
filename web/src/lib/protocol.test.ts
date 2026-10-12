@@ -28,4 +28,10 @@ describe('parseServerMessage', () => {
     if (m.type !== 'participants') throw new Error('type');
     expect(m.participants.map((p) => p.quality)).toEqual(['poor', undefined, undefined]);
   });
+  it('carries the wait of a too_many_attempts error', () => {
+    expect(parseServerMessage('{"type":"error","code":"too_many_attempts","message":"x","retry_after":60}'))
+      .toEqual({ type: 'error', code: 'too_many_attempts', message: 'x', retryAfter: 60 });
+    expect(parseServerMessage('{"type":"error","code":"bad_pin","message":"x"}'))
+      .toEqual({ type: 'error', code: 'bad_pin', message: 'x' });
+  });
 });
