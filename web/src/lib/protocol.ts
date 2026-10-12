@@ -5,7 +5,7 @@ const QUALITIES: readonly string[] = ['good', 'fair', 'poor'];
 
 export type ServerMessage =
   | { type: 'joined'; self: Participant; room: { slug: string; name: string } }
-  | { type: 'error'; code: string; message: string }
+  | { type: 'error'; code: string; message: string; retryAfter?: number }
   | { type: 'offer'; sdp: string }
   | { type: 'participants'; participants: Participant[]; sharer: string; echo: boolean };
 
@@ -41,7 +41,10 @@ export function parseServerMessage(raw: string): ServerMessage {
       return { type: 'joined', self: v.self, room: { slug: v.room.slug, name: v.room.name } };
     case 'error':
       if (typeof v.code !== 'string') bad('error');
-      return { type: 'error', code: v.code, message: typeof v.message === 'string' ? v.message : '' };
+      return {
+        type: 'error', code: v.code, message: typeof v.message === 'string' ? v.message : '',
+        ...(typeof v.retry_after === 'number' && v.retry_after > 0 ? { retryAfter: v.retry_after } : {}),
+      };
     case 'offer':
       if (typeof v.sdp !== 'string' || v.sdp === '') bad('offer');
       return { type: 'offer', sdp: v.sdp };

@@ -86,8 +86,9 @@ func run(cfgPath string, log *slog.Logger) error {
 		return roomstore.Save(cfg.RoomsFile, reg.CreatedSpecs())
 	}
 	mux := http.NewServeMux()
-	mux.Handle("/ws", sig.New(reg, engineMedia{engine}, cfg.HTTP.AllowedOrigins, log))
-	rooms := httpapi.Rooms(reg, persist)
+	ws := sig.New(reg, engineMedia{engine}, cfg.HTTP.AllowedOrigins, log)
+	mux.Handle("/ws", ws)
+	rooms := httpapi.Rooms(reg, persist, ws.PINLimiter())
 	mux.Handle("/api/rooms", rooms)
 	mux.Handle("/api/rooms/", rooms)
 	mux.Handle("/healthz", httpapi.Health())

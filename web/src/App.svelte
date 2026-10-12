@@ -26,7 +26,9 @@
 </script>
 
 {#if state.status === 'idle' || (state.status === 'error' && state.selfId === '')}
-  <Lobby onJoin={join} error={state.errorCode ? (errorText[state.errorCode] ?? state.errorMessage) : ''} />
+  <Lobby onJoin={join} error={state.errorCode === 'too_many_attempts'
+    ? `Слишком много неверных PIN. Попробуйте через ${state.retryAfter} с.`
+    : state.errorCode ? (errorText[state.errorCode] ?? state.errorMessage) : ''} />
 {:else}
   <Room {session} />
 {/if}

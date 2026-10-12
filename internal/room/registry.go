@@ -18,6 +18,9 @@ var (
 // DefaultCapacity is the capacity of rooms created through the API.
 const DefaultCapacity = 15
 
+// MinCreatedPIN is the shortest PIN accepted for a room created in the lobby.
+const MinCreatedPIN = 6
+
 // Spec is the persisted form of a created room.
 type Spec struct {
 	Slug            string `json:"slug"`
@@ -64,14 +67,14 @@ func (g *Registry) All() []*Room {
 }
 
 // Create adds a room with a slug derived from the name. Name 1..48 characters after
-// trimming, PIN 4..16 characters, the same PIN rule as the config file.
+// trimming, PIN 6..16 characters: rooms made in the lobby get a PIN that resists guessing.
 func (g *Registry) Create(name, pin string) (*Room, error) {
 	name = strings.TrimSpace(name)
 	if n := utf8.RuneCountInString(name); n < 1 || n > 48 {
 		return nil, fmt.Errorf("%w: name must be 1..48 characters", ErrInvalid)
 	}
-	if n := len(pin); n < 4 || n > 16 {
-		return nil, fmt.Errorf("%w: pin must be 4..16 characters", ErrInvalid)
+	if n := utf8.RuneCountInString(pin); n < MinCreatedPIN || n > 16 {
+		return nil, fmt.Errorf("%w: pin must be %d..16 characters", ErrInvalid, MinCreatedPIN)
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/pion/webrtc/v4"
@@ -24,6 +25,8 @@ const (
 	CodeNotJoined   = "not_joined"
 	CodeShareBusy   = "share_busy"
 	CodeMediaFailed = "media_failed"
+	// CodeTooManyAttempts: too many wrong PINs from this address; retry_after says when to try again.
+	CodeTooManyAttempts = "too_many_attempts"
 )
 
 const (
@@ -121,9 +124,10 @@ type joinedMsg struct {
 }
 
 type errorMsg struct {
-	Type    string `json:"type"`
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Type       string `json:"type"`
+	Code       string `json:"code"`
+	Message    string `json:"message"`
+	RetryAfter int    `json:"retry_after,omitempty"` // seconds, for too_many_attempts
 }
 
 type offerMsg struct {
@@ -144,6 +148,12 @@ func Joined(self ParticipantInfo, slug, name string) any {
 
 func ErrorMsg(code, message string) any {
 	return errorMsg{Type: "error", Code: code, Message: message}
+}
+
+// RetryLater is the too_many_attempts error with the wait in whole seconds (at least 1).
+func RetryLater(wait time.Duration) any {
+	secs := int((wait + time.Second - 1) / time.Second)
+	return errorMsg{Type: "error", Code: CodeTooManyAttempts, Message: "too many wrong PINs; try again later", RetryAfter: max(secs, 1)}
 }
 
 func Offer(sdp string) any { return offerMsg{Type: "offer", SDP: sdp} }

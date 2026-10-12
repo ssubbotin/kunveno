@@ -7,6 +7,7 @@ import (
 	"errors"
 	"github.com/ssubbotin/kunveno/internal/metrics"
 	"github.com/ssubbotin/kunveno/internal/quality"
+	"github.com/ssubbotin/kunveno/internal/ratelimit"
 	"log/slog"
 	"net"
 	"net/http"
@@ -51,7 +52,8 @@ type Handler struct {
 	origins []string
 	log     *slog.Logger
 
-	qualityEvery time.Duration // how often connection quality is sampled
+	qualityEvery time.Duration      // how often connection quality is sampled
+	pins         *ratelimit.Limiter // wrong-PIN limit per client address
 
 	mu   sync.Mutex
 	live map[string]*liveRoom // slug -> members
@@ -73,7 +75,8 @@ type session struct {
 }
 
 func New(reg *room.Registry, media Media, origins []string, log *slog.Logger) *Handler {
-	return &Handler{reg: reg, media: media, origins: origins, log: log, live: map[string]*liveRoom{}, qualityEvery: 3 * time.Second}
+	return &Handler{reg: reg, media: media, origins: origins, log: log, live: map[string]*liveRoom{}, qualityEvery: 3 * time.Second,
+		pins: ratelimit.New(5, 10*time.Minute, time.Minute)}
 }
 
 // lookup returns the live state of a registered room, creating it on first use. Rooms can be
@@ -114,7 +117,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	metrics.Sessions.Inc()
 	defer metrics.Sessions.Dec()
-	h.serve(ctx, cancel, conn, local(r))
+	h.serve(ctx, cancel, conn, local(r), ratelimit.ClientIP(r))
 }
 
 // local reports a connection made on loopback without passing through nginx, which always
@@ -149,7 +152,7 @@ func writeErrorAndClose(conn *websocket.Conn, code, msg string) {
 	_ = conn.Close(websocket.StatusPolicyViolation, code)
 }
 
-func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, trusted bool) {
+func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, trusted bool, ip string) {
 	joinCtx, joinCancel := context.WithTimeout(ctx, joinTimeout)
 	first, err := readClient(joinCtx, conn)
 	joinCancel()
@@ -163,8 +166,27 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 		writeErrorAndClose(conn, CodeBadMessage, "echo role is local only")
 		return
 	}
+	if ok, wait := h.pins.Allow(ip); !ok && first.Role != RoleEcho {
+		metrics.Joins.WithLabelValues(h.roomLabel(first.Room), CodeTooManyAttempts).Inc()
+		ctx, cancel := context.WithTimeout(context.Background(), writeTimeout)
+		_ = wsjson.Write(ctx, conn, RetryLater(wait))
+		cancel()
+		_ = conn.Close(websocket.StatusPolicyViolation, CodeTooManyAttempts)
+		return
+	}
 	s, code, msg := h.join(conn, cancel, first)
 	metrics.Joins.WithLabelValues(h.roomLabel(first.Room), resultLabel(code)).Inc()
+	switch code {
+	case CodeBadPIN:
+		metrics.PINFailures.WithLabelValues("join").Inc()
+		h.log.Info("wrong pin", "room", h.roomLabel(first.Room), "ip", ip)
+		if h.pins.Fail(ip) {
+			metrics.PINBlocks.Inc()
+			h.log.Warn("too many wrong pins; address blocked for a minute", "ip", ip)
+		}
+	case "":
+		h.pins.Success(ip)
+	}
 	if s == nil {
 		writeErrorAndClose(conn, code, msg)
 		return
@@ -489,3 +511,6 @@ func (h *Handler) watchQuality(ctx context.Context, s *session) {
 		}
 	}
 }
+
+// PINLimiter is the wrong-PIN limiter, for sharing with the room API.
+func (h *Handler) PINLimiter() *ratelimit.Limiter { return h.pins }

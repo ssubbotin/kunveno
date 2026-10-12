@@ -191,6 +191,7 @@ type anyMsg struct {
 	Participants []ParticipantInfo `json:"participants"`
 	Self         ParticipantInfo   `json:"self"`
 	Echo         bool              `json:"echo"`
+	RetryAfter   int               `json:"retry_after"`
 }
 
 // expect reads frames until one of the wanted type arrives.
@@ -398,11 +399,11 @@ func TestEndOfCandidatesKeepsSession(t *testing.T) {
 // Rooms created through the API after the handler started must accept joins.
 func TestJoinRoomCreatedAtRuntime(t *testing.T) {
 	e := newEnv(t, 15)
-	if _, err := e.h.reg.Create("Retro", "4321"); err != nil {
+	if _, err := e.h.reg.Create("Retro", "432100"); err != nil {
 		t.Fatal(err)
 	}
 	c := dial(t, e)
-	send(t, c, `{"type":"join","room":"retro","pin":"4321","name":"Ann"}`)
+	send(t, c, `{"type":"join","room":"retro","pin":"432100","name":"Ann"}`)
 	expect(t, c, "joined")
 }
 
@@ -563,4 +564,29 @@ func histogramCount(t *testing.T, c prometheus.Collector) uint64 {
 		t.Fatal(err)
 	}
 	return m.GetHistogram().GetSampleCount()
+}
+
+func TestPinGuessingIsBlocked(t *testing.T) {
+	failsBefore := testutil.ToFloat64(metrics.PINFailures.WithLabelValues("join"))
+	e := newEnv(t, 15)
+	attacker := http.Header{"X-Forwarded-For": {"10.0.0.66"}}
+	for i := 0; i < 5; i++ {
+		c := dialWith(t, e, attacker)
+		send(t, c, `{"type":"join","room":"ops","pin":"0000","name":"Eve"}`)
+		if m := expect(t, c, "error"); m.Code != CodeBadPIN {
+			t.Fatalf("attempt %d: code %q", i, m.Code)
+		}
+	}
+	c := dialWith(t, e, attacker)
+	send(t, c, `{"type":"join","room":"ops","pin":"1234","name":"Eve"}`)
+	m := expect(t, c, "error")
+	if m.Code != CodeTooManyAttempts || m.RetryAfter < 1 {
+		t.Fatalf("blocked attempt: code %q retry %d", m.Code, m.RetryAfter)
+	}
+	other := dialWith(t, e, http.Header{"X-Forwarded-For": {"10.0.0.7"}})
+	send(t, other, `{"type":"join","room":"ops","pin":"1234","name":"Ann"}`)
+	expect(t, other, "joined")
+	if d := testutil.ToFloat64(metrics.PINFailures.WithLabelValues("join")) - failsBefore; d != 5 {
+		t.Errorf("pin failures counted %v, want 5", d)
+	}
 }

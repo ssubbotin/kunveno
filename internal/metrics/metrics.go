@@ -83,6 +83,12 @@ var (
 	KeyframeRequests = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "kunveno_keyframe_requests_total", Help: "PLIs sent to screen sharers.",
 	})
+	PINFailures = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "kunveno_pin_failures_total", Help: "Wrong room PINs, by where they were tried (join or delete).",
+	}, []string{"source"})
+	PINBlocks = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "kunveno_pin_blocks_total", Help: "Addresses blocked for a minute after too many wrong PINs.",
+	})
 	RoomsCreated = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "kunveno_rooms_created_total", Help: "Rooms created from the lobby.",
 	})
@@ -106,7 +112,7 @@ func NewRegistry(rooms *room.Registry, version string) *prometheus.Registry {
 		RTTSeconds, LossRatio, JitterSeconds,
 		RTPPackets, RTPBytes, RTPSentPackets, RTPSentBytes, ActiveConnections, ConnectSeconds,
 		PeerStates, Transports, Offers, NegotiationErrors, KeyframeRequests,
-		RoomsCreated, RoomsDeleted,
+		PINFailures, PINBlocks, RoomsCreated, RoomsDeleted,
 	)
 	return r
 }
