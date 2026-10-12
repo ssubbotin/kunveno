@@ -6,6 +6,7 @@ import (
 	"github.com/ssubbotin/kunveno/internal/metrics"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/pion/rtcp"
@@ -31,6 +32,9 @@ type Source interface {
 type Handlers struct {
 	OnPublisher func(Source, Kind) // first RTP of that kind arrived; the track is ready
 	OnFailed    func(Source)       // the connection failed or closed unexpectedly
+	// TCPOnly strips UDP candidates from this peer's offers, for a participant whose UDP path
+	// failed: the browser then has only the ICE-TCP candidate to connect to.
+	TCPOnly bool
 }
 
 // Peer is one participant's connection to the SFU.
@@ -240,7 +244,11 @@ func (p *Peer) sendOffer() {
 		return
 	}
 	<-gathered
-	if err := p.sig.SendOffer(p.pc.LocalDescription().SDP); err != nil {
+	sdp := p.pc.LocalDescription().SDP
+	if p.h.TCPOnly {
+		sdp = withoutUDPCandidates(sdp)
+	}
+	if err := p.sig.SendOffer(sdp); err != nil {
 		p.fail(err)
 		return
 	}
@@ -307,4 +315,19 @@ func (p *Peer) Transport() string {
 		return pair.Remote.Protocol.String()
 	}
 	return ""
+}
+
+// withoutUDPCandidates drops a=candidate lines whose transport is UDP.
+func withoutUDPCandidates(sdp string) string {
+	lines := strings.Split(sdp, "\r\n")
+	out := lines[:0]
+	for _, l := range lines {
+		if strings.HasPrefix(l, "a=candidate:") {
+			if f := strings.Fields(l); len(f) > 2 && strings.EqualFold(f[2], "udp") {
+				continue
+			}
+		}
+		out = append(out, l)
+	}
+	return strings.Join(out, "\r\n")
 }

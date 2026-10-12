@@ -22,6 +22,9 @@ export class Session {
   private screenTrack: MediaStreamTrack | null = null;
   private screenAttached = false;
   private stopSelfLevel: (() => void) | null = null;
+  // Set after our media connection failed; rejoins then ask the server for ICE over TCP only,
+  // since a UDP path that broke once tends to break again (NAT or firewall on a gateway).
+  private preferTcp = false;
 
   async join(room: string, pin: string, name: string): Promise<void> {
     this.wanted = { room, pin, name };
@@ -59,9 +62,12 @@ export class Session {
       this.mic,
       (m) => sig.send(m),
       (pid, track) => this.onRemoteTrack(pid, track),
-      () => sig.close(),
+      () => {
+        this.preferTcp = true;
+        sig.close();
+      },
     );
-    sig.send({ type: 'join', ...this.wanted });
+    sig.send({ type: 'join', ...this.wanted, ...(this.preferTcp ? { media: 'tcp' as const } : {}) });
   }
 
   private onMessage(m: ServerMessage): void {
@@ -88,6 +94,8 @@ export class Session {
         if (m.code === 'share_busy') {
           this.dropScreen();
           this.state.status = 'connected';
+        } else if (m.code === 'media_failed') {
+          this.preferTcp = true;
         } else if (FATAL_CODES.has(m.code)) {
           this.wanted = null;
         }

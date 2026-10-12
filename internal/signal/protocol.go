@@ -29,6 +29,7 @@ const (
 const (
 	MaxNameLen = 32
 	RoleEcho   = "echo"
+	MediaTCP   = "tcp"
 	MaxSDPLen  = 256 * 1024
 )
 
@@ -44,7 +45,8 @@ type ClientMessage struct {
 	Candidate *webrtc.ICECandidateInit `json:"candidate,omitempty"`
 	Muted     *bool                    `json:"muted,omitempty"`
 	Action    string                   `json:"action,omitempty"`
-	Role      string                   `json:"role,omitempty"` // "echo" for the local echo helper
+	Role      string                   `json:"role,omitempty"`  // "echo" for the local echo helper
+	Media     string                   `json:"media,omitempty"` // "tcp" after a failed UDP path
 	On        *bool                    `json:"on,omitempty"`
 }
 
@@ -60,6 +62,8 @@ func ParseClient(data []byte) (ClientMessage, error) {
 		switch {
 		case !slugRe.MatchString(m.Room):
 			return m, fmt.Errorf("%w: join.room", ErrBadMessage)
+		case m.Media != "" && m.Media != MediaTCP:
+			return m, fmt.Errorf("%w: join.media", ErrBadMessage)
 		case m.Role != "" && m.Role != RoleEcho:
 			return m, fmt.Errorf("%w: join.role", ErrBadMessage)
 		case m.Role == "" && (len(m.PIN) < 1 || len(m.PIN) > 16):

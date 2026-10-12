@@ -28,20 +28,21 @@ type fakeMedia struct {
 }
 
 type fakePeer struct {
-	id     string
-	sig    sfu.Signaler
-	m      *fakeMedia
-	mu     sync.Mutex
-	tracks map[sfu.Kind]*webrtc.TrackLocalStaticRTP
-	subs   map[string]int // "from/kind" -> subscribe count minus unsubscribe count
-	closed bool
-	offers int
+	id      string
+	sig     sfu.Signaler
+	m       *fakeMedia
+	mu      sync.Mutex
+	tracks  map[sfu.Kind]*webrtc.TrackLocalStaticRTP
+	subs    map[string]int // "from/kind" -> subscribe count minus unsubscribe count
+	tcpOnly bool
+	closed  bool
+	offers  int
 }
 
 func newFakeMedia() *fakeMedia { return &fakeMedia{peers: map[string]*fakePeer{}} }
 
-func (m *fakeMedia) NewPeer(id string, sig sfu.Signaler, _ sfu.Handlers) (MediaPeer, error) {
-	p := &fakePeer{id: id, sig: sig, m: m, tracks: map[sfu.Kind]*webrtc.TrackLocalStaticRTP{}, subs: map[string]int{}}
+func (m *fakeMedia) NewPeer(id string, sig sfu.Signaler, h sfu.Handlers) (MediaPeer, error) {
+	p := &fakePeer{id: id, sig: sig, m: m, tcpOnly: h.TCPOnly, tracks: map[sfu.Kind]*webrtc.TrackLocalStaticRTP{}, subs: map[string]int{}}
 	m.mu.Lock()
 	m.peers[id] = p
 	m.mu.Unlock()
@@ -504,4 +505,18 @@ func TestSignalingMetrics(t *testing.T) {
 func expectMuted(t *testing.T, c *websocket.Conn) bool {
 	m := expect(t, c, "participants")
 	return len(m.Participants) == 1 && m.Participants[0].Muted
+}
+
+func TestJoinRequestingTCPMakesATCPOnlyPeer(t *testing.T) {
+	e := newEnv(t, 15)
+	c := dial(t, e)
+	send(t, c, `{"type":"join","room":"ops","pin":"1234","name":"Ann","media":"tcp"}`)
+	m := expect(t, c, "joined")
+	if !e.media.peer(m.Self.ID).tcpOnly {
+		t.Fatal("peer not TCP-only")
+	}
+	_, id := join(t, e, "Bob")
+	if e.media.peer(id).tcpOnly {
+		t.Fatal("default peer is TCP-only")
+	}
 }

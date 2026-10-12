@@ -248,7 +248,7 @@ func (h *Handler) join(conn *websocket.Conn, cancel context.CancelFunc, m Client
 		return nil, CodeBadMessage, err.Error()
 	}
 	s := &session{id: id, name: m.Name, slug: m.Room, bot: bot, joined: time.Now(), conn: conn, cancel: cancel, log: h.log.With("room", m.Room, "participant", id)}
-	peer, err := h.media.NewPeer(id, s, sfu.Handlers{OnPublisher: h.onPublisher, OnFailed: h.onFailed})
+	peer, err := h.media.NewPeer(id, s, sfu.Handlers{OnPublisher: h.onPublisher, OnFailed: h.onFailed, TCPOnly: m.Media == MediaTCP})
 	if err != nil {
 		lr.room.Leave(id)
 		s.log.Error("new peer", "err", err)

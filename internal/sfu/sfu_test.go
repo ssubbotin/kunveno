@@ -4,6 +4,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/ssubbotin/kunveno/internal/metrics"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -282,6 +283,62 @@ func TestConnectsOverTCPWhenUDPIsUnavailable(t *testing.T) {
 	case <-connected:
 	case <-time.After(10 * time.Second):
 		t.Fatal("no connection over TCP")
+	}
+	if got := p.Transport(); got != "tcp" {
+		t.Fatalf("Transport() = %q, want tcp", got)
+	}
+}
+
+// A participant whose UDP path failed rejoins TCP-only: offers carry no UDP candidate, so even a
+// client that could use UDP connects over TCP.
+func TestTCPOnlyPeerOffersNoUDPCandidates(t *testing.T) {
+	eng, err := NewEngine(EngineConfig{UDPPort: 0, TCP: true, TCPPort: 0, AdvertiseIP: "127.0.0.1", IncludeLoopback: true}, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer eng.Close()
+	sig := &chanSignaler{offers: make(chan string, 8)}
+	p, err := eng.NewPeer("x", sig, Handlers{TCPOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	// Like a real browser: both UDP and active TCP candidates.
+	m := &webrtc.MediaEngine{}
+	if err := m.RegisterDefaultCodecs(); err != nil {
+		t.Fatal(err)
+	}
+	se := webrtc.SettingEngine{}
+	se.SetIncludeLoopbackCandidate(true)
+	se.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4, webrtc.NetworkTypeTCP4})
+	browser, err := webrtc.NewAPI(webrtc.WithMediaEngine(m), webrtc.WithSettingEngine(se)).NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer browser.Close()
+	connected := make(chan struct{})
+	var once sync.Once
+	browser.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
+		if s == webrtc.PeerConnectionStateConnected {
+			once.Do(func() { close(connected) })
+		}
+	})
+	offers := make(chan string, 8)
+	done := make(chan struct{})
+	defer close(done)
+	go answerLoop(t, browser, offers, p, done)
+	p.Negotiate()
+	offer := <-sig.offers
+	for _, line := range strings.Split(offer, "\r\n") {
+		if strings.HasPrefix(line, "a=candidate:") && strings.Contains(strings.ToLower(line), " udp ") {
+			t.Fatalf("UDP candidate in a TCP-only offer: %s", line)
+		}
+	}
+	offers <- offer
+	select {
+	case <-connected:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no connection")
 	}
 	if got := p.Transport(); got != "tcp" {
 		t.Fatalf("Transport() = %q, want tcp", got)

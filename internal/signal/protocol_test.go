@@ -45,6 +45,7 @@ func TestParseClientRejects(t *testing.T) {
 		"mute no flag":    `{"type":"mute"}`,
 		"share bad":       `{"type":"share","action":"maybe"}`,
 		"echo no flag":    `{"type":"echo"}`,
+		"join bad media":  `{"type":"join","room":"ops","pin":"1234","name":"Ann","media":"carrier-pigeon"}`,
 		"join bad role":   `{"type":"join","room":"ops","pin":"1234","name":"Ann","role":"admin"}`,
 	}
 	for name, raw := range cases {
@@ -78,5 +79,12 @@ func TestServerMessagesEncode(t *testing.T) {
 	b, _ = json.Marshal(Offer("v=0"))
 	if string(b) != `{"type":"offer","sdp":"v=0"}` {
 		t.Errorf("offer: %s", b)
+	}
+}
+
+func TestParseClientJoinMediaTCP(t *testing.T) {
+	m, err := ParseClient([]byte(`{"type":"join","room":"ops","pin":"1234","name":"Ann","media":"tcp"}`))
+	if err != nil || m.Media != "tcp" {
+		t.Fatalf("m = %+v, err = %v", m, err)
 	}
 }
