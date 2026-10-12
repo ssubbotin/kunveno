@@ -3,7 +3,7 @@ VERSION ?= $(shell v=$$(git describe --tags --dirty 2>/dev/null | sed 's/^v//');
 
 BUILD_DATE ?= $(shell date -u +%Y-%m-%d)
 
-.PHONY: fmt test-go test-web test build deb docker-bundle clean
+.PHONY: fmt test-go test-web test build deb deploy-bundle clean
 
 fmt:
 	gofmt -l -w . && go mod tidy
@@ -26,18 +26,13 @@ deb: build
 	VERSION=$(VERSION) nfpm package -f deploy/nfpm/server.yaml -p deb -t dist/
 	VERSION=$(VERSION) nfpm package -f deploy/nfpm/web.yaml -p deb -t dist/
 
-# Self-contained directory for `docker compose up --build` on the target host: built artifacts only,
-# source maps removed (they embed the client sources).
-docker-bundle: build
+# Files the host needs next to the images CI publishes to GHCR: compose file and configuration
+# templates only. No binaries and no client bundle travel to the host.
+deploy-bundle:
 	rm -rf dist/kunveno-docker && mkdir -p dist/kunveno-docker
-	cp bin/kunveno-server bin/kunveno-echo deploy/docker/Dockerfile.server deploy/docker/Dockerfile.echo deploy/docker/Dockerfile.web deploy/docker/nginx.conf.template deploy/docker/docker-compose.yml dist/kunveno-docker/
-	cp deploy/docker/env.example dist/kunveno-docker/env.example
-	cp deploy/docker/prometheus.yml.template dist/kunveno-docker/
+	cp deploy/docker/docker-compose.yml deploy/docker/prometheus.yml.template dist/kunveno-docker/
+	cp deploy/docker/env.example deploy/config.example.yaml dist/kunveno-docker/
 	cp -r deploy/docker/grafana dist/kunveno-docker/grafana
-	cp deploy/config.example.yaml dist/kunveno-docker/config.example.yaml
-	cp -r web/dist dist/kunveno-docker/web
-	find dist/kunveno-docker/web -name '*.map' -delete
-	sed -i '/^\/\/# sourceMappingURL=/d' dist/kunveno-docker/web/assets/*.js
 
 clean:
 	rm -rf bin dist web/dist

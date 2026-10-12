@@ -1,6 +1,0 @@
-# Runtime image for kunveno-echo, the sound-check participant. Binary only.
-FROM alpine:3.22
-RUN adduser -D -H -u 10001 kunveno
-COPY kunveno-echo /usr/local/bin/kunveno-echo
-USER kunveno
-ENTRYPOINT ["/usr/local/bin/kunveno-echo"]

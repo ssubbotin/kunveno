@@ -9,6 +9,7 @@ export default defineConfig({
       '/api': { target: 'http://127.0.0.1:8080' },
     },
   },
-  build: { sourcemap: true },
+  // No source maps in builds: they embed the client sources, and the bundle ships to the server.
+  build: { sourcemap: false },
   test: { environment: 'node', include: ['src/**/*.test.ts'] },
 });

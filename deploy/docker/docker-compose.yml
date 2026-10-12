@@ -1,4 +1,5 @@
-# kunveno stack: signaling + SFU server and nginx with the web client.
+# kunveno stack: signaling + SFU server and nginx with the web client. Images are built by CI
+# (.github/workflows/images.yml) and published to GHCR; KUNVENO_VERSION in .env picks the release.
 # Both services use host networking: the SFU advertises the host's VPN address and one UDP port,
 # and nginx reaches the server on loopback. Settings come from .env (see .env.example).
 # Logs go to the host's systemd journal, so they outlive container recreation on every deploy:
@@ -13,10 +14,7 @@ services:
       <<: *journald
       options:
         tag: kunveno-server
-    build:
-      context: .
-      dockerfile: Dockerfile.server
-    image: kunveno-server:${KUNVENO_VERSION:-local}
+    image: ghcr.io/ssubbotin/kunveno-server:${KUNVENO_VERSION:?set KUNVENO_VERSION in .env}
     network_mode: host
     restart: unless-stopped
     volumes:
@@ -29,10 +27,7 @@ services:
       <<: *journald
       options:
         tag: kunveno-web
-    build:
-      context: .
-      dockerfile: Dockerfile.web
-    image: kunveno-web:${KUNVENO_VERSION:-local}
+    image: ghcr.io/ssubbotin/kunveno-web:${KUNVENO_VERSION:?set KUNVENO_VERSION in .env}
     network_mode: host
     restart: unless-stopped
     depends_on:
@@ -53,10 +48,7 @@ services:
       <<: *journald
       options:
         tag: kunveno-echo
-    build:
-      context: .
-      dockerfile: Dockerfile.echo
-    image: kunveno-echo:${KUNVENO_VERSION:-local}
+    image: ghcr.io/ssubbotin/kunveno-echo:${KUNVENO_VERSION:?set KUNVENO_VERSION in .env}
     network_mode: host
     restart: unless-stopped
     depends_on:

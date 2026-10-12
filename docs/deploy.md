@@ -46,25 +46,31 @@ sudo systemctl start kunveno-server
 - 403 on `/ws`: Origin mismatch. Set `http.allowed_origins` in the config to the site URL.
 
 ## Docker Compose (alternative to the deb packages)
-nginx and the server run as two containers with host networking. Only built artifacts go to the host.
+nginx with the client, the server and the echo helper run from images that CI builds and publishes
+to GHCR (`.github/workflows/images.yml`): `ghcr.io/ssubbotin/kunveno-server`, `-web`, `-echo`.
+A tag `vX.Y.Z` publishes `X.Y.Z` and `latest`; pushes to `main` publish `main` and `sha-<commit>`.
+CI checks every image before pushing (`deploy/docker/check-image.sh`): no sources, no source maps,
+Go binaries built with `-trimpath -s -w`. The images are private.
 
-On the workstation: `make docker-bundle`, then `rsync -a dist/kunveno-docker/ <host>:kunveno/`.
+Once per host, log in to GHCR with a GitHub token that can only read packages (`read:packages`):
+`docker login ghcr.io -u <github user>` and paste the token as the password.
+
+On the workstation: `make deploy-bundle`, then `rsync -a dist/kunveno-docker/ <host>:kunveno/`.
+It carries the compose file and configuration templates only.
 
 On the host, in `~/kunveno`:
 ```
 cp config.example.yaml config.yaml   # advertise_ip, rooms, PINs; pick a free http.listen port
-cp env.example .env                  # KUNVENO_UPSTREAM must match http.listen
+cp env.example .env                  # KUNVENO_VERSION, KUNVENO_UPSTREAM (must match http.listen)
 mkdir -p certs                       # fullchain.pem and privkey.pem (see section 2)
-mkdir -p data && sudo chown 10001 data && chmod 700 data   # rooms created in the lobby
-docker compose up -d --build
+mkdir -p data && sudo chown 10001 data && sudo chmod 700 data   # rooms created in the lobby
+docker compose pull && docker compose up -d
 ```
+Upgrade: set `KUNVENO_VERSION` in `.env` to the new release, then `docker compose pull && docker compose up -d`.
 Logs go to the host's systemd journal (Docker `journald` driver), so they survive container
 recreation and reboots; retention follows the journal. Last week of server logs:
 `journalctl -t kunveno-server --since "7 days ago" -o cat`; follow live with `-f`. The other
 services log as `kunveno-web`, `kunveno-echo`, `kunveno-prometheus`, `kunveno-grafana`.
-
-Upgrade: rsync a new bundle (it never overwrites `config.yaml`, `.env` or `certs/`), then
-`docker compose up -d --build`. Logs: `docker compose logs -f server`.
 
 ### Sound check (echo)
 The `echo` service runs next to the server and stays idle. When someone presses "Эхо-тест" in a
