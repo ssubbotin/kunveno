@@ -6,6 +6,7 @@ import { watchLevel } from './levels';
 import { MIC_KEY, audioConstraints } from './micLevel';
 import { prefersTcp, rememberTcp } from './transport';
 import { Reconnector, newClientId } from './reconnect';
+import { forgetPin, rememberPin } from './pins';
 import { cameraConstraints, loadPrefs, savePrefs, splitStream } from './media';
 
 const FATAL_CODES = new Set(['bad_pin', 'bad_room', 'room_full', 'bad_message', 'too_many_attempts']);
@@ -109,6 +110,7 @@ export class Session {
     this.state.apply(m);
     switch (m.type) {
       case 'joined':
+        if (this.wanted) rememberPin(localStorage, this.wanted.room, this.wanted.pin); // accepted
         this.reconnector.succeeded();
         this.everJoined = true;
         this.state.status = 'connected';
@@ -135,6 +137,7 @@ export class Session {
         } else if (m.code === 'media_failed') {
           this.useTcp();
         } else if (FATAL_CODES.has(m.code)) {
+          if (m.code === 'bad_pin' && this.wanted) forgetPin(localStorage, this.wanted.room); // it changed
           this.wanted = null;
         }
         break;
