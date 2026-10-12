@@ -38,3 +38,32 @@ func TestDownLossFromCumulativeCounters(t *testing.T) {
 		t.Fatalf("window not reset: %v", got)
 	}
 }
+
+// Video loss is measured like audio loss but kept apart: it must not move the connection grade.
+func TestVideoLossIsSeparate(t *testing.T) {
+	p := &Peer{}
+	rr := func(ssrc, seq, lost uint32) *rtcp.ReceiverReport {
+		return &rtcp.ReceiverReport{Reports: []rtcp.ReceptionReport{{SSRC: ssrc, LastSequenceNumber: seq, TotalLost: lost}}}
+	}
+	if _, ok := p.takeVideoLoss(); ok {
+		t.Fatal("a window without video reported a loss figure")
+	}
+	p.noteReport(KindCamera, rr(9, 100, 0))
+	p.noteReport(KindCamera, rr(9, 200, 10)) // 10 of 100 video packets lost
+	p.noteReport(KindAudio, rr(7, 1000, 0))
+	p.noteReport(KindAudio, rr(7, 1150, 0))
+	if got, ok := p.takeVideoLoss(); !ok || got < 0.099 || got > 0.101 {
+		t.Fatalf("video loss = %v, want 0.1", got)
+	}
+	if got := p.takeDownLoss(); got != 0 {
+		t.Fatalf("audio loss = %v, want 0: video loss leaked into it", got)
+	}
+}
+
+func TestCountNACKedPackets(t *testing.T) {
+	n := &rtcp.TransportLayerNack{Nacks: []rtcp.NackPair{{PacketID: 10, LostPackets: 0b101}, {PacketID: 40}}}
+	// pair 1: packet 10 plus bitmask bits 0 and 2 (11 and 13); pair 2: packet 40.
+	if got := nackedPackets(n); got != 4 {
+		t.Fatalf("nacked = %d, want 4", got)
+	}
+}

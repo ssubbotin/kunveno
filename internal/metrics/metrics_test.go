@@ -20,9 +20,17 @@ func TestRoomCollectorReadsLiveState(t *testing.T) {
 	r.SetEcho(true)
 	_ = r.JoinBot("e", "Echo")
 	_ = r.StartShare("b")
+	r.SetCamera("a", true)
+	r.SetDeclinesVideo("b", true)
 	reg.Add(room.New("empty", "Empty", "1234", 30))
 
 	want := `
+# HELP kunveno_cameras_on People with their camera on right now.
+# TYPE kunveno_cameras_on gauge
+kunveno_cameras_on 1
+# HELP kunveno_video_declined People who declined other participants' cameras ("Без видео").
+# TYPE kunveno_video_declined gauge
+kunveno_video_declined 1
 # HELP kunveno_participants_by_quality People in calls by connection grade (good, fair, poor, unknown).
 # TYPE kunveno_participants_by_quality gauge
 kunveno_participants_by_quality{grade="fair"} 0

@@ -15,6 +15,10 @@ type Sample struct {
 	DownLoss float64       // fraction of the server's packets the participant reported lost
 	RTT      time.Duration // round trip between server and participant
 	Jitter   time.Duration // jitter of the participant's audio as received by the server
+	// VideoLoss: fraction of our screen and camera packets the participant lost. Reported in
+	// metrics only; the grade follows audio, which matters most in a call.
+	VideoLoss float64
+	HasVideo  bool // the participant received video in this window
 }
 
 // Thresholds follow common VoIP guidance: under 1-2% loss and 150-200 ms of delay a call feels

@@ -741,12 +741,12 @@
     {
       "id": 16,
       "type": "timeseries",
-      "title": "Потери звука",
+      "title": "Потери",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "description": "90-й процентиль потерь: up от участника к серверу, down от сервера к участнику",
+      "description": "90-й процентиль потерь: up звук от участника, down звук к участнику, down_video экран и камеры к участнику",
       "gridPos": {
         "x": 8,
         "y": 44,
@@ -819,6 +819,116 @@
             "stacking": {
               "mode": "normal"
             }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Камеры",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "Сколько людей сейчас с включённой камерой и сколько отказались от чужого видео («Без видео»)",
+      "gridPos": {
+        "x": 0,
+        "y": 52,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "kunveno_cameras_on",
+          "legendFormat": "камеры включены"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "kunveno_video_declined",
+          "legendFormat": "«Без видео»"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Запросы зрителей",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "description": "В минуту: PLI означает, что у зрителя сломалась или замерла картинка; NACK, сколько пакетов пришлось переслать",
+      "gridPos": {
+        "x": 12,
+        "y": 52,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (kind) (rate(kunveno_viewer_pli_total[5m])) * 60",
+          "legendFormat": "PLI, {{kind}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (kind) (rate(kunveno_nacked_packets_total[5m])) * 60",
+          "legendFormat": "NACK, {{kind}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
           }
         },
         "overrides": []

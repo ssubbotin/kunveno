@@ -64,7 +64,7 @@ var (
 		Buckets: []float64{0.01, 0.025, 0.05, 0.1, 0.2, 0.4, 0.8},
 	})
 	LossRatio = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Name: "kunveno_packet_loss_ratio", Help: "Audio packet loss, sampled every few seconds, by direction (up: participant to server, down: server to participant).",
+		Name: "kunveno_packet_loss_ratio", Help: "Packet loss, sampled every few seconds, by direction: up (participant's audio to the server), down (our audio to the participant), down_video (our screen and cameras to the participant).",
 		Buckets: []float64{0.001, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2},
 	}, []string{"direction"})
 	JitterSeconds = prometheus.NewHistogram(prometheus.HistogramOpts{
@@ -80,9 +80,15 @@ var (
 	NegotiationErrors = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "kunveno_negotiation_errors_total", Help: "Failed offer or answer handling.",
 	})
-	KeyframeRequests = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "kunveno_keyframe_requests_total", Help: "PLIs sent to screen sharers.",
-	})
+	KeyframeRequests = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "kunveno_keyframe_requests_total", Help: "Keyframe requests (PLI) sent to publishers, by kind (screen or camera).",
+	}, []string{"kind"})
+	ViewerPLIs = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "kunveno_viewer_pli_total", Help: "Keyframe requests (PLI) from viewers, by kind: the picture broke or froze for them.",
+	}, []string{"kind"})
+	NACKedPackets = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "kunveno_nacked_packets_total", Help: "Packets viewers asked to resend (NACK), by kind.",
+	}, []string{"kind"})
 	PINFailures = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "kunveno_pin_failures_total", Help: "Wrong room PINs, by where they were tried (join or delete).",
 	}, []string{"source"})
@@ -111,7 +117,7 @@ func NewRegistry(rooms *room.Registry, version string) *prometheus.Registry {
 		Joins, Leaves, Sessions, SessionSeconds, Messages, BadMessages, MediaFailed,
 		RTTSeconds, LossRatio, JitterSeconds,
 		RTPPackets, RTPBytes, RTPSentPackets, RTPSentBytes, ActiveConnections, ConnectSeconds,
-		PeerStates, Transports, Offers, NegotiationErrors, KeyframeRequests,
+		PeerStates, Transports, Offers, NegotiationErrors, KeyframeRequests, ViewerPLIs, NACKedPackets,
 		PINFailures, PINBlocks, RoomsCreated, RoomsDeleted,
 	)
 	return r
@@ -147,6 +153,8 @@ var (
 	participantsDesc = prometheus.NewDesc("kunveno_room_participants", "Participants in the room by kind (person or bot).", []string{"room", "kind"}, nil)
 	capacityDesc     = prometheus.NewDesc("kunveno_room_capacity", "Maximum participants of the room.", []string{"room"}, nil)
 	sharingDesc      = prometheus.NewDesc("kunveno_room_sharing", "1 while someone shares a screen in the room.", []string{"room"}, nil)
+	camerasDesc      = prometheus.NewDesc("kunveno_cameras_on", "People with their camera on right now.", nil, nil)
+	declinedDesc     = prometheus.NewDesc("kunveno_video_declined", "People who declined other participants' cameras (\"Без видео\").", nil, nil)
 	qualityDesc      = prometheus.NewDesc("kunveno_participants_by_quality", "People in calls by connection grade (good, fair, poor, unknown).", []string{"grade"}, nil)
 	echoDesc         = prometheus.NewDesc("kunveno_room_echo", "1 when the room asked for the echo helper.", []string{"room"}, nil)
 )
@@ -155,7 +163,7 @@ var (
 type roomCollector struct{ reg *room.Registry }
 
 func (c roomCollector) Describe(ch chan<- *prometheus.Desc) {
-	for _, d := range []*prometheus.Desc{roomsDesc, participantsDesc, capacityDesc, sharingDesc, echoDesc, qualityDesc} {
+	for _, d := range []*prometheus.Desc{roomsDesc, participantsDesc, capacityDesc, sharingDesc, echoDesc, qualityDesc, camerasDesc, declinedDesc} {
 		ch <- d
 	}
 }
@@ -164,7 +172,10 @@ func (c roomCollector) Collect(ch chan<- prometheus.Metric) {
 	rooms := c.reg.All()
 	ch <- prometheus.MustNewConstMetric(roomsDesc, prometheus.GaugeValue, float64(len(rooms)))
 	grades := map[string]float64{"good": 0, "fair": 0, "poor": 0, "unknown": 0}
+	var cameras, declined float64
 	defer func() {
+		ch <- prometheus.MustNewConstMetric(camerasDesc, prometheus.GaugeValue, cameras)
+		ch <- prometheus.MustNewConstMetric(declinedDesc, prometheus.GaugeValue, declined)
 		for g, n := range grades {
 			ch <- prometheus.MustNewConstMetric(qualityDesc, prometheus.GaugeValue, n, g)
 		}
@@ -178,6 +189,12 @@ func (c roomCollector) Collect(ch chan<- prometheus.Metric) {
 				continue
 			}
 			people++
+			if p.Camera {
+				cameras++
+			}
+			if p.DeclinesVideo {
+				declined++
+			}
 			if p.Quality == "" {
 				grades["unknown"]++
 			} else {
