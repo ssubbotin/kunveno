@@ -2,17 +2,17 @@
   import Lobby from './lib/Lobby.svelte';
   import Room from './lib/Room.svelte';
   import { Session } from './lib/session';
+  import { t } from './lib/i18n/i18n.svelte';
 
   const session = new Session();
   const state = session.state;
 
-  const errorText: Record<string, string> = {
-    bad_pin: 'Неверный PIN комнаты.',
-    bad_room: 'Такой комнаты нет. Обновите список.',
-    room_full: 'В комнате нет мест.',
-    media_failed: 'Связь со звуком прервалась, подключаемся заново.',
-    bad_message: 'Ошибка протокола. Обновите страницу.',
-  };
+  const known = ['bad_pin', 'bad_room', 'room_full', 'media_failed', 'bad_message'] as const;
+  function errorText(code: string, message: string): string {
+    if (code === 'too_many_attempts') return t('pin.tooMany', { seconds: state.retryAfter });
+    if (code === 'no_mic') return t('error.no_mic', { detail: message });
+    return (known as readonly string[]).includes(code) ? t(`error.${code}` as `error.${(typeof known)[number]}`) : message;
+  }
 
   async function join(room: string, pin: string, name: string) {
     try {
@@ -20,15 +20,13 @@
     } catch (e) {
       state.status = 'error';
       state.errorCode = 'no_mic';
-      state.errorMessage = 'Нужен доступ к микрофону: ' + (e as Error).message;
+      state.errorMessage = (e as Error).message;
     }
   }
 </script>
 
 {#if state.status === 'idle' || (state.status === 'error' && state.selfId === '')}
-  <Lobby onJoin={join} error={state.errorCode === 'too_many_attempts'
-    ? `Слишком много неверных PIN. Попробуйте через ${state.retryAfter} с.`
-    : state.errorCode ? (errorText[state.errorCode] ?? state.errorMessage) : ''} />
+  <Lobby onJoin={join} error={state.errorCode ? errorText(state.errorCode, state.errorMessage) : ''} />
 {:else}
   <Room {session} />
 {/if}

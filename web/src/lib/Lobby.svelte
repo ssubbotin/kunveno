@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { build, repoUrl } from './build';
+  import { formatDate, i18n, setLang, t } from './i18n/i18n.svelte';
+  import { LANGS, LANG_NAMES, type Lang } from './i18n/messages';
   import { DEFAULT_TITLE, loadTitle } from './site';
   import MicCheck from './MicCheck.svelte';
 
@@ -28,7 +30,7 @@
       room = rooms.some((r) => r.slug === wanted) ? wanted : (rooms[0]?.slug ?? '');
       loadError = '';
     } catch {
-      loadError = 'Не удалось загрузить список комнат. Сервер недоступен.';
+      loadError = 'rooms.loadError';
     }
   }
 
@@ -40,14 +42,6 @@
     return () => clearInterval(timer);
   });
 
-  async function errorOf(res: Response): Promise<string> {
-    try {
-      return (await res.json()).error ?? res.statusText;
-    } catch {
-      return res.statusText;
-    }
-  }
-
   async function createRoom(ev: Event) {
     ev.preventDefault();
     actionError = '';
@@ -57,7 +51,7 @@
       body: JSON.stringify({ name: newName.trim(), pin: newPin }),
     });
     if (!res.ok) {
-      actionError = 'Комната не создана: ' + (await errorOf(res));
+      actionError = t('rooms.createFailed');
       return;
     }
     const made: { slug: string } = await res.json();
@@ -77,9 +71,9 @@
       body: JSON.stringify({ pin }),
     });
     if (!res.ok) {
-      actionError = res.status === 403 ? 'Чтобы удалить комнату, введите её PIN.'
-        : res.status === 429 ? `Слишком много неверных PIN. Попробуйте через ${res.headers.get('Retry-After') ?? 60} с.`
-        : 'Комната не удалена: ' + (await errorOf(res));
+      actionError = res.status === 403 ? t('rooms.deleteNeedsPin')
+        : res.status === 429 ? t('pin.tooMany', { seconds: res.headers.get('Retry-After') ?? 60 })
+        : t('rooms.deleteFailed');
       return;
     }
     await loadRooms();
@@ -94,7 +88,7 @@
   }
 
   function occupancy(r: RoomItem): string {
-    return r.participants === 0 ? 'пусто' : `${r.participants} из ${r.capacity}`;
+    return r.participants === 0 ? t('rooms.empty') : t('rooms.occupancy', { n: r.participants, capacity: r.capacity });
   }
 </script>
 
@@ -106,8 +100,8 @@
   </header>
 
   <section class="rooms" aria-labelledby="rooms-title">
-    <h2 id="rooms-title">Комнаты</h2>
-    {#if loadError}<p class="error">{loadError}</p>{/if}
+    <h2 id="rooms-title">{t('rooms.title')}</h2>
+    {#if loadError}<p class="error">{t('rooms.loadError')}</p>{/if}
     <div class="list" role="radiogroup" aria-labelledby="rooms-title">
       {#each rooms as r (r.slug)}
         <label class="room" class:selected={r.slug === room}>
@@ -119,16 +113,16 @@
       {/each}
       {#if creating}
         <form class="create" onsubmit={createRoom}>
-          <label class="field"><span>Название</span><input bind:value={newName} maxlength="48" required /></label>
-          <label class="field"><span>PIN (6–16 символов)</span><input bind:value={newPin} minlength="6" maxlength="16" required /></label>
+          <label class="field"><span>{t('rooms.name')}</span><input bind:value={newName} maxlength="48" required /></label>
+          <label class="field"><span>{t('rooms.pinRule')}</span><input bind:value={newPin} minlength="6" maxlength="16" required /></label>
           <div class="row">
-            <button class="btn primary" type="submit">Создать комнату</button>
-            <button class="btn quiet" type="button" onclick={() => (creating = false)}>Отмена</button>
+            <button class="btn primary" type="submit">{t('rooms.create')}</button>
+            <button class="btn quiet" type="button" onclick={() => (creating = false)}>{t('rooms.cancel')}</button>
           </div>
         </form>
       {:else}
         <button class="room add" type="button" onclick={() => (creating = true)}>
-          <span class="plus" aria-hidden="true">+</span><span class="room-name">Новая комната</span>
+          <span class="plus" aria-hidden="true">+</span><span class="room-name">{t('rooms.new')}</span>
         </button>
       {/if}
     </div>
@@ -136,19 +130,19 @@
   </section>
 
   <form class="enter" onsubmit={submit}>
-    <h2>Проверка перед входом</h2>
+    <h2>{t('enter.title')}</h2>
     {#if error}<p class="error">{error}</p>{/if}
     <MicCheck {name} />
     <div class="pair">
-      <label class="field"><span>Ваше имя</span><input bind:value={name} maxlength="32" autocomplete="name" required /></label>
-      <label class="field"><span>PIN комнаты</span><input bind:value={pin} type="password" maxlength="16" required /></label>
+      <label class="field"><span>{t('enter.name')}</span><input bind:value={name} maxlength="32" autocomplete="name" required /></label>
+      <label class="field"><span>{t('enter.pin')}</span><input bind:value={pin} type="password" maxlength="16" required /></label>
     </div>
     <button class="btn primary wide" type="submit" disabled={!selected}>
-      {selected ? `Войти в «${selected.name}»` : 'Выберите комнату'}
+      {selected ? t('enter.join', { room: selected.name }) : t('enter.chooseRoom')}
     </button>
     {#if selected?.created}
       <button class="btn danger wide" type="button" disabled={selected.participants > 0} onclick={deleteRoom}>
-        {selected.participants > 0 ? 'Удалить можно только пустую комнату' : 'Удалить комнату'}
+        {selected.participants > 0 ? t('rooms.deleteOnlyEmpty') : t('rooms.delete')}
       </button>
     {/if}
   </form>
@@ -156,8 +150,13 @@
 
 <footer class="about">
   <a href={repoUrl} target="_blank" rel="noopener noreferrer">kunveno</a>
-  <span>версия {build.version}</span>
-  {#if build.date}<span>сборка от {build.date}</span>{/if}
+  <span>{t('footer.version', { version: build.version })}</span>
+  {#if build.iso}<span>{t('footer.built', { date: formatDate(build.iso) })}</span>{/if}
+  <label class="lang"><span class="sr">{t('footer.language')}</span>
+    <select value={i18n.lang} onchange={(e) => setLang((e.currentTarget as HTMLSelectElement).value as Lang)}>
+      {#each LANGS as l (l)}<option value={l}>{LANG_NAMES[l]}</option>{/each}
+    </select>
+  </label>
 </footer>
 </div>
 
@@ -207,6 +206,9 @@
     border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem; opacity: .8;
   }
   .about a { color: inherit; text-decoration: none; }
+  .lang { margin-left: auto; }
+  .lang select { background: transparent; color: inherit; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: .1rem .3rem; font: inherit; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .about a:hover { color: var(--text); text-decoration: underline; }
   .about span { font-variant-numeric: tabular-nums; }
 

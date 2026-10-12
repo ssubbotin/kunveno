@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { initials } from './initials';
+  import { t } from './i18n/i18n.svelte';
   import { cameraConstraints, loadPrefs, savePrefs, type Prefs } from './media';
   import { MIC_KEY, audioConstraints, dbfs, meterPercent, rmsOf } from './micLevel';
   import Video from './Video.svelte';
@@ -44,7 +45,7 @@
       setPref({ cameraId: camTrack.getSettings().deviceId ?? '' });
       cameras = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
     } catch {
-      camError = 'Камера недоступна: браузер не дал доступ или её занимает другая программа.';
+      camError = 'camera.unavailable';
       setPref({ cameraOn: false });
     }
   }
@@ -154,42 +155,42 @@
         <span class="avatar" class:live={status === 'live' && prefs.micOn} style:--ring="{Math.round(level * 0.22)}px" aria-hidden="true">{initials(name)}</span>
         {#if status !== 'live'}
           <button class="btn" type="button" onclick={start} disabled={status === 'asking'}>
-            {status === 'asking' ? 'Ждём разрешения браузера…' : 'Проверить микрофон'}
+            {status === 'asking' ? t('mic.asking') : t('mic.check')}
           </button>
         {/if}
       </div>
     {/if}
     <div class="toggles">
       <button type="button" class="round" class:off={!prefs.micOn} aria-pressed={prefs.micOn} onclick={() => setPref({ micOn: !prefs.micOn })}
-        title={prefs.micOn ? 'Войти с выключенным микрофоном' : 'Войти с включённым микрофоном'}>
+        title={prefs.micOn ? t('mic.joinMuted') : t('mic.joinUnmuted')}>
         <svg viewBox="0 0 24 24" aria-hidden="true">{#if prefs.micOn}<rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" />{:else}<path d="M9 5a3 3 0 0 1 6 0v6M5 11a7 7 0 0 0 11.5 5.4M12 18v3M4 4l16 16" />{/if}</svg>
-        <span class="sr">{prefs.micOn ? 'Микрофон включён' : 'Микрофон выключен'}</span>
+        <span class="sr">{prefs.micOn ? t('mic.on') : t('mic.off')}</span>
       </button>
       <button type="button" class="round" class:off={!prefs.cameraOn} aria-pressed={prefs.cameraOn} onclick={toggleCamera}
         disabled={hasCamera === false}
-        title={hasCamera === false ? 'Камера не найдена' : prefs.cameraOn ? 'Войти без камеры' : 'Войти с камерой'}>
+        title={hasCamera === false ? t('camera.notFound') : prefs.cameraOn ? t('camera.joinWithout') : t('camera.joinWith')}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2" /><path d="m16 10 5-3v10l-5-3" />{#if !prefs.cameraOn}<path d="M3 3l18 18" />{/if}</svg>
-        <span class="sr">{prefs.cameraOn ? 'Камера включена' : 'Камера выключена'}</span>
+        <span class="sr">{prefs.cameraOn ? t('camera.on') : t('camera.off')}</span>
       </button>
     </div>
   </div>
-  {#if camError}<p class="hint warn">{camError}</p>{/if}
+  {#if camError}<p class="hint warn">{t('camera.unavailable')}</p>{/if}
 
   <div class="devices">
   {#if prefs.cameraOn && cameras.length > 0}
-    <label class="field"><span>Камера</span>
+    <label class="field"><span>{t('camera.label')}</span>
       <select value={prefs.cameraId} onchange={chooseCamera}>
         {#each cameras as d (d.deviceId)}
-          <option value={d.deviceId}>{d.label || 'Камера'}</option>
+          <option value={d.deviceId}>{d.label || t('camera.label')}</option>
         {/each}
       </select>
     </label>
   {/if}
   {#if status === 'live'}
-    <label class="field"><span>Микрофон</span>
+    <label class="field"><span>{t('mic.label')}</span>
       <select value={selected} onchange={choose}>
         {#each devices as d (d.deviceId)}
-          <option value={d.deviceId}>{d.deviceId === 'default' ? 'По умолчанию' : d.label || 'Микрофон'}</option>
+          <option value={d.deviceId}>{d.deviceId === 'default' ? t('mic.default') : d.label || t('mic.label')}</option>
         {/each}
       </select>
     </label>
@@ -197,24 +198,24 @@
   </div>
   {#if status === 'live'}
     <div class="level">
-      <div class="meter" role="meter" aria-label="Уровень микрофона" aria-valuemin="0" aria-valuemax="100" aria-valuenow={level}>
+      <div class="meter" role="meter" aria-label={t('mic.level')} aria-valuemin="0" aria-valuemax="100" aria-valuenow={level}>
         <span class="fill" class:hot={level >= 75} class:clip={level >= 92} style:width="{level}%"></span>
         <span class="peak" style:left="{peak}%"></span>
       </div>
       <p class="hint" class:ok={heard} class:warn={silentTooLong && !heard}>
         {#if !prefs.micOn}
-          Войдёте с выключенным микрофоном
+          {t('mic.willBeMuted')}
         {:else if heard}
-          Микрофон работает
+          {t('mic.works')}
         {:else if silentTooLong}
-          Звука нет. Выберите другой микрофон или проверьте, не выключен ли он в системе.
+          {t('mic.silent')}
         {:else}
-          Скажите что-нибудь
+          {t('mic.speak')}
         {/if}
       </p>
     </div>
   {:else if status === 'denied'}
-    <p class="hint warn">Браузер не дал доступ к микрофону. Разрешите его в настройках сайта (значок слева от адреса).</p>
+    <p class="hint warn">{t('mic.denied')}</p>
   {/if}
 </div>
 
