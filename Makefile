@@ -1,7 +1,7 @@
 # Debian versions must start with a digit: tags look like v0.1.0; untagged trees get 0.0.0+git<hash>.
 VERSION ?= $(shell v=$$(git describe --tags --dirty 2>/dev/null | sed 's/^v//'); [ -n "$$v" ] && echo "$$v" || echo "0.0.0+git$$(git rev-parse --short HEAD 2>/dev/null)")
 
-.PHONY: fmt test-go test-web test build deb clean
+.PHONY: fmt test-go test-web test build deb docker-bundle clean
 
 fmt:
 	gofmt -l -w . && go mod tidy
@@ -22,6 +22,17 @@ deb: build
 	mkdir -p dist
 	VERSION=$(VERSION) nfpm package -f deploy/nfpm/server.yaml -p deb -t dist/
 	VERSION=$(VERSION) nfpm package -f deploy/nfpm/web.yaml -p deb -t dist/
+
+# Self-contained directory for `docker compose up --build` on the target host: built artifacts only,
+# source maps removed (they embed the client sources).
+docker-bundle: build
+	rm -rf dist/kunveno-docker && mkdir -p dist/kunveno-docker
+	cp bin/kunveno-server deploy/docker/Dockerfile.server deploy/docker/Dockerfile.web deploy/docker/nginx.conf.template deploy/docker/docker-compose.yml dist/kunveno-docker/
+	cp deploy/docker/env.example dist/kunveno-docker/env.example
+	cp deploy/config.example.yaml dist/kunveno-docker/config.example.yaml
+	cp -r web/dist dist/kunveno-docker/web
+	find dist/kunveno-docker/web -name '*.map' -delete
+	sed -i '/^\/\/# sourceMappingURL=/d' dist/kunveno-docker/web/assets/*.js
 
 clean:
 	rm -rf bin dist web/dist

@@ -40,3 +40,18 @@ sudo systemctl start kunveno-server
 - `bad_message` on join: the request did not reach `/ws` as an upgrade; check the nginx
   `Upgrade`/`Connection` headers.
 - 403 on `/ws`: Origin mismatch. Set `http.allowed_origins` in the config to the site URL.
+
+## Docker Compose (alternative to the deb packages)
+nginx and the server run as two containers with host networking. Only built artifacts go to the host.
+
+On the workstation: `make docker-bundle`, then `rsync -a dist/kunveno-docker/ <host>:kunveno/`.
+
+On the host, in `~/kunveno`:
+```
+cp config.example.yaml config.yaml   # advertise_ip, rooms, PINs; pick a free http.listen port
+cp env.example .env                  # KUNVENO_UPSTREAM must match http.listen
+mkdir -p certs                       # fullchain.pem and privkey.pem (see section 2)
+docker compose up -d --build
+```
+Upgrade: rsync a new bundle (it never overwrites `config.yaml`, `.env` or `certs/`), then
+`docker compose up -d --build`. Logs: `docker compose logs -f server`.

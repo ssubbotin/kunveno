@@ -1,0 +1,45 @@
+# Rendered by the nginx image entrypoint into /etc/nginx/conf.d/kunveno.conf.
+# The container runs with host networking, so the upstream is the server's loopback listener.
+server {
+    listen ${HTTP_PORT};
+    server_name ${SERVER_NAME};
+    return 301 https://$host:${HTTPS_PORT}$request_uri;
+}
+
+server {
+    listen ${HTTPS_PORT} ssl;
+    http2 on;
+    server_name ${SERVER_NAME};
+
+    ssl_certificate     /etc/ssl/kunveno/fullchain.pem;
+    ssl_certificate_key /etc/ssl/kunveno/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    root /usr/share/nginx/kunveno;
+    index index.html;
+
+    location / {
+        try_files $uri /index.html;
+    }
+
+    # $http_host keeps a non-default port, so the server's same-origin check matches the browser Origin.
+    location /ws {
+        proxy_pass http://${KUNVENO_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
+
+    location /api/ {
+        proxy_pass http://${KUNVENO_UPSTREAM};
+        proxy_set_header Host $http_host;
+    }
+
+    location = /healthz {
+        proxy_pass http://${KUNVENO_UPSTREAM};
+    }
+}

@@ -25,6 +25,7 @@ make test-go
 make test-web
 make build       # CGO_ENABLED=0 bin/kunveno-server, plus web/dist via npm run build
 make deb         # nfpm: dist/kunveno-server_*.deb and dist/kunveno-web_*.deb
+make docker-bundle  # dist/kunveno-docker: binary, client without source maps, compose stack
 make fmt         # gofmt + go mod tidy
 
 go test ./internal/sfu -run TestNegotiateCoalesces -v    # single Go test
