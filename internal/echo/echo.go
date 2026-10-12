@@ -62,6 +62,11 @@ func (d *Delayer) Push(src string, p *rtp.Packet, now time.Time) {
 		d.lastSpeech = now
 	}
 	out := p.Clone()
+	// Extensions (MID above all) belong to the connection the packet came in on.
+	out.Extension = false
+	out.Extensions = nil
+	out.ExtensionProfile = 0
+	out.CSRC = nil
 	out.SequenceNumber = d.seq
 	d.seq++
 	out.Timestamp = p.Timestamp + d.offset

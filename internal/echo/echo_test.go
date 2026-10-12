@@ -87,3 +87,19 @@ func TestPushDoesNotAliasTheCallerPacket(t *testing.T) {
 		t.Fatal("queued packet shares the caller's buffer")
 	}
 }
+
+// Header extensions belong to the connection the packet arrived on (the MID extension in
+// particular routes it there); re-sent packets must carry none.
+func TestOutputDropsHeaderExtensions(t *testing.T) {
+	d := New(0, 30, time.Second)
+	p := pkt(1, 0, 80)
+	if err := p.Header.SetExtension(1, []byte("2")); err != nil {
+		t.Fatal(err)
+	}
+	p.CSRC = []uint32{7}
+	d.Push("a", p, at(0))
+	out := d.Due(at(0))[0]
+	if out.Extension || len(out.Extensions) != 0 || len(out.CSRC) != 0 {
+		t.Fatalf("extension=%v extensions=%d csrc=%d", out.Extension, len(out.Extensions), len(out.CSRC))
+	}
+}

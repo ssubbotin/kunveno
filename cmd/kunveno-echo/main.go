@@ -15,6 +15,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -134,6 +135,21 @@ func run(ctx context.Context, log *slog.Logger, url, room, pin, name string, del
 	})
 
 	d := echo.New(delay, minSpeech, time.Second)
+	var rx, rxMax, tx atomic.Int64
+	go func() {
+		t := time.NewTicker(10 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if n := rx.Swap(0); n > 0 {
+					log.Info("stats", "rx_packets", n, "rx_max_payload", rxMax.Swap(0), "tx_packets", tx.Swap(0))
+				}
+			}
+		}
+	}()
 	pc.OnTrack(func(tr *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 		src := tr.StreamID() // the publishing participant's id
 		audio := tr.Kind() == webrtc.RTPCodecTypeAudio
@@ -144,6 +160,10 @@ func run(ctx context.Context, log *slog.Logger, url, room, pin, name string, del
 				return
 			}
 			if audio {
+				rx.Add(1)
+				if n := int64(len(p.Payload)); n > rxMax.Load() {
+					rxMax.Store(n)
+				}
 				d.Push(src, p, time.Now())
 			}
 		}
@@ -157,7 +177,9 @@ func run(ctx context.Context, log *slog.Logger, url, room, pin, name string, del
 				return
 			case now := <-t.C:
 				for _, p := range d.Due(now) {
-					_ = out.WriteRTP(p)
+					if err := out.WriteRTP(p); err == nil {
+						tx.Add(1)
+					}
 				}
 			}
 		}
