@@ -7,6 +7,8 @@ media:
   tcp_port: 7000                # ICE-TCP fallback for clients whose UDP path fails; -1 disables
   advertise_ip: 10.8.0.1        # the VPN address browsers will send media to
   share_max_kbps: 2500
+ui:
+  title: kunveno                # shown in the lobby and the browser tab, e.g. your company's name
 # rooms_file: /var/lib/kunveno/rooms.json   # rooms created in the lobby; default shown
 rooms:
   - slug: ops

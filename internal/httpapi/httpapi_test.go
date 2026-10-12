@@ -167,3 +167,11 @@ func TestDeleteGuessingIsBlocked(t *testing.T) {
 		t.Fatal("room deleted while blocked")
 	}
 }
+
+func TestInfo(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Info("Конференц связь").ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
+	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != `{"title":"Конференц связь"}` {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+}

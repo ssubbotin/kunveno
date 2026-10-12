@@ -45,6 +45,9 @@ func TestParseMinimalDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if cfg.UI.Title != "kunveno" {
+		t.Errorf("ui.title default = %q, want kunveno", cfg.UI.Title)
+	}
 	if cfg.Media.TCPPort != 7000 {
 		t.Errorf("tcp_port default = %d, want 7000", cfg.Media.TCPPort)
 	}
@@ -64,6 +67,7 @@ func TestValidateRejects(t *testing.T) {
 		{"short pin", "media: {advertise_ip: 10.8.0.1}\nrooms: [{slug: a, name: A, pin: \"12\"}]\n", "pin"},
 		{"bad ip", "media: {advertise_ip: nope}\nrooms: [{slug: a, name: A, pin: \"1234\"}]\n", "advertise_ip"},
 		{"max too big", "media: {advertise_ip: 10.8.0.1}\nrooms: [{slug: a, name: A, pin: \"1234\", max_participants: 51}]\n", "max_participants"},
+		{"title too long", "ui: {title: \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"}\nmedia: {advertise_ip: 10.8.0.1}\nrooms: [{slug: a, name: A, pin: \"1234\"}]\n", "ui.title"},
 		{"bad tcp port", "media: {advertise_ip: 10.8.0.1, tcp_port: 70000}\nrooms: [{slug: a, name: A, pin: \"1234\"}]\n", "tcp_port"},
 		{"numeric pin stays string", "media: {advertise_ip: 10.8.0.1}\nrooms: [{slug: a, name: A, pin: 0012}]\n", ""},
 	}
@@ -90,5 +94,12 @@ func TestTCPPortCanBeDisabled(t *testing.T) {
 	cfg, err := Parse([]byte("media: {advertise_ip: 10.8.0.1, tcp_port: -1}\nrooms: [{slug: a, name: A, pin: \"1234\"}]\n"))
 	if err != nil || cfg.Media.TCPPort != -1 {
 		t.Fatalf("cfg.Media.TCPPort = %v, err = %v", cfg, err)
+	}
+}
+
+func TestTitleFromConfig(t *testing.T) {
+	cfg, err := Parse([]byte("ui:\n  title: \"  Конференц-связь kunveno. Частный сервер.  \"\nmedia: {advertise_ip: 10.8.0.1}\nrooms: [{slug: a, name: A, pin: \"1234\"}]\n"))
+	if err != nil || cfg.UI.Title != "Конференц-связь kunveno. Частный сервер." {
+		t.Fatalf("title = %q, err = %v", cfg.UI.Title, err)
 	}
 }
