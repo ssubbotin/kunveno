@@ -1,7 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { initials } from './initials';
+  import { cameraConstraints, loadPrefs, savePrefs, type Prefs } from './media';
   import { MIC_KEY, audioConstraints, dbfs, meterPercent, rmsOf } from './micLevel';
+  import Video from './Video.svelte';
 
   let { name = '' }: { name?: string } = $props();
 
@@ -13,6 +15,56 @@
   let peak = $state(0);
   let heard = $state(false);
   let silentTooLong = $state(false);
+
+  // Pre-join choices, applied when entering the room.
+  let prefs = $state<Prefs>(loadPrefs(localStorage));
+  function setPref(patch: Partial<Prefs>) {
+    prefs = { ...prefs, ...patch };
+    savePrefs(localStorage, prefs);
+  }
+
+  let cameras = $state<MediaDeviceInfo[]>([]);
+  // null until counted; enumerateDevices lists inputs (without names) even before permission.
+  let hasCamera = $state<boolean | null>(null);
+  let camTrack = $state.raw<MediaStreamTrack | null>(null);
+  let camError = $state('');
+
+  async function startCamera() {
+    stopCamera();
+    camError = '';
+    try {
+      let s: MediaStream;
+      try {
+        s = await navigator.mediaDevices.getUserMedia({ video: cameraConstraints(prefs.cameraId) });
+      } catch (e) {
+        if (!prefs.cameraId || (e as Error).name !== 'OverconstrainedError') throw e;
+        s = await navigator.mediaDevices.getUserMedia({ video: cameraConstraints('') });
+      }
+      camTrack = s.getVideoTracks()[0];
+      setPref({ cameraId: camTrack.getSettings().deviceId ?? '' });
+      cameras = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+    } catch {
+      camError = 'Камера недоступна: браузер не дал доступ или её занимает другая программа.';
+      setPref({ cameraOn: false });
+    }
+  }
+
+  function stopCamera() {
+    camTrack?.stop();
+    camTrack = null;
+  }
+
+  function toggleCamera() {
+    if (hasCamera === false) return;
+    setPref({ cameraOn: !prefs.cameraOn });
+    if (prefs.cameraOn) void startCamera();
+    else stopCamera();
+  }
+
+  function chooseCamera(ev: Event) {
+    setPref({ cameraId: (ev.currentTarget as HTMLSelectElement).value });
+    void startCamera();
+  }
 
   let stream: MediaStream | null = null;
   let ctx: AudioContext | null = null;
@@ -80,21 +132,59 @@
     void navigator.permissions?.query({ name: 'microphone' as PermissionName })
       .then((p) => { if (p.state === 'granted') void start(); })
       .catch(() => {});
-    return stop;
+    void navigator.mediaDevices.enumerateDevices().then((all) => {
+      hasCamera = all.some((d) => d.kind === 'videoinput');
+      if (!hasCamera && prefs.cameraOn) setPref({ cameraOn: false }); // nothing to turn on here
+      else if (prefs.cameraOn) void startCamera();
+    }).catch(() => (hasCamera = false));
+    return () => {
+      stop();
+      stopCamera();
+    };
   });
 </script>
 
 <div class="check">
   <!-- Preview: the avatar others will see; the camera picture goes here later (object-fit: cover). -->
   <div class="preview">
-    <span class="avatar" class:live={status === 'live'} style:--ring="{Math.round(level * 0.22)}px" aria-hidden="true">{initials(name)}</span>
-    {#if status !== 'live'}
-      <button class="btn start" type="button" onclick={start} disabled={status === 'asking'}>
-        {status === 'asking' ? 'Ждём разрешения браузера…' : 'Проверить микрофон'}
-      </button>
+    {#if camTrack && prefs.cameraOn}
+      <div class="cam"><Video track={camTrack} mirror /></div>
+    {:else}
+      <div class="center">
+        <span class="avatar" class:live={status === 'live' && prefs.micOn} style:--ring="{Math.round(level * 0.22)}px" aria-hidden="true">{initials(name)}</span>
+        {#if status !== 'live'}
+          <button class="btn" type="button" onclick={start} disabled={status === 'asking'}>
+            {status === 'asking' ? 'Ждём разрешения браузера…' : 'Проверить микрофон'}
+          </button>
+        {/if}
+      </div>
     {/if}
+    <div class="toggles">
+      <button type="button" class="round" class:off={!prefs.micOn} aria-pressed={prefs.micOn} onclick={() => setPref({ micOn: !prefs.micOn })}
+        title={prefs.micOn ? 'Войти с выключенным микрофоном' : 'Войти с включённым микрофоном'}>
+        <svg viewBox="0 0 24 24" aria-hidden="true">{#if prefs.micOn}<rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" />{:else}<path d="M9 5a3 3 0 0 1 6 0v6M5 11a7 7 0 0 0 11.5 5.4M12 18v3M4 4l16 16" />{/if}</svg>
+        <span class="sr">{prefs.micOn ? 'Микрофон включён' : 'Микрофон выключен'}</span>
+      </button>
+      <button type="button" class="round" class:off={!prefs.cameraOn} aria-pressed={prefs.cameraOn} onclick={toggleCamera}
+        disabled={hasCamera === false}
+        title={hasCamera === false ? 'Камера не найдена' : prefs.cameraOn ? 'Войти без камеры' : 'Войти с камерой'}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2" /><path d="m16 10 5-3v10l-5-3" />{#if !prefs.cameraOn}<path d="M3 3l18 18" />{/if}</svg>
+        <span class="sr">{prefs.cameraOn ? 'Камера включена' : 'Камера выключена'}</span>
+      </button>
+    </div>
   </div>
+  {#if camError}<p class="hint warn">{camError}</p>{/if}
 
+  <div class="devices">
+  {#if prefs.cameraOn && cameras.length > 0}
+    <label class="field"><span>Камера</span>
+      <select value={prefs.cameraId} onchange={chooseCamera}>
+        {#each cameras as d (d.deviceId)}
+          <option value={d.deviceId}>{d.label || 'Камера'}</option>
+        {/each}
+      </select>
+    </label>
+  {/if}
   {#if status === 'live'}
     <label class="field"><span>Микрофон</span>
       <select value={selected} onchange={choose}>
@@ -103,13 +193,18 @@
         {/each}
       </select>
     </label>
+  {/if}
+  </div>
+  {#if status === 'live'}
     <div class="level">
       <div class="meter" role="meter" aria-label="Уровень микрофона" aria-valuemin="0" aria-valuemax="100" aria-valuenow={level}>
         <span class="fill" class:hot={level >= 75} class:clip={level >= 92} style:width="{level}%"></span>
         <span class="peak" style:left="{peak}%"></span>
       </div>
       <p class="hint" class:ok={heard} class:warn={silentTooLong && !heard}>
-        {#if heard}
+        {#if !prefs.micOn}
+          Войдёте с выключенным микрофоном
+        {:else if heard}
           Микрофон работает
         {:else if silentTooLong}
           Звука нет. Выберите другой микрофон или проверьте, не выключен ли он в системе.
@@ -136,7 +231,19 @@
     box-shadow: 0 0 0 3px var(--line); transition: box-shadow 80ms linear;
   }
   .avatar.live { box-shadow: 0 0 0 3px var(--live), 0 0 0 var(--ring) var(--live-soft); }
-  .start { position: absolute; bottom: 1rem; }
+  .devices { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .75rem 1rem; }
+  .devices:empty { display: none; }
+  .center { display: grid; justify-items: center; gap: .9rem; }
+  .cam { position: absolute; inset: 0; }
+  .toggles { position: absolute; right: .75rem; bottom: .75rem; display: flex; gap: .5rem; }
+  .round {
+    width: 2.6rem; height: 2.6rem; border-radius: 50%; display: grid; place-items: center; cursor: pointer;
+    border: 1px solid var(--line); background: rgba(22, 32, 43, .8); color: var(--text);
+  }
+  .round:disabled { opacity: .45; cursor: default; }
+  .round.off { border-color: var(--caution); background: rgba(227, 161, 59, .2); color: #f3cf92; }
+  .round svg { width: 1.2rem; height: 1.2rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   select {
     width: 100%; min-width: 0; padding: .6rem .75rem; border-radius: var(--radius-sm); border: 1px solid var(--line);
     background: var(--ink); color: inherit; font: inherit; text-overflow: ellipsis;

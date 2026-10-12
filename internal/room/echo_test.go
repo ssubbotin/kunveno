@@ -65,3 +65,14 @@ func TestSetQuality(t *testing.T) {
 		t.Fatalf("snapshot quality = %q", got)
 	}
 }
+
+func TestSetCamera(t *testing.T) {
+	r := New("testing", "Testing", "1234", 3)
+	_ = r.Join("a", "Ann", "1234")
+	if !r.SetCamera("a", true) || r.SetCamera("a", true) {
+		t.Fatal("SetCamera change reporting is wrong")
+	}
+	if !r.Snapshot().Participants[0].Camera {
+		t.Fatal("camera flag not in snapshot")
+	}
+}

@@ -106,7 +106,7 @@ func (p *fakePeer) Close() error { p.mu.Lock(); p.closed = true; p.mu.Unlock(); 
 func (p *fakePeer) setTrack(t *testing.T, k sfu.Kind) {
 	t.Helper()
 	mime := webrtc.MimeTypeOpus
-	if k == sfu.KindScreen {
+	if k != sfu.KindAudio {
 		mime = webrtc.MimeTypeVP8
 	}
 	tr, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: mime, ClockRate: 90000}, k.String(), p.id)
@@ -589,4 +589,41 @@ func TestPinGuessingIsBlocked(t *testing.T) {
 	if d := testutil.ToFloat64(metrics.PINFailures.WithLabelValues("join")) - failsBefore; d != 5 {
 		t.Errorf("pin failures counted %v, want 5", d)
 	}
+}
+
+func TestCameraFlagReachesTheRoom(t *testing.T) {
+	e := newEnv(t, 15)
+	ca, ida := join(t, e, "Ann")
+	send(t, ca, `{"type":"camera","on":true}`)
+	for {
+		m := expect(t, ca, "participants")
+		if len(m.Participants) == 1 && m.Participants[0].ID == ida && m.Participants[0].Camera {
+			break
+		}
+	}
+}
+
+func TestCamerasFollowTheReceivePreference(t *testing.T) {
+	e := newEnv(t, 15)
+	_, ida := join(t, e, "Ann")
+	e.media.peer(ida).setTrack(t, sfu.KindCamera)
+	e.h.onPublisher(e.media.peer(ida), sfu.KindCamera)
+
+	cb, idb := join(t, e, "Bob") // late joiner gets the camera that is already on
+	if n := e.media.peer(idb).subCount(ida, sfu.KindCamera); n != 1 {
+		t.Fatalf("late joiner camera subscriptions = %d, want 1", n)
+	}
+	send(t, cb, `{"type":"video","receive":false}`)
+	waitFor(t, func() bool { return e.media.peer(idb).subCount(ida, sfu.KindCamera) == 0 })
+
+	_, idc := join(t, e, "Cid")
+	e.media.peer(idc).setTrack(t, sfu.KindCamera)
+	e.h.onPublisher(e.media.peer(idc), sfu.KindCamera) // a new camera while Bob declines video
+	if n := e.media.peer(idb).subCount(idc, sfu.KindCamera); n != 0 {
+		t.Fatalf("Bob got a new camera while declining video: %d", n)
+	}
+	send(t, cb, `{"type":"video","receive":true}`)
+	waitFor(t, func() bool {
+		return e.media.peer(idb).subCount(ida, sfu.KindCamera) == 1 && e.media.peer(idb).subCount(idc, sfu.KindCamera) == 1
+	})
 }

@@ -17,13 +17,32 @@ type Kind int
 const (
 	KindAudio Kind = iota
 	KindScreen
+	KindCamera
+	numKinds
 )
 
 func (k Kind) String() string {
-	if k == KindAudio {
+	switch k {
+	case KindAudio:
 		return "audio"
+	case KindCamera:
+		return "camera"
 	}
 	return "screen"
+}
+
+// kindForMid maps the participant's fixed send slots to what they carry: the server creates
+// them in this order on every connection (mid 0 audio, mid 1 screen, mid 2 camera).
+func kindForMid(mid string) (Kind, bool) {
+	switch mid {
+	case "0":
+		return KindAudio, true
+	case "1":
+		return KindScreen, true
+	case "2":
+		return KindCamera, true
+	}
+	return 0, false
 }
 
 // EngineConfig selects the UDP port and the single advertised host address.

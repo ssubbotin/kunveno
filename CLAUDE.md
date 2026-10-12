@@ -65,11 +65,14 @@ Go packages are separated so each is tested alone:
 
 Media model, which explains most design choices:
 
-- Each client has one `RTCPeerConnection` with two fixed send slots (audio, screen) negotiated at
-  join. The client never renegotiates; starting/stopping a share is `replaceTrack` on the video
-  sender, so there is no offer glare.
-- Forwarded tracks use stream id = publisher's participant id and track id `audio` or `screen`;
-  the client identifies them from `event.streams[0].id` and `event.track.kind`.
+- Each client has one `RTCPeerConnection` with three fixed send slots negotiated at join: mid 0
+  audio, mid 1 screen, mid 2 camera (`sfu.kindForMid`; the server tells screen from camera by the
+  slot, both are VP8). The client never renegotiates; starting/stopping a share or the camera is
+  `replaceTrack` on that slot's sender, so there is no offer glare.
+- Forwarded tracks use stream id = publisher's participant id (`<id>/camera` for a camera) and
+  track id `audio`, `screen` or `camera`; the client identifies them from `event.streams[0].id`
+  (`splitStream`) and `event.track.kind`. Cameras are 640x360 at 15 fps, capped at 350 kbit/s, with
+  no simulcast; a participant can decline other cameras (`{"type":"video","receive":false}`).
 - Share lock is enforced server side; the client attaches the screen track only after seeing itself
   as `sharer` in a `participants` snapshot. A disconnect releases the lock and unsubscribes everyone.
 - Keyframes: PLI to the sharer whenever a subscriber attaches to the screen track; subscriber PLIs

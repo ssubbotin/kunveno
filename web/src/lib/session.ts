@@ -5,6 +5,7 @@ import { Rtc } from './rtc';
 import { watchLevel } from './levels';
 import { MIC_KEY, audioConstraints } from './micLevel';
 import { prefersTcp, rememberTcp } from './transport';
+import { cameraConstraints, loadPrefs, savePrefs, splitStream } from './media';
 
 const FATAL_CODES = new Set(['bad_pin', 'bad_room', 'room_full', 'bad_message', 'too_many_attempts']);
 
@@ -24,6 +25,7 @@ export class Session {
   private screenTrack: MediaStreamTrack | null = null;
   private screenAttached = false;
   private stopSelfLevel: (() => void) | null = null;
+  private camera: MediaStreamTrack | null = null;
   // Set after our media connection failed, and remembered for a day; joins then ask the server
   // for ICE over TCP only, since a UDP path that broke once tends to break again (NAT or
   // firewall on a gateway).
@@ -32,6 +34,19 @@ export class Session {
   async join(room: string, pin: string, name: string): Promise<void> {
     this.wanted = { room, pin, name };
     this.attempt = 0;
+    // Enter in the state chosen in the lobby.
+    const prefs = loadPrefs(localStorage);
+    this.state.muted = !prefs.micOn;
+    this.state.receiveVideo = prefs.receiveVideo;
+    if (this.mic) this.mic.enabled = prefs.micOn;
+    this.state.hasCamera = await hasCamera();
+    if (prefs.cameraOn && this.state.hasCamera && !this.camera) {
+      try {
+        this.camera = await openCamera(prefs.cameraId);
+      } catch (e) {
+        console.warn('camera', e); // join without it; the button stays available
+      }
+    }
     if (!this.mic) {
       const stream = await openMic(localStorage.getItem(MIC_KEY) ?? '');
       this.mic = stream.getAudioTracks()[0];
@@ -80,6 +95,8 @@ export class Session {
         this.attempt = 0;
         this.state.status = 'connected';
         if (this.state.muted) this.sig?.send({ type: 'mute', muted: true });
+        if (!this.state.receiveVideo) this.sig?.send({ type: 'video', receive: false });
+        if (this.camera) void this.attachCamera();
         break;
       case 'offer':
         void this.rtc?.handleOffer(m.sdp).catch((e) => console.error('offer', e));
@@ -132,6 +149,8 @@ export class Session {
     this.stopSelfLevel = null;
     this.mic?.stop();
     this.mic = null;
+    this.camera?.stop();
+    this.camera = null;
     this.state.reset();
     this.state.status = 'idle';
   }
@@ -145,6 +164,61 @@ export class Session {
   private useTcp(): void {
     this.preferTcp = true;
     rememberTcp(localStorage);
+  }
+
+  // setCamera turns our camera on or off and remembers the choice for the next visit.
+  async setCamera(on: boolean): Promise<void> {
+    const prefs = loadPrefs(localStorage);
+    savePrefs(localStorage, { ...prefs, cameraOn: on });
+    if (!on) {
+      this.dropCamera();
+      this.sig?.send({ type: 'camera', on: false });
+      return;
+    }
+    if (!this.camera) {
+      try {
+        this.camera = await openCamera(prefs.cameraId);
+      } catch (e) {
+        console.warn('camera', e);
+        this.state.cameraError = 'Камера недоступна: браузер не дал доступ или её занимает другая программа.';
+        savePrefs(localStorage, { ...loadPrefs(localStorage), cameraOn: false });
+        return;
+      }
+    }
+    this.state.cameraError = '';
+    await this.attachCamera();
+  }
+
+  // setReceiveVideo declines or accepts the other participants' cameras (audio and the shared
+  // screen keep flowing), for a weak link.
+  setReceiveVideo(on: boolean): void {
+    this.state.receiveVideo = on;
+    savePrefs(localStorage, { ...loadPrefs(localStorage), receiveVideo: on });
+    this.sig?.send({ type: 'video', receive: on });
+    if (!on) {
+      const self = this.state.videos[this.state.selfId];
+      this.state.videos = self ? { [this.state.selfId]: self } : {};
+    }
+  }
+
+  private async attachCamera(): Promise<void> {
+    const rtc = this.rtc;
+    if (!this.camera || !rtc) return;
+    await rtc.ready;
+    if (rtc !== this.rtc || !this.camera) return; // reconnected or switched off meanwhile
+    await rtc.startCamera(this.camera);
+    this.state.cameraOn = true;
+    this.state.videos = { ...this.state.videos, [this.state.selfId]: this.camera };
+    this.sig?.send({ type: 'camera', on: true });
+  }
+
+  private dropCamera(): void {
+    this.camera?.stop();
+    this.camera = null;
+    void this.rtc?.stopCamera();
+    this.state.cameraOn = false;
+    const { [this.state.selfId]: _, ...rest } = this.state.videos;
+    this.state.videos = rest;
   }
 
   // Asks the server to bring the echo helper into this room, or to remove it.
@@ -180,7 +254,16 @@ export class Session {
     this.onScreen(null);
   }
 
-  private onRemoteTrack(pid: string, track: MediaStreamTrack): void {
+  private onRemoteTrack(streamId: string, track: MediaStreamTrack): void {
+    const { participant: pid, camera } = splitStream(streamId);
+    if (camera) {
+      this.state.videos = { ...this.state.videos, [pid]: track };
+      track.onended = () => {
+        const { [pid]: _, ...rest } = this.state.videos;
+        this.state.videos = rest;
+      };
+      return;
+    }
     if (track.kind === 'audio') {
       const el = new Audio();
       el.srcObject = new MediaStream([track]);
@@ -215,6 +298,7 @@ export class Session {
     this.remoteAudio.clear();
     if (this.screenTrack) this.dropScreen();
     this.state.speaking = {};
+    this.state.videos = {};
     this.state.participants = [];
     this.state.sharer = '';
   }
@@ -227,5 +311,23 @@ async function openMic(deviceId: string): Promise<MediaStream> {
   } catch (e) {
     if (!deviceId || (e as Error).name !== 'OverconstrainedError') throw e;
     return navigator.mediaDevices.getUserMedia({ audio: audioConstraints('') });
+  }
+}
+
+// openCamera opens the camera chosen in the lobby, or the default one if it is gone.
+async function openCamera(deviceId: string): Promise<MediaStreamTrack> {
+  try {
+    return (await navigator.mediaDevices.getUserMedia({ video: cameraConstraints(deviceId) })).getVideoTracks()[0];
+  } catch (e) {
+    if (!deviceId || (e as Error).name !== 'OverconstrainedError') throw e;
+    return (await navigator.mediaDevices.getUserMedia({ video: cameraConstraints('') })).getVideoTracks()[0];
+  }
+}
+
+async function hasCamera(): Promise<boolean> {
+  try {
+    return (await navigator.mediaDevices.enumerateDevices()).some((d) => d.kind === 'videoinput');
+  } catch {
+    return false;
   }
 }

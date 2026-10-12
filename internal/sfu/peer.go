@@ -59,10 +59,10 @@ type Peer struct {
 	negotiating bool
 	dirty       bool
 	closed      bool
-	out         [2]*webrtc.TrackLocalStaticRTP
-	outSSRC     [2]uint32
+	out         [numKinds]*webrtc.TrackLocalStaticRTP
+	outSSRC     [numKinds]uint32
 	subs        map[string]*webrtc.RTPSender
-	pendingPLI  []Source
+	pendingPLI  []pendingKeyframe
 }
 
 func (e *Engine) NewPeer(id string, sig Signaler, h Handlers) (*Peer, error) {
@@ -71,7 +71,8 @@ func (e *Engine) NewPeer(id string, sig Signaler, h Handlers) (*Peer, error) {
 		return nil, err
 	}
 	p := &Peer{created: time.Now(), id: id, pc: pc, sig: sig, h: h, log: e.log.With("peer", id), subs: map[string]*webrtc.RTPSender{}}
-	for _, kind := range []webrtc.RTPCodecType{webrtc.RTPCodecTypeAudio, webrtc.RTPCodecTypeVideo} {
+	// Receive slots in mid order: audio, screen, camera (see kindForMid).
+	for _, kind := range []webrtc.RTPCodecType{webrtc.RTPCodecTypeAudio, webrtc.RTPCodecTypeVideo, webrtc.RTPCodecTypeVideo} {
 		if _, err := pc.AddTransceiverFromKind(kind, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionRecvonly}); err != nil {
 			_ = pc.Close()
 			return nil, err
@@ -140,12 +141,18 @@ func (p *Peer) RequestKeyframe(kind Kind) {
 	metrics.KeyframeRequests.Inc()
 }
 
-func (p *Peer) onTrack(remote *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
-	kind := KindAudio
-	if remote.Kind() == webrtc.RTPCodecTypeVideo {
-		kind = KindScreen
+func (p *Peer) onTrack(remote *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+	kind, ok := p.kindOf(receiver)
+	if !ok {
+		p.log.Warn("track on an unknown slot; ignored", "ssrc", remote.SSRC())
+		return
 	}
-	local, err := webrtc.NewTrackLocalStaticRTP(remote.Codec().RTPCodecCapability, kind.String(), p.id)
+	// The camera gets its own stream id so browsers can tell it from the screen.
+	stream := p.id
+	if kind == KindCamera {
+		stream = p.id + "/camera"
+	}
+	local, err := webrtc.NewTrackLocalStaticRTP(remote.Codec().RTPCodecCapability, kind.String(), stream)
 	if err != nil {
 		p.log.Error("new local track", "err", err)
 		return
@@ -200,8 +207,8 @@ func (p *Peer) Subscribe(from Source, kind Kind) error {
 	}
 	sender := tr.Sender()
 	p.subs[key] = sender
-	if kind == KindScreen {
-		p.pendingPLI = append(p.pendingPLI, from)
+	if kind != KindAudio {
+		p.pendingPLI = append(p.pendingPLI, pendingKeyframe{from, kind})
 	}
 	p.mu.Unlock()
 	go p.readRTCP(sender, from, kind)
@@ -236,7 +243,7 @@ func (p *Peer) readRTCP(sender *webrtc.RTPSender, from Source, kind Kind) {
 		for _, pkt := range pkts {
 			switch v := pkt.(type) {
 			case *rtcp.PictureLossIndication:
-				if kind == KindScreen {
+				if kind != KindAudio {
 					from.RequestKeyframe(kind)
 				}
 			case *rtcp.ReceiverReport:
@@ -301,8 +308,8 @@ func (p *Peer) HandleAnswer(sdp string) error {
 	if err != nil {
 		return err
 	}
-	for _, src := range pending {
-		src.RequestKeyframe(KindScreen)
+	for _, k := range pending {
+		k.src.RequestKeyframe(k.kind)
 	}
 	if dirty {
 		p.Negotiate()
@@ -469,4 +476,20 @@ func compactNTP(t time.Time) uint32 {
 	secs := uint64(t.Unix()) + ntpEpochOffset
 	frac := uint64(t.Nanosecond()) << 32 / 1e9
 	return uint32((secs<<32 | frac) >> 16)
+}
+
+// pendingKeyframe is a video subscription waiting for the answer that activates it.
+type pendingKeyframe struct {
+	src  Source
+	kind Kind
+}
+
+// kindOf finds which fixed slot a remote track arrived on.
+func (p *Peer) kindOf(r *webrtc.RTPReceiver) (Kind, bool) {
+	for _, tr := range p.pc.GetTransceivers() {
+		if tr.Receiver() == r {
+			return kindForMid(tr.Mid())
+		}
+	}
+	return 0, false
 }

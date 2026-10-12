@@ -20,10 +20,7 @@ func (sentCounterFactory) NewInterceptor(string) (interceptor.Interceptor, error
 }
 
 func (*sentCounter) BindLocalStream(info *interceptor.StreamInfo, writer interceptor.RTPWriter) interceptor.RTPWriter {
-	kind := KindAudio.String()
-	if strings.HasPrefix(strings.ToLower(info.MimeType), "video/") {
-		kind = KindScreen.String()
-	}
+	kind := sentKind(info.MimeType)
 	packets := metrics.RTPSentPackets.WithLabelValues(kind)
 	bytes := metrics.RTPSentBytes.WithLabelValues(kind)
 	return interceptor.RTPWriterFunc(func(h *rtp.Header, payload []byte, a interceptor.Attributes) (int, error) {
@@ -34,4 +31,13 @@ func (*sentCounter) BindLocalStream(info *interceptor.StreamInfo, writer interce
 		}
 		return n, err
 	})
+}
+
+// sentKind labels outgoing traffic by media type: the stream info carries the codec but not the
+// slot, so screen and camera (both VP8) count together as video.
+func sentKind(mime string) string {
+	if strings.HasPrefix(strings.ToLower(mime), "video/") {
+		return "video"
+	}
+	return "audio"
 }

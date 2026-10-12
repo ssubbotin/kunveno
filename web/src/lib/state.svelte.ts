@@ -15,6 +15,12 @@ export class RoomState {
   sharer = $state('');
   muted = $state(false);
   speaking = $state<Record<string, boolean>>({});
+  // Camera pictures by participant id, ours included; raw because tracks are not plain data.
+  videos = $state.raw<Record<string, MediaStreamTrack>>({});
+  cameraOn = $state(false);
+  hasCamera = $state(true); // false on computers without any camera
+  cameraError = $state('');
+  receiveVideo = $state(true);
   echo = $state(false);
   transport = $state<'udp' | 'tcp' | ''>(''); // media path of this browser, once connected
 
@@ -41,6 +47,8 @@ export class RoomState {
     this.participants = [];
     this.sharer = '';
     this.speaking = {};
+    this.videos = {};
+    this.cameraOn = false;
     this.echo = false;
     this.transport = '';
   }
