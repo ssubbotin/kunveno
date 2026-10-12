@@ -84,7 +84,7 @@
 
 <div class="lobby">
 <form onsubmit={submit}>
-  <h1>kunveno</h1>
+  <h1>Конференц-связь kunveno. Частный сервер.</h1>
   {#if loadError}<p class="error">{loadError}</p>{/if}
   {#if error}<p class="error">{error}</p>{/if}
   <label>Room
