@@ -43,8 +43,9 @@ func New(slug, name, pin string, max int) *Room {
 	return &Room{slug: slug, name: name, pin: pin, max: max, members: map[string]*Participant{}}
 }
 
-func (r *Room) Slug() string { return r.slug }
-func (r *Room) Name() string { return r.name }
+func (r *Room) Slug() string  { return r.slug }
+func (r *Room) Name() string  { return r.name }
+func (r *Room) Capacity() int { return r.max }
 
 func (r *Room) Count() int {
 	r.mu.Lock()

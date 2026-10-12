@@ -63,7 +63,7 @@ func (p *fakePeer) Negotiate() {
 	p.mu.Unlock()
 	_ = p.sig.SendOffer("v=0 fake offer")
 }
-func (p *fakePeer) HandleAnswer(string) error                 { return nil }
+func (p *fakePeer) HandleAnswer(string) error                     { return nil }
 func (p *fakePeer) AddICECandidate(webrtc.ICECandidateInit) error { return nil }
 func (p *fakePeer) Subscribe(from sfu.Source, k sfu.Kind) error {
 	if from.Track(k) == nil {
@@ -122,7 +122,10 @@ func newEnv(t *testing.T, capacity int) *env {
 
 type testWriter struct{ t *testing.T }
 
-func (w testWriter) Write(b []byte) (int, error) { w.t.Log(strings.TrimSpace(string(b))); return len(b), nil }
+func (w testWriter) Write(b []byte) (int, error) {
+	w.t.Log(strings.TrimSpace(string(b)))
+	return len(b), nil
+}
 
 func dial(t *testing.T, e *env) *websocket.Conn {
 	t.Helper()
