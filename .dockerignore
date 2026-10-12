@@ -1,4 +1,4 @@
-# Build context for deploy/docker/Dockerfile.*: only what the build stages copy matters, but keep
+# Build context for deploy/docker/*.Dockerfile: only what the build stages copy matters, but keep
 # local clutter (and anything private) out of the context entirely.
 .git
 .github

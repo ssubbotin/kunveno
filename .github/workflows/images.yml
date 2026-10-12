@@ -47,15 +47,15 @@ jobs:
       matrix:
         include:
           - name: kunveno-server
-            file: deploy/docker/Dockerfile.go
+            file: deploy/docker/go.Dockerfile
             target: server
             app: kunveno-server
           - name: kunveno-echo
-            file: deploy/docker/Dockerfile.go
+            file: deploy/docker/go.Dockerfile
             target: echo
             app: kunveno-echo
           - name: kunveno-web
-            file: deploy/docker/Dockerfile.web
+            file: deploy/docker/web.Dockerfile
             target: ''
             app: ''
     steps:

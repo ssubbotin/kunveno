@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Go services. Built in CI from the repository root:
-#   docker build -f deploy/docker/Dockerfile.go --target server --build-arg APP=kunveno-server .
+#   docker build -f deploy/docker/go.Dockerfile --target server --build-arg APP=kunveno-server .
 # Only the final stage is published; it holds the static binary and nothing else.
 
 FROM golang:1.26-alpine AS build

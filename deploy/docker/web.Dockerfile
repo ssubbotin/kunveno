@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # nginx with the built web client. Built in CI from the repository root:
-#   docker build -f deploy/docker/Dockerfile.web .
+#   docker build -f deploy/docker/web.Dockerfile .
 # Only the final stage is published: nginx, the built bundle (no source maps) and the site template.
 
 FROM node:22-alpine AS build
