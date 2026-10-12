@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
@@ -39,11 +40,13 @@ type Handlers struct {
 
 // Peer is one participant's connection to the SFU.
 type Peer struct {
-	id  string
-	pc  *webrtc.PeerConnection
-	sig Signaler
-	h   Handlers
-	log *slog.Logger
+	created     time.Time
+	upTransport string // transport counted in ActiveConnections while connected; guarded by mu
+	id          string
+	pc          *webrtc.PeerConnection
+	sig         Signaler
+	h           Handlers
+	log         *slog.Logger
 
 	mu          sync.Mutex
 	negotiating bool
@@ -60,7 +63,7 @@ func (e *Engine) NewPeer(id string, sig Signaler, h Handlers) (*Peer, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &Peer{id: id, pc: pc, sig: sig, h: h, log: e.log.With("peer", id), subs: map[string]*webrtc.RTPSender{}}
+	p := &Peer{created: time.Now(), id: id, pc: pc, sig: sig, h: h, log: e.log.With("peer", id), subs: map[string]*webrtc.RTPSender{}}
 	for _, kind := range []webrtc.RTPCodecType{webrtc.RTPCodecTypeAudio, webrtc.RTPCodecTypeVideo} {
 		if _, err := pc.AddTransceiverFromKind(kind, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionRecvonly}); err != nil {
 			_ = pc.Close()
@@ -71,9 +74,28 @@ func (e *Engine) NewPeer(id string, sig Signaler, h Handlers) (*Peer, error) {
 	pc.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
 		p.log.Info("connection state", "state", s.String())
 		metrics.PeerStates.WithLabelValues(s.String()).Inc()
+		if s == webrtc.PeerConnectionStateFailed || s == webrtc.PeerConnectionStateClosed {
+			p.mu.Lock()
+			up := p.upTransport
+			p.upTransport = ""
+			p.mu.Unlock()
+			if up != "" {
+				metrics.ActiveConnections.WithLabelValues(up).Dec()
+			}
+		}
 		if s == webrtc.PeerConnectionStateConnected {
 			if pair := p.selectedPair(); pair != nil {
 				transport := pair.Remote.Protocol.String()
+				p.mu.Lock()
+				first := p.upTransport == ""
+				if first {
+					p.upTransport = transport
+				}
+				p.mu.Unlock()
+				if first {
+					metrics.ActiveConnections.WithLabelValues(transport).Inc()
+					metrics.ConnectSeconds.WithLabelValues(transport).Observe(time.Since(p.created).Seconds())
+				}
 				p.log.Info("media path", "transport", transport,
 					"remote", fmt.Sprintf("%s:%d", pair.Remote.Address, pair.Remote.Port), "remote_type", pair.Remote.Typ.String())
 				metrics.Transports.WithLabelValues(transport).Inc()

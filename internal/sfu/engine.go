@@ -64,6 +64,7 @@ func NewEngine(cfg EngineConfig, log *slog.Logger) (*Engine, error) {
 	if err := webrtc.RegisterDefaultInterceptors(m, reg); err != nil {
 		return nil, err
 	}
+	reg.Add(sentCounterFactory{})
 	conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4zero, Port: cfg.UDPPort})
 	if err != nil {
 		return nil, fmt.Errorf("listen udp %d: %w", cfg.UDPPort, err)

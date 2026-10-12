@@ -15,7 +15,7 @@
   const shareBusy = $derived(rs.sharer !== '' && !rs.isSharing);
   const echoPresent = $derived(rs.participants.some((p) => p.bot));
   const statusText = $derived(
-    rs.status === 'connected' ? 'на связи'
+    rs.status === 'connected' ? (rs.transport === 'tcp' ? 'на связи (резервный канал)' : 'на связи')
       : rs.status === 'reconnecting' ? 'переподключение…'
       : rs.status === 'connecting' ? 'подключение…'
       : rs.status === 'error' ? `ошибка: ${rs.errorCode}`
@@ -32,7 +32,10 @@
 <main class="room" class:sharing={screenTrack !== null}>
   <header class="bar">
     <h1>{rs.roomName || rs.roomSlug}</h1>
-    <span class="status {rs.status}"><span class="dot" aria-hidden="true"></span>{statusText}</span>
+    <span class="status {rs.status}" class:backup={rs.transport === 'tcp'}
+      title={rs.transport === 'tcp' ? 'Сеть не пропускает быстрый канал, звук и экран идут через резервный. Задержка может быть немного выше.' : ''}>
+      <span class="dot" aria-hidden="true"></span>{statusText}
+    </span>
     <span class="count">{people(rs.peopleCount)}</span>
   </header>
 
@@ -89,6 +92,7 @@
   .status { display: inline-flex; align-items: center; gap: .4rem; color: var(--muted); font-size: .9rem; }
   .status .dot { width: .5rem; height: .5rem; border-radius: 50%; background: var(--muted); }
   .status.connected .dot { background: var(--ok); }
+  .status.connected.backup .dot { background: var(--caution); }
   .status.reconnecting .dot, .status.connecting .dot { background: var(--caution); }
   .status.error { color: #f1b5b3; }
   .status.error .dot { background: var(--danger); }
