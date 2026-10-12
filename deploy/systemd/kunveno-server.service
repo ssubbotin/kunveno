@@ -8,6 +8,9 @@ User=kunveno
 Group=kunveno
 ExecStart=/usr/local/bin/kunveno-server -config /etc/kunveno/config.yaml
 Restart=always
+# /var/lib/kunveno holds rooms created in the lobby (rooms.json).
+StateDirectory=kunveno
+StateDirectoryMode=0700
 RestartSec=2
 LimitNOFILE=65536
 NoNewPrivileges=true

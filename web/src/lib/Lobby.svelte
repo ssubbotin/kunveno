@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
 
-  type RoomItem = { slug: string; name: string; participants: number; capacity: number };
+  type RoomItem = { slug: string; name: string; participants: number; capacity: number; created: boolean };
   let { onJoin, error = '' }: { onJoin: (room: string, pin: string, name: string) => void; error?: string } = $props();
 
   let rooms = $state<RoomItem[]>([]);
@@ -9,16 +9,74 @@
   let pin = $state(sessionStorage.getItem('kunveno.pin') ?? '');
   let name = $state(localStorage.getItem('kunveno.name') ?? '');
   let loadError = $state('');
+  let creating = $state(false);
+  let newName = $state('');
+  let newPin = $state('');
+  let actionError = $state('');
 
-  onMount(async () => {
+  const selected = $derived(rooms.find((r) => r.slug === room));
+
+  async function loadRooms(prefer?: string) {
     try {
       const res = await fetch('/api/rooms');
       rooms = await res.json();
-      room = sessionStorage.getItem('kunveno.room') ?? rooms[0]?.slug ?? '';
+      const wanted = prefer ?? sessionStorage.getItem('kunveno.room') ?? '';
+      room = rooms.some((r) => r.slug === wanted) ? wanted : (rooms[0]?.slug ?? '');
+      loadError = '';
     } catch {
-      loadError = 'Cannot load the room list. Is the server running?';
+      loadError = 'Не удалось загрузить список комнат. Сервер недоступен.';
     }
+  }
+
+  onMount(() => {
+    void loadRooms();
+    // Keep occupancy fresh while the lobby is open.
+    const timer = setInterval(() => void loadRooms(room), 5000);
+    return () => clearInterval(timer);
   });
+
+  async function errorOf(res: Response): Promise<string> {
+    try {
+      return (await res.json()).error ?? res.statusText;
+    } catch {
+      return res.statusText;
+    }
+  }
+
+  async function createRoom(ev: Event) {
+    ev.preventDefault();
+    actionError = '';
+    const res = await fetch('/api/rooms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName.trim(), pin: newPin }),
+    });
+    if (!res.ok) {
+      actionError = 'Комната не создана: ' + (await errorOf(res));
+      return;
+    }
+    const made: { slug: string } = await res.json();
+    pin = newPin;
+    newName = '';
+    newPin = '';
+    creating = false;
+    await loadRooms(made.slug);
+  }
+
+  async function deleteRoom() {
+    if (!selected) return;
+    actionError = '';
+    const res = await fetch(`/api/rooms/${encodeURIComponent(selected.slug)}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin }),
+    });
+    if (!res.ok) {
+      actionError = res.status === 403 ? 'Чтобы удалить комнату, введите её PIN.' : 'Комната не удалена: ' + (await errorOf(res));
+      return;
+    }
+    await loadRooms();
+  }
 
   function submit(ev: Event) {
     ev.preventDefault();
@@ -27,20 +85,99 @@
     sessionStorage.setItem('kunveno.pin', pin);
     onJoin(room, pin, name.trim());
   }
+
+  function occupancy(r: RoomItem): string {
+    return r.participants === 0 ? 'пусто' : `${r.participants} из ${r.capacity}`;
+  }
 </script>
 
-<form class="lobby" onsubmit={submit}>
-  <h1>kunveno</h1>
-  {#if loadError}<p class="error">{loadError}</p>{/if}
-  {#if error}<p class="error">{error}</p>{/if}
-  <label>Room
-    <select bind:value={room} required>
+<div class="lobby">
+  <header class="brand">
+    <svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="17" /><circle cx="20" cy="20" r="9" /><path d="M20 3v8M20 29v8M3 20h8M29 20h8" /><circle class="dot" cx="20" cy="20" r="2.5" /></svg>
+    <h1>Конференц-связь kunveno. Частный сервер.</h1>
+  </header>
+
+  <section class="rooms" aria-labelledby="rooms-title">
+    <h2 id="rooms-title">Комнаты</h2>
+    {#if loadError}<p class="error">{loadError}</p>{/if}
+    <div class="list" role="radiogroup" aria-labelledby="rooms-title">
       {#each rooms as r (r.slug)}
-        <option value={r.slug}>{r.name} ({r.participants}/{r.capacity})</option>
+        <label class="room" class:selected={r.slug === room}>
+          <input type="radio" name="room" value={r.slug} bind:group={room} />
+          <span class="live" class:on={r.participants > 0} aria-hidden="true"></span>
+          <span class="room-name">{r.name}</span>
+          <span class="count">{occupancy(r)}</span>
+        </label>
       {/each}
-    </select>
-  </label>
-  <label>Your name <input bind:value={name} maxlength="32" required /></label>
-  <label>Room PIN <input bind:value={pin} type="password" maxlength="16" required /></label>
-  <button type="submit" disabled={!room}>Join</button>
-</form>
+      {#if creating}
+        <form class="create" onsubmit={createRoom}>
+          <label class="field"><span>Название</span><input bind:value={newName} maxlength="48" required /></label>
+          <label class="field"><span>PIN (4–16 символов)</span><input bind:value={newPin} minlength="4" maxlength="16" required /></label>
+          <div class="row">
+            <button class="btn primary" type="submit">Создать комнату</button>
+            <button class="btn quiet" type="button" onclick={() => (creating = false)}>Отмена</button>
+          </div>
+        </form>
+      {:else}
+        <button class="room add" type="button" onclick={() => (creating = true)}>
+          <span class="plus" aria-hidden="true">+</span><span class="room-name">Новая комната</span>
+        </button>
+      {/if}
+    </div>
+    {#if actionError}<p class="error">{actionError}</p>{/if}
+  </section>
+
+  <form class="enter" onsubmit={submit}>
+    <h2>Вход</h2>
+    {#if error}<p class="error">{error}</p>{/if}
+    <label class="field"><span>Ваше имя</span><input bind:value={name} maxlength="32" autocomplete="name" required /></label>
+    <label class="field"><span>PIN комнаты</span><input bind:value={pin} type="password" maxlength="16" required /></label>
+    <button class="btn primary wide" type="submit" disabled={!selected}>
+      {selected ? `Войти в «${selected.name}»` : 'Выберите комнату'}
+    </button>
+    {#if selected?.created}
+      <button class="btn danger wide" type="button" disabled={selected.participants > 0} onclick={deleteRoom}>
+        {selected.participants > 0 ? 'Удалить можно только пустую комнату' : 'Удалить комнату'}
+      </button>
+    {/if}
+  </form>
+</div>
+
+<style>
+  .lobby {
+    max-width: 56rem; margin: 0 auto; padding: clamp(1.5rem, 6vh, 4rem) 1.25rem;
+    display: grid; grid-template-columns: 1.2fr 1fr; gap: 2rem 2.5rem; align-items: start;
+  }
+  .brand { grid-column: 1 / -1; display: flex; align-items: center; gap: 1rem; }
+  .brand svg { width: 2.75rem; height: 2.75rem; fill: none; stroke: var(--muted); stroke-width: 1.5; flex: none; }
+  .brand .dot { fill: var(--live); stroke: none; }
+  h1 { font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 600; line-height: 1.15; margin: 0; letter-spacing: -0.01em; }
+  h2 { font-size: 1rem; font-weight: 500; color: var(--muted); margin: 0 0 .75rem; }
+
+  .list { display: grid; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--panel); }
+  .room {
+    display: grid; grid-template-columns: .75rem 1fr auto; align-items: center; gap: .75rem;
+    padding: .85rem 1rem; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left; cursor: pointer;
+  }
+  .room:last-child { border-bottom: 0; }
+  .room input { position: absolute; opacity: 0; pointer-events: none; }
+  .room:has(input:focus-visible) { outline: 2px solid var(--live); outline-offset: -2px; }
+  .room.selected { background: var(--panel-2); box-shadow: inset 3px 0 0 var(--live); }
+  .room-name { font-weight: 500; }
+  .count { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .9rem; }
+  .live { width: .55rem; height: .55rem; border-radius: 50%; background: var(--line); }
+  .live.on { background: var(--live); }
+  .add { color: var(--muted); }
+  .add:hover { color: var(--text); }
+  .plus { font-size: 1.2rem; line-height: 1; text-align: center; }
+  .create { display: grid; gap: .75rem; padding: 1rem; background: var(--panel-2); }
+  .row { display: flex; gap: .5rem; flex-wrap: wrap; }
+
+  .enter { display: grid; gap: 1rem; }
+  .enter h2 { margin: 0 0 -.25rem; }
+  .wide { justify-content: center; width: 100%; }
+
+  @media (max-width: 720px) {
+    .lobby { grid-template-columns: 1fr; }
+  }
+</style>

@@ -28,6 +28,7 @@ const (
 
 const (
 	MaxNameLen = 32
+	RoleEcho   = "echo"
 	MaxSDPLen  = 256 * 1024
 )
 
@@ -43,6 +44,8 @@ type ClientMessage struct {
 	Candidate *webrtc.ICECandidateInit `json:"candidate,omitempty"`
 	Muted     *bool                    `json:"muted,omitempty"`
 	Action    string                   `json:"action,omitempty"`
+	Role      string                   `json:"role,omitempty"` // "echo" for the local echo helper
+	On        *bool                    `json:"on,omitempty"`
 }
 
 // ParseClient decodes and validates one client frame.
@@ -57,7 +60,9 @@ func ParseClient(data []byte) (ClientMessage, error) {
 		switch {
 		case !slugRe.MatchString(m.Room):
 			return m, fmt.Errorf("%w: join.room", ErrBadMessage)
-		case len(m.PIN) < 1 || len(m.PIN) > 16:
+		case m.Role != "" && m.Role != RoleEcho:
+			return m, fmt.Errorf("%w: join.role", ErrBadMessage)
+		case m.Role == "" && (len(m.PIN) < 1 || len(m.PIN) > 16):
 			return m, fmt.Errorf("%w: join.pin", ErrBadMessage)
 		case m.Name == "" || utf8.RuneCountInString(m.Name) > MaxNameLen:
 			return m, fmt.Errorf("%w: join.name", ErrBadMessage)
@@ -67,8 +72,13 @@ func ParseClient(data []byte) (ClientMessage, error) {
 			return m, fmt.Errorf("%w: answer.sdp", ErrBadMessage)
 		}
 	case "candidate":
-		if m.Candidate == nil || m.Candidate.Candidate == "" {
+		// An empty candidate string is the end-of-candidates marker (Firefox sends it); it is valid.
+		if m.Candidate == nil {
 			return m, fmt.Errorf("%w: candidate", ErrBadMessage)
+		}
+	case "echo":
+		if m.On == nil {
+			return m, fmt.Errorf("%w: echo.on", ErrBadMessage)
 		}
 	case "mute":
 		if m.Muted == nil {
@@ -90,6 +100,7 @@ type ParticipantInfo struct {
 	ID    string `json:"id"`
 	Name  string `json:"name"`
 	Muted bool   `json:"muted"`
+	Bot   bool   `json:"bot,omitempty"`
 }
 
 type roomInfo struct {
@@ -118,6 +129,7 @@ type participantsMsg struct {
 	Type         string            `json:"type"`
 	Participants []ParticipantInfo `json:"participants"`
 	Sharer       string            `json:"sharer"`
+	Echo         bool              `json:"echo"`
 }
 
 func Joined(self ParticipantInfo, slug, name string) any {
@@ -130,9 +142,9 @@ func ErrorMsg(code, message string) any {
 
 func Offer(sdp string) any { return offerMsg{Type: "offer", SDP: sdp} }
 
-func Participants(list []ParticipantInfo, sharer string) any {
+func Participants(list []ParticipantInfo, sharer string, echo bool) any {
 	if list == nil {
 		list = []ParticipantInfo{}
 	}
-	return participantsMsg{Type: "participants", Participants: list, Sharer: sharer}
+	return participantsMsg{Type: "participants", Participants: list, Sharer: sharer, Echo: echo}
 }

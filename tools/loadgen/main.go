@@ -27,7 +27,7 @@ type serverMsg struct {
 }
 
 var (
-	tracksReceived atomic.Int64
+	tracksReceived  atomic.Int64
 	packetsReceived atomic.Int64
 	joined          atomic.Int64
 )
@@ -39,13 +39,15 @@ func main() {
 	n := flag.Int("n", 14, "number of synthetic participants")
 	duration := flag.Duration("duration", 2*time.Minute, "how long to stay")
 	insecure := flag.Bool("insecure", false, "skip TLS verification")
+	payload := flag.Int("payload", 3, "Opus payload bytes per packet (3 is a silence frame; 80+ looks like speech)")
+	echoOn := flag.Bool("echo", false, "participant 0 switches the room's echo on")
 	flag.Parse()
 
 	ctx, cancel := context.WithTimeout(context.Background(), *duration)
 	defer cancel()
 	for i := 0; i < *n; i++ {
 		go func(i int) {
-			if err := participant(ctx, *url, *room, *pin, fmt.Sprintf("load-%02d", i), *insecure); err != nil {
+			if err := participant(ctx, *url, *room, *pin, fmt.Sprintf("load-%02d", i), *insecure, *payload, *echoOn && i == 0); err != nil {
 				log.Printf("participant %d: %v", i, err)
 			}
 		}(i)
@@ -64,7 +66,7 @@ func main() {
 	}
 }
 
-func participant(ctx context.Context, url, room, pin, name string, insecure bool) error {
+func participant(ctx context.Context, url, room, pin, name string, insecure bool, payload int, echoOn bool) error {
 	opts := &websocket.DialOptions{}
 	if insecure {
 		opts.HTTPClient = &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
@@ -101,6 +103,8 @@ func participant(ctx context.Context, url, room, pin, name string, insecure bool
 			packetsReceived.Add(1)
 		}
 	})
+	frame := make([]byte, max(payload, 3))
+	copy(frame, []byte{0xfc, 0xff, 0xfe})
 	go func() {
 		t := time.NewTicker(20 * time.Millisecond)
 		defer t.Stop()
@@ -109,7 +113,7 @@ func participant(ctx context.Context, url, room, pin, name string, insecure bool
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				_ = mic.WriteSample(media.Sample{Data: []byte{0xfc, 0xff, 0xfe}, Duration: 20 * time.Millisecond})
+				_ = mic.WriteSample(media.Sample{Data: frame, Duration: 20 * time.Millisecond})
 			}
 		}
 	}()
@@ -132,6 +136,11 @@ func participant(ctx context.Context, url, room, pin, name string, insecure bool
 		switch msg.Type {
 		case "joined":
 			joined.Add(1)
+			if echoOn {
+				if err := wsjson.Write(ctx, conn, map[string]any{"type": "echo", "on": true}); err != nil {
+					return err
+				}
+			}
 		case "error":
 			return fmt.Errorf("server error %s", msg.Code)
 		case "offer":

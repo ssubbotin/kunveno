@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -58,6 +59,7 @@ type liveRoom struct {
 
 type session struct {
 	id, name, slug string
+	bot            bool // the echo helper
 	conn           *websocket.Conn
 	peer           MediaPeer
 	cancel         context.CancelFunc
@@ -65,11 +67,25 @@ type session struct {
 }
 
 func New(reg *room.Registry, media Media, origins []string, log *slog.Logger) *Handler {
-	h := &Handler{reg: reg, media: media, origins: origins, log: log, live: map[string]*liveRoom{}}
-	for _, r := range reg.All() {
-		h.live[r.Slug()] = &liveRoom{room: r, members: map[string]*session{}}
+	return &Handler{reg: reg, media: media, origins: origins, log: log, live: map[string]*liveRoom{}}
+}
+
+// lookup returns the live state of a registered room, creating it on first use. Rooms can be
+// created and deleted at runtime; a re-created slug gets fresh state.
+func (h *Handler) lookup(slug string) (*liveRoom, bool) {
+	r, ok := h.reg.Get(slug)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	lr, have := h.live[slug]
+	if !ok {
+		// A deleted room keeps serving the sessions still inside it.
+		return lr, have && len(lr.members) > 0
 	}
-	return h
+	if !have || lr.room != r {
+		lr = &liveRoom{room: r, members: map[string]*session{}}
+		h.live[slug] = lr
+	}
+	return lr, true
 }
 
 // SendOffer implements sfu.Signaler for one session.
@@ -90,7 +106,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn.SetReadLimit(readLimit)
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	h.serve(ctx, cancel, conn)
+	h.serve(ctx, cancel, conn, local(r))
+}
+
+// local reports a connection made on loopback without passing through nginx, which always
+// sets X-Forwarded-For. Only such connections may join as the echo helper.
+func local(r *http.Request) bool {
+	if r.Header.Get("X-Forwarded-For") != "" {
+		return false
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func readClient(ctx context.Context, conn *websocket.Conn) (ClientMessage, error) {
@@ -111,12 +141,17 @@ func writeErrorAndClose(conn *websocket.Conn, code, msg string) {
 	_ = conn.Close(websocket.StatusPolicyViolation, code)
 }
 
-func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn) {
+func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, trusted bool) {
 	joinCtx, joinCancel := context.WithTimeout(ctx, joinTimeout)
 	first, err := readClient(joinCtx, conn)
 	joinCancel()
 	if err != nil || first.Type != "join" {
 		writeErrorAndClose(conn, CodeBadMessage, "first message must be join")
+		return
+	}
+	if first.Role == RoleEcho && !trusted {
+		h.log.Warn("echo role from a non-local connection")
+		writeErrorAndClose(conn, CodeBadMessage, "echo role is local only")
 		return
 	}
 	s, code, msg := h.join(conn, cancel, first)
@@ -131,6 +166,7 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 			if !errors.Is(err, ErrBadMessage) {
 				return // socket closed or context cancelled
 			}
+			s.log.Warn("bad message", "err", err)
 			writeErrorAndClose(conn, CodeBadMessage, err.Error())
 			return
 		}
@@ -140,16 +176,27 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 				s.log.Warn("answer", "err", err)
 			}
 		case "candidate":
+			if m.Candidate.Candidate == "" {
+				continue // end of candidates; ICE lite needs nothing
+			}
 			if err := s.peer.AddICECandidate(*m.Candidate); err != nil {
 				s.log.Debug("candidate", "err", err)
 			}
 		case "mute":
-			lr := h.live[s.slug]
+			lr, _ := h.lookup(s.slug)
 			if lr.room.SetMuted(s.id, *m.Muted) {
 				h.broadcast(lr)
 			}
 		case "share":
 			h.handleShare(s, m.Action)
+		case "echo":
+			if s.bot {
+				continue
+			}
+			lr, _ := h.lookup(s.slug)
+			lr.room.SetEcho(*m.On)
+			h.dropBotsIfUnwanted(lr)
+			h.broadcast(lr)
 		case "leave":
 			_ = conn.Close(websocket.StatusNormalClosure, "bye")
 			return
@@ -169,12 +216,22 @@ func newID() string {
 // join validates the request, admits the participant and starts media. On
 // failure it returns a nil session plus the error code and message.
 func (h *Handler) join(conn *websocket.Conn, cancel context.CancelFunc, m ClientMessage) (*session, string, string) {
-	lr, ok := h.live[m.Room]
+	lr, ok := h.lookup(m.Room)
 	if !ok {
 		return nil, CodeBadRoom, "no such room"
 	}
+	bot := m.Role == RoleEcho
+	if bot && !lr.room.Echo() {
+		return nil, CodeBadRoom, "echo not requested in this room"
+	}
 	id := newID()
-	switch err := lr.room.Join(id, m.Name, m.PIN); {
+	var err error
+	if bot {
+		err = lr.room.JoinBot(id, m.Name)
+	} else {
+		err = lr.room.Join(id, m.Name, m.PIN)
+	}
+	switch {
 	case errors.Is(err, room.ErrBadPIN):
 		return nil, CodeBadPIN, "wrong pin"
 	case errors.Is(err, room.ErrFull):
@@ -182,7 +239,7 @@ func (h *Handler) join(conn *websocket.Conn, cancel context.CancelFunc, m Client
 	case err != nil:
 		return nil, CodeBadMessage, err.Error()
 	}
-	s := &session{id: id, name: m.Name, slug: m.Room, conn: conn, cancel: cancel, log: h.log.With("room", m.Room, "participant", id)}
+	s := &session{id: id, name: m.Name, slug: m.Room, bot: bot, conn: conn, cancel: cancel, log: h.log.With("room", m.Room, "participant", id)}
 	peer, err := h.media.NewPeer(id, s, sfu.Handlers{OnPublisher: h.onPublisher, OnFailed: h.onFailed})
 	if err != nil {
 		lr.room.Leave(id)
@@ -227,7 +284,7 @@ func (lr *liveRoom) membersExcept(id string) []*session {
 }
 
 func (h *Handler) leave(s *session) {
-	lr := h.live[s.slug]
+	lr, _ := h.lookup(s.slug)
 	h.mu.Lock()
 	if _, ok := lr.members[s.id]; !ok {
 		h.mu.Unlock()
@@ -243,16 +300,36 @@ func (h *Handler) leave(s *session) {
 	}
 	_ = s.peer.Close()
 	s.log.Info("left")
+	h.dropBotsIfUnwanted(lr)
 	h.broadcast(lr)
+}
+
+// dropBotsIfUnwanted disconnects the echo helper once its room no longer wants it.
+func (h *Handler) dropBotsIfUnwanted(lr *liveRoom) {
+	if lr.room.Echo() {
+		return
+	}
+	h.mu.Lock()
+	var bots []*session
+	for _, o := range lr.members {
+		if o.bot {
+			bots = append(bots, o)
+		}
+	}
+	h.mu.Unlock()
+	for _, b := range bots {
+		_ = b.conn.Close(websocket.StatusNormalClosure, "echo off")
+		b.cancel()
+	}
 }
 
 func (h *Handler) broadcast(lr *liveRoom) {
 	snap := lr.room.Snapshot()
 	list := make([]ParticipantInfo, len(snap.Participants))
 	for i, p := range snap.Participants {
-		list[i] = ParticipantInfo{ID: p.ID, Name: p.Name, Muted: p.Muted}
+		list[i] = ParticipantInfo{ID: p.ID, Name: p.Name, Muted: p.Muted, Bot: p.Bot}
 	}
-	msg := Participants(list, snap.Sharer)
+	msg := Participants(list, snap.Sharer, snap.Echo)
 	h.mu.Lock()
 	members := lr.membersExcept("")
 	h.mu.Unlock()
@@ -265,7 +342,7 @@ func (h *Handler) broadcast(lr *liveRoom) {
 }
 
 func (h *Handler) handleShare(s *session, action string) {
-	lr := h.live[s.slug]
+	lr, _ := h.lookup(s.slug)
 	switch action {
 	case "start":
 		if err := lr.room.StartShare(s.id); err != nil {

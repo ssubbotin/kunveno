@@ -20,23 +20,27 @@ type Participant struct {
 	ID    string
 	Name  string
 	Muted bool
+	Bot   bool // a server-side helper such as the echo, not a person
 }
 
 // Snapshot is the full public state of a room.
 type Snapshot struct {
 	Participants []Participant
 	Sharer       string
+	Echo         bool // someone asked for the echo helper in this room
 }
 
 // Room is safe for concurrent use.
 type Room struct {
 	slug, name, pin string
 	max             int
+	created         bool // made through the API, not from the config file
 
 	mu      sync.Mutex
 	members map[string]*Participant
 	order   []string
 	sharer  string
+	echo    bool
 }
 
 func New(slug, name, pin string, max int) *Room {
@@ -44,6 +48,12 @@ func New(slug, name, pin string, max int) *Room {
 }
 
 func (r *Room) Slug() string  { return r.slug }
+func (r *Room) Created() bool { return r.created }
+
+// CheckPIN compares in constant time.
+func (r *Room) CheckPIN(pin string) bool {
+	return subtle.ConstantTimeCompare([]byte(pin), []byte(r.pin)) == 1
+}
 func (r *Room) Name() string  { return r.name }
 func (r *Room) Capacity() int { return r.max }
 
@@ -61,20 +71,42 @@ func (r *Room) Sharer() string {
 
 // Join admits id with the given display name when the pin matches and there is room.
 func (r *Room) Join(id, name, pin string) error {
-	if subtle.ConstantTimeCompare([]byte(pin), []byte(r.pin)) != 1 {
+	if !r.CheckPIN(pin) {
 		return ErrBadPIN
 	}
+	return r.add(&Participant{ID: id, Name: name})
+}
+
+// JoinBot admits a trusted server-side helper without a PIN; capacity still applies.
+func (r *Room) JoinBot(id, name string) error {
+	return r.add(&Participant{ID: id, Name: name, Bot: true})
+}
+
+func (r *Room) add(p *Participant) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, exists := r.members[id]; exists {
+	if _, exists := r.members[p.ID]; exists {
 		return nil
 	}
 	if len(r.members) >= r.max {
 		return ErrFull
 	}
-	r.members[id] = &Participant{ID: id, Name: name}
-	r.order = append(r.order, id)
+	r.members[p.ID] = p
+	r.order = append(r.order, p.ID)
 	return nil
+}
+
+// SetEcho records whether the room wants the echo helper.
+func (r *Room) SetEcho(on bool) {
+	r.mu.Lock()
+	r.echo = on
+	r.mu.Unlock()
+}
+
+func (r *Room) Echo() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.echo
 }
 
 // Leave removes id. It reports whether id held the share lock, which is now released.
@@ -91,9 +123,21 @@ func (r *Room) Leave(id string) (releasedShare bool) {
 			break
 		}
 	}
+	if !r.hasPeopleLocked() {
+		r.echo = false // nobody left to listen
+	}
 	if r.sharer == id {
 		r.sharer = ""
 		return true
+	}
+	return false
+}
+
+func (r *Room) hasPeopleLocked() bool {
+	for _, p := range r.members {
+		if !p.Bot {
+			return true
+		}
 	}
 	return false
 }
@@ -139,29 +183,9 @@ func (r *Room) StopShare(id string) bool {
 func (r *Room) Snapshot() Snapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	s := Snapshot{Sharer: r.sharer, Participants: make([]Participant, 0, len(r.order))}
+	s := Snapshot{Sharer: r.sharer, Echo: r.echo, Participants: make([]Participant, 0, len(r.order))}
 	for _, id := range r.order {
 		s.Participants = append(s.Participants, *r.members[id])
 	}
 	return s
 }
-
-// Registry is the fixed set of configured rooms.
-type Registry struct {
-	rooms map[string]*Room
-	order []*Room
-}
-
-func NewRegistry() *Registry { return &Registry{rooms: map[string]*Room{}} }
-
-func (g *Registry) Add(r *Room) {
-	g.rooms[r.slug] = r
-	g.order = append(g.order, r)
-}
-
-func (g *Registry) Get(slug string) (*Room, bool) {
-	r, ok := g.rooms[slug]
-	return r, ok
-}
-
-func (g *Registry) All() []*Room { return append([]*Room(nil), g.order...) }

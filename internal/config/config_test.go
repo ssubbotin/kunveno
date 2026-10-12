@@ -45,6 +45,9 @@ func TestParseMinimalDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if cfg.RoomsFile != "/var/lib/kunveno/rooms.json" {
+		t.Errorf("rooms_file default = %q", cfg.RoomsFile)
+	}
 	if cfg.HTTP.Listen != "127.0.0.1:8080" || cfg.Media.UDPPort != 7000 {
 		t.Errorf("defaults: listen=%q udp=%d", cfg.HTTP.Listen, cfg.Media.UDPPort)
 	}

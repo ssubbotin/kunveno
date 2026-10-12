@@ -10,8 +10,14 @@
 </script>
 
 {#if track}
-  <section class="screen">
-    <header>{label}</header>
+  <figure class="screen">
     <video bind:this={video} autoplay playsinline muted></video>
-  </section>
+    <figcaption>{label}</figcaption>
+  </figure>
 {/if}
+
+<style>
+  .screen { margin: 0; min-height: 0; display: grid; grid-template-rows: 1fr auto; gap: .5rem; }
+  video { width: 100%; height: 100%; min-height: 0; object-fit: contain; background: #0d141c; border-radius: var(--radius); border: 1px solid var(--line); }
+  figcaption { color: var(--muted); font-size: .9rem; }
+</style>

@@ -15,6 +15,7 @@ func TestParseClientAccepts(t *testing.T) {
 		"mute":      `{"type":"mute","muted":true}`,
 		"share":     `{"type":"share","action":"start"}`,
 		"leave":     `{"type":"leave"}`,
+		"echo":      `{"type":"echo","on":true}`,
 	}
 	for name, raw := range cases {
 		m, err := ParseClient([]byte(raw))
@@ -43,6 +44,8 @@ func TestParseClientRejects(t *testing.T) {
 		"candidate nil":   `{"type":"candidate"}`,
 		"mute no flag":    `{"type":"mute"}`,
 		"share bad":       `{"type":"share","action":"maybe"}`,
+		"echo no flag":    `{"type":"echo"}`,
+		"join bad role":   `{"type":"join","room":"ops","pin":"1234","name":"Ann","role":"admin"}`,
 	}
 	for name, raw := range cases {
 		if _, err := ParseClient([]byte(raw)); !errors.Is(err, ErrBadMessage) {
@@ -51,9 +54,16 @@ func TestParseClientRejects(t *testing.T) {
 	}
 }
 
+func TestParseClientEchoRoleNeedsNoPIN(t *testing.T) {
+	m, err := ParseClient([]byte(`{"type":"join","room":"ops","name":"Echo","role":"echo"}`))
+	if err != nil || m.Role != "echo" {
+		t.Fatalf("m = %+v, err = %v", m, err)
+	}
+}
+
 func TestServerMessagesEncode(t *testing.T) {
-	b, _ := json.Marshal(Participants([]ParticipantInfo{{ID: "a", Name: "Ann", Muted: true}}, ""))
-	want := `{"type":"participants","participants":[{"id":"a","name":"Ann","muted":true}],"sharer":""}`
+	b, _ := json.Marshal(Participants([]ParticipantInfo{{ID: "a", Name: "Ann", Muted: true}, {ID: "e", Name: "Echo", Bot: true}}, "", true))
+	want := `{"type":"participants","participants":[{"id":"a","name":"Ann","muted":true},{"id":"e","name":"Echo","muted":false,"bot":true}],"sharer":"","echo":true}`
 	if string(b) != want {
 		t.Errorf("participants:\n got %s\nwant %s", b, want)
 	}

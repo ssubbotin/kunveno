@@ -7,11 +7,11 @@
   const state = session.state;
 
   const errorText: Record<string, string> = {
-    bad_pin: 'Wrong PIN.',
-    bad_room: 'This room does not exist.',
-    room_full: 'The room is full.',
-    media_failed: 'Media connection failed. Rejoining.',
-    bad_message: 'Protocol error. Please reload the page.',
+    bad_pin: 'Неверный PIN комнаты.',
+    bad_room: 'Такой комнаты нет. Обновите список.',
+    room_full: 'В комнате нет мест.',
+    media_failed: 'Связь со звуком прервалась, подключаемся заново.',
+    bad_message: 'Ошибка протокола. Обновите страницу.',
   };
 
   async function join(room: string, pin: string, name: string) {
@@ -20,7 +20,7 @@
     } catch (e) {
       state.status = 'error';
       state.errorCode = 'no_mic';
-      state.errorMessage = 'Microphone access is required: ' + (e as Error).message;
+      state.errorMessage = 'Нужен доступ к микрофону: ' + (e as Error).message;
     }
   }
 </script>

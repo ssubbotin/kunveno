@@ -14,7 +14,8 @@ export class Rtc {
   ) {
     this.pc = new RTCPeerConnection({ iceServers: [] });
     this.pc.onicecandidate = (ev) => {
-      if (ev.candidate) this.send({ type: 'candidate', candidate: ev.candidate.toJSON() });
+      // Skip the end-of-candidates marker (empty string); the server needs only real candidates.
+      if (ev.candidate?.candidate) this.send({ type: 'candidate', candidate: ev.candidate.toJSON() });
     };
     this.pc.ontrack = (ev) => {
       const stream = ev.streams[0];

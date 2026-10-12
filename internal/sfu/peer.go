@@ -141,11 +141,14 @@ func (p *Peer) Subscribe(from Source, kind Kind) error {
 		p.mu.Unlock()
 		return nil
 	}
-	sender, err := p.pc.AddTrack(track)
+	// A fresh sendonly transceiver: AddTrack would reuse a free receive slot (mid 0 or 1),
+	// which the browser keeps sendonly for its own media and never plays.
+	tr, err := p.pc.AddTransceiverFromTrack(track, webrtc.RTPTransceiverInit{Direction: webrtc.RTPTransceiverDirectionSendonly})
 	if err != nil {
 		p.mu.Unlock()
 		return err
 	}
+	sender := tr.Sender()
 	p.subs[key] = sender
 	if kind == KindScreen {
 		p.pendingPLI = append(p.pendingPLI, from)

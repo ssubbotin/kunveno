@@ -32,10 +32,13 @@ type Config struct {
 		ShareMaxKbps int    `yaml:"share_max_kbps"`
 	} `yaml:"media"`
 	Rooms []Room `yaml:"rooms"`
+	// RoomsFile stores rooms created through the API (JSON, mode 0600: it holds PINs).
+	RoomsFile string `yaml:"rooms_file"`
 }
 
 const (
 	DefaultListen          = "127.0.0.1:8080"
+	DefaultRoomsFile       = "/var/lib/kunveno/rooms.json"
 	DefaultUDPPort         = 7000
 	DefaultShareMaxKbps    = 2500
 	DefaultMaxParticipants = 15
@@ -69,6 +72,9 @@ func Parse(data []byte) (*Config, error) {
 }
 
 func (c *Config) applyDefaults() {
+	if c.RoomsFile == "" {
+		c.RoomsFile = DefaultRoomsFile
+	}
 	if c.HTTP.Listen == "" {
 		c.HTTP.Listen = DefaultListen
 	}

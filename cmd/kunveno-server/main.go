@@ -10,12 +10,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/ssubbotin/kunveno/internal/config"
 	"github.com/ssubbotin/kunveno/internal/httpapi"
 	"github.com/ssubbotin/kunveno/internal/room"
+	"github.com/ssubbotin/kunveno/internal/roomstore"
 	"github.com/ssubbotin/kunveno/internal/sfu"
 	sig "github.com/ssubbotin/kunveno/internal/signal"
 )
@@ -63,15 +65,35 @@ func run(cfgPath string, log *slog.Logger) error {
 	for _, r := range cfg.Rooms {
 		reg.Add(room.New(r.Slug, r.Name, r.PIN, r.MaxParticipants))
 	}
+	saved, err := roomstore.Load(cfg.RoomsFile)
+	if err != nil {
+		return fmt.Errorf("load %s: %w", cfg.RoomsFile, err)
+	}
+	for _, s := range saved {
+		if _, clash := reg.Get(s.Slug); clash {
+			log.Warn("saved room clashes with a configured room; skipped", "slug", s.Slug)
+			continue
+		}
+		reg.Restore(s)
+	}
+	var saveMu sync.Mutex
+	persist := func() error {
+		saveMu.Lock()
+		defer saveMu.Unlock()
+		return roomstore.Save(cfg.RoomsFile, reg.CreatedSpecs())
+	}
 	mux := http.NewServeMux()
 	mux.Handle("/ws", sig.New(reg, engineMedia{engine}, cfg.HTTP.AllowedOrigins, log))
-	mux.Handle("/api/rooms", httpapi.Rooms(reg))
+	rooms := httpapi.Rooms(reg, persist)
+	mux.Handle("/api/rooms", rooms)
+	mux.Handle("/api/rooms/", rooms)
 	mux.Handle("/healthz", httpapi.Health())
+	mux.Handle("/internal/echo", httpapi.EchoRooms(reg)) // never proxied by nginx
 
 	srv := &http.Server{Addr: cfg.HTTP.Listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
-	log.Info("kunveno-server started", "version", version, "listen", cfg.HTTP.Listen, "udp_port", engine.Port(), "advertise_ip", cfg.Media.AdvertiseIP, "rooms", len(cfg.Rooms))
+	log.Info("kunveno-server started", "version", version, "listen", cfg.HTTP.Listen, "udp_port", engine.Port(), "advertise_ip", cfg.Media.AdvertiseIP, "rooms", len(reg.All()), "rooms_file", cfg.RoomsFile)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

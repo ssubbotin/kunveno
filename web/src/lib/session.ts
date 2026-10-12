@@ -21,6 +21,7 @@ export class Session {
   private remoteAudio = new Map<string, { el: HTMLAudioElement; stop: () => void }>();
   private screenTrack: MediaStreamTrack | null = null;
   private screenAttached = false;
+  private stopSelfLevel: (() => void) | null = null;
 
   async join(room: string, pin: string, name: string): Promise<void> {
     this.wanted = { room, pin, name };
@@ -31,6 +32,10 @@ export class Session {
       });
       this.mic = stream.getAudioTracks()[0];
       this.mic.enabled = !this.state.muted;
+      // Own level drives the speaking highlight of our row; a muted (disabled) track reads as silence.
+      this.stopSelfLevel = watchLevel(this.mic, (speaking) => {
+        if (this.state.selfId) this.state.speaking[this.state.selfId] = speaking;
+      });
     }
     await this.connect();
   }
@@ -112,6 +117,8 @@ export class Session {
     this.sig?.send({ type: 'leave' });
     this.sig?.close();
     this.teardownMedia();
+    this.stopSelfLevel?.();
+    this.stopSelfLevel = null;
     this.mic?.stop();
     this.mic = null;
     this.state.reset();
@@ -122,6 +129,11 @@ export class Session {
     this.state.muted = muted;
     if (this.mic) this.mic.enabled = !muted;
     this.sig?.send({ type: 'mute', muted });
+  }
+
+  // Asks the server to bring the echo helper into this room, or to remove it.
+  setEcho(on: boolean): void {
+    this.sig?.send({ type: 'echo', on });
   }
 
   async startShare(): Promise<void> {

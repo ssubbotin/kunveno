@@ -40,3 +40,25 @@ sudo systemctl start kunveno-server
 - `bad_message` on join: the request did not reach `/ws` as an upgrade; check the nginx
   `Upgrade`/`Connection` headers.
 - 403 on `/ws`: Origin mismatch. Set `http.allowed_origins` in the config to the site URL.
+
+## Docker Compose (alternative to the deb packages)
+nginx and the server run as two containers with host networking. Only built artifacts go to the host.
+
+On the workstation: `make docker-bundle`, then `rsync -a dist/kunveno-docker/ <host>:kunveno/`.
+
+On the host, in `~/kunveno`:
+```
+cp config.example.yaml config.yaml   # advertise_ip, rooms, PINs; pick a free http.listen port
+cp env.example .env                  # KUNVENO_UPSTREAM must match http.listen
+mkdir -p certs                       # fullchain.pem and privkey.pem (see section 2)
+mkdir -p data && sudo chown 10001 data && chmod 700 data   # rooms created in the lobby
+docker compose up -d --build
+```
+Upgrade: rsync a new bundle (it never overwrites `config.yaml`, `.env` or `certs/`), then
+`docker compose up -d --build`. Logs: `docker compose logs -f server`.
+
+### Sound check (echo)
+The `echo` service runs next to the server and stays idle. When someone presses "Эхо-тест" in a
+room, it joins that room as a participant and plays the room's audio back after `ECHO_DELAY`
+(2 s by default), one speaker at a time. Pressing the button again, or the last person leaving,
+removes it. It reaches the server on loopback (`/internal/echo`, never proxied by nginx).
