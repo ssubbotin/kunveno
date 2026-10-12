@@ -13,7 +13,34 @@ permissions:
   packages: write
 
 jobs:
+  # The leak check must be able to fail: build a deliberately dirty image and require it to
+  # report every kind of leak.
+  check-the-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: build a leaky image
+        run: |
+          docker build -t check/leaky:ci - <<'DOCKERFILE'
+          FROM alpine:3.22
+          RUN mkdir -p /app /usr/share/nginx/kunveno/assets /usr/local/bin \
+           && echo 'package main' > /app/main.go \
+           && echo '{}' > /usr/share/nginx/kunveno/assets/index.js.map \
+           && echo 'x();//# sourceMappingURL=index.js.map' > /usr/share/nginx/kunveno/assets/index.js \
+           && printf '/src/internal/sfu/peer.go .debug_info' > /usr/local/bin/kunveno-test
+          DOCKERFILE
+      - name: the check must fail and name every leak
+        run: |
+          if deploy/docker/check-image.sh check/leaky:ci 2> report.txt; then
+            echo "check-image.sh passed a leaky image" >&2; exit 1
+          fi
+          cat report.txt
+          for want in 'app/main.go' 'index.js.map' 'sourceMappingURL in the web bundle' 'keeps build paths' 'DWARF debug data'; do
+            grep -q "$want" report.txt || { echo "not reported: $want" >&2; exit 1; }
+          done
+
   image:
+    needs: check-the-check
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
