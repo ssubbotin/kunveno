@@ -180,7 +180,7 @@ export class Session {
         this.camera = await openCamera(prefs.cameraId);
       } catch (e) {
         console.warn('camera', e);
-        this.state.cameraError = 'Камера недоступна: браузер не дал доступ или её занимает другая программа.';
+        this.state.cameraError = 'camera.unavailable'; // a message key; the room translates it
         savePrefs(localStorage, { ...loadPrefs(localStorage), cameraOn: false });
         return;
       }

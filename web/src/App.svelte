@@ -2,17 +2,11 @@
   import Lobby from './lib/Lobby.svelte';
   import Room from './lib/Room.svelte';
   import { Session } from './lib/session';
+  import { i18n } from './lib/i18n/i18n.svelte';
+  import { errorText } from './lib/i18n/errors';
 
   const session = new Session();
   const state = session.state;
-
-  const errorText: Record<string, string> = {
-    bad_pin: 'Неверный PIN комнаты.',
-    bad_room: 'Такой комнаты нет. Обновите список.',
-    room_full: 'В комнате нет мест.',
-    media_failed: 'Связь со звуком прервалась, подключаемся заново.',
-    bad_message: 'Ошибка протокола. Обновите страницу.',
-  };
 
   async function join(room: string, pin: string, name: string) {
     try {
@@ -20,15 +14,13 @@
     } catch (e) {
       state.status = 'error';
       state.errorCode = 'no_mic';
-      state.errorMessage = 'Нужен доступ к микрофону: ' + (e as Error).message;
+      state.errorMessage = (e as Error).message;
     }
   }
 </script>
 
 {#if state.status === 'idle' || (state.status === 'error' && state.selfId === '')}
-  <Lobby onJoin={join} error={state.errorCode === 'too_many_attempts'
-    ? `Слишком много неверных PIN. Попробуйте через ${state.retryAfter} с.`
-    : state.errorCode ? (errorText[state.errorCode] ?? state.errorMessage) : ''} />
+  <Lobby onJoin={join} error={state.errorCode ? errorText(i18n.lang, state.errorCode, { retryAfter: state.retryAfter, detail: state.errorMessage }) : ''} />
 {:else}
   <Room {session} />
 {/if}

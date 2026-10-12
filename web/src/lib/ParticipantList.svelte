@@ -1,5 +1,6 @@
 <script lang="ts">
   import { initials } from './initials';
+  import { t } from './i18n/i18n.svelte';
   import Video from './Video.svelte';
   import type { Participant } from './protocol';
   let { participants, selfId, sharer, speaking, videos = {}, compact = false }: {
@@ -7,13 +8,13 @@
     videos?: Record<string, MediaStreamTrack>; compact?: boolean;
   } = $props();
 
-  const qualityText = { good: 'Связь хорошая', fair: 'Связь средняя: возможны задержки и пропуски', poor: 'Связь плохая: звук может прерываться' };
+
   const bars = { good: 3, fair: 2, poor: 1 };
 
 </script>
 
 <!-- Grid sized to the room: ceil(sqrt(n)) columns, and tiles small enough that every row fits the window. -->
-<ul class="people" class:compact aria-label="Участники"
+<ul class="people" class:compact aria-label={t('people.label')}
   style:--cols={Math.max(1, Math.ceil(Math.sqrt(participants.length)))}
   style:--rows={Math.max(1, Math.ceil(participants.length / Math.max(1, Math.ceil(Math.sqrt(participants.length)))))}>
   {#each participants as p (p.id)}
@@ -30,28 +31,28 @@
         {/if}
       </span>
       <span class="who">
-        <span class="name">{p.name}</span>
+        <span class="name">{p.bot ? t('people.echoName') : p.name}</span>
         <span class="tags">
-          {#if p.id === selfId}<span>вы</span>{/if}
-          {#if p.bot}<span>повторяет звук комнаты</span>{/if}
-          {#if p.id === sharer}<span class="share">показывает экран</span>{/if}
+          {#if p.id === selfId}<span>{t('people.you')}</span>{/if}
+          {#if p.bot}<span>{t('people.echoTag')}</span>{/if}
+          {#if p.id === sharer}<span class="share">{t('people.sharing')}</span>{/if}
         </span>
       </span>
       {#if p.quality && !p.bot}
-        <span class="signal {p.quality}" title={qualityText[p.quality]}>
+        <span class="signal {p.quality}" title={t(`quality.${p.quality}`)}>
           <svg viewBox="0 0 16 14" aria-hidden="true">
             {#each [1, 2, 3] as i (i)}<rect x={(i - 1) * 5.5} y={14 - i * 4.5} width="4" height={i * 4.5} rx="1" class:on={i <= bars[p.quality]} />{/each}
           </svg>
-          <span class="sr">{qualityText[p.quality]}</span>
+          <span class="sr">{t(`quality.${p.quality}`)}</span>
         </span>
       {/if}
       {#if p.muted}
-        <span class="muted" title="Микрофон выключен">
+        <span class="muted" title={t('mic.off')}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5a3 3 0 0 1 6 0v6M5 11a7 7 0 0 0 11.5 5.4M12 18v3M4 4l16 16" /></svg>
-          <span class="sr">микрофон выключен</span>
+          <span class="sr">{t('people.muted')}</span>
         </span>
       {/if}
-      {#if speaking[p.id]}<span class="sr">говорит</span>{/if}
+      {#if speaking[p.id]}<span class="sr">{t('people.speaking')}</span>{/if}
     </li>
   {/each}
 </ul>
