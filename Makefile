@@ -1,6 +1,8 @@
 # Debian versions must start with a digit: tags look like v0.1.0; untagged trees get 0.0.0+git<hash>.
 VERSION ?= $(shell v=$$(git describe --tags --dirty 2>/dev/null | sed 's/^v//'); [ -n "$$v" ] && echo "$$v" || echo "0.0.0+git$$(git rev-parse --short HEAD 2>/dev/null)")
 
+BUILD_DATE ?= $(shell date -u +%Y-%m-%d)
+
 .PHONY: fmt test-go test-web test build deb docker-bundle clean
 
 fmt:
@@ -17,7 +19,7 @@ test: test-go test-web
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o bin/kunveno-server ./cmd/kunveno-server
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o bin/kunveno-echo ./cmd/kunveno-echo
-	cd web && npm run build
+	cd web && VITE_APP_VERSION=$(VERSION) VITE_BUILD_DATE=$(BUILD_DATE) npm run build
 
 deb: build
 	mkdir -p dist

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { build, repoUrl } from './build';
 
   type RoomItem = { slug: string; name: string; participants: number; capacity: number; created: boolean };
   let { onJoin, error = '' }: { onJoin: (room: string, pin: string, name: string) => void; error?: string } = $props();
@@ -141,6 +142,12 @@
       </button>
     {/if}
   </form>
+
+  <footer class="about">
+    <a href={repoUrl} target="_blank" rel="noopener noreferrer">kunveno</a>
+    <span>версия {build.version}</span>
+    {#if build.date}<span>сборка от {build.date}</span>{/if}
+  </footer>
 </div>
 
 <style>
@@ -176,6 +183,14 @@
   .enter { display: grid; gap: 1rem; }
   .enter h2 { margin: 0 0 -.25rem; }
   .wide { justify-content: center; width: 100%; }
+
+  .about {
+    grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .25rem 1.25rem;
+    padding-top: 1.25rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem;
+  }
+  .about a { color: var(--text); text-decoration: none; font-weight: 500; }
+  .about a:hover { text-decoration: underline; }
+  .about span { font-variant-numeric: tabular-nums; }
 
   @media (max-width: 720px) {
     .lobby { grid-template-columns: 1fr; }
