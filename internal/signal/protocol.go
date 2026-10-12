@@ -37,7 +37,10 @@ const (
 	MaxSDPLen  = 256 * 1024
 )
 
-var slugRe = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
+var (
+	slugRe   = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
+	clientRe = regexp.MustCompile(`^[A-Za-z0-9_-]{8,64}$`)
+)
 
 // ClientMessage is the union of every client-to-server message.
 type ClientMessage struct {
@@ -49,10 +52,13 @@ type ClientMessage struct {
 	Candidate *webrtc.ICECandidateInit `json:"candidate,omitempty"`
 	Muted     *bool                    `json:"muted,omitempty"`
 	Action    string                   `json:"action,omitempty"`
-	Role      string                   `json:"role,omitempty"`    // "echo" for the local echo helper
-	Media     string                   `json:"media,omitempty"`   // "tcp" after a failed UDP path
-	On        *bool                    `json:"on,omitempty"`      // echo, camera
-	Receive   *bool                    `json:"receive,omitempty"` // video: whether to receive cameras
+	Role      string                   `json:"role,omitempty"`  // "echo" for the local echo helper
+	Media     string                   `json:"media,omitempty"` // "tcp" after a failed UDP path
+	// Client identifies the page: a join with the same client id replaces that page's earlier
+	// session, so a page never shows up twice.
+	Client  string `json:"client,omitempty"`
+	On      *bool  `json:"on,omitempty"`      // echo, camera
+	Receive *bool  `json:"receive,omitempty"` // video: whether to receive cameras
 }
 
 // ParseClient decodes and validates one client frame.
@@ -67,6 +73,8 @@ func ParseClient(data []byte) (ClientMessage, error) {
 		switch {
 		case !slugRe.MatchString(m.Room):
 			return m, fmt.Errorf("%w: join.room", ErrBadMessage)
+		case m.Client != "" && !clientRe.MatchString(m.Client):
+			return m, fmt.Errorf("%w: join.client", ErrBadMessage)
 		case m.Media != "" && m.Media != MediaTCP:
 			return m, fmt.Errorf("%w: join.media", ErrBadMessage)
 		case m.Role != "" && m.Role != RoleEcho && m.Role != RolePlayer:

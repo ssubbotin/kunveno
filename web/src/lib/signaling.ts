@@ -24,7 +24,10 @@ export class Signaling {
           console.error(e);
         }
       };
+      // Only a connection that opened reports its end: a failed connect is already reported
+      // by the rejection, and browsers fire error and close for it.
       ws.onclose = () => {
+        if (this.ws !== ws) return;
         this.ws = null;
         this.onClose();
       };

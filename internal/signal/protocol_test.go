@@ -50,6 +50,7 @@ func TestParseClientRejects(t *testing.T) {
 		"camera no flag":  `{"type":"camera"}`,
 		"video no flag":   `{"type":"video"}`,
 		"join bad media":  `{"type":"join","room":"ops","pin":"1234","name":"Ann","media":"carrier-pigeon"}`,
+		"join bad client": `{"type":"join","room":"ops","pin":"1234","name":"Ann","client":"no spaces allowed"}`,
 		"join bad role":   `{"type":"join","room":"ops","pin":"1234","name":"Ann","role":"admin"}`,
 	}
 	for name, raw := range cases {

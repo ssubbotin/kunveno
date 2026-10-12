@@ -11,7 +11,7 @@ export type ServerMessage =
   | { type: 'participants'; participants: Participant[]; sharer: string; echo: boolean };
 
 export type ClientMessage =
-  | { type: 'join'; room: string; pin: string; name: string; media?: 'tcp' }
+  | { type: 'join'; room: string; pin: string; name: string; media?: 'tcp'; client?: string }
   | { type: 'answer'; sdp: string }
   | { type: 'candidate'; candidate: RTCIceCandidateInit }
   | { type: 'mute'; muted: boolean }

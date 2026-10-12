@@ -69,6 +69,7 @@ type session struct {
 	bot            bool   // a helper: the echo or a player
 	botKind        string // RoleEcho or RolePlayer
 	noVideo        bool   // declined other participants' cameras; guarded by Handler.mu
+	client         string // the page's id from join, if it sent one
 	joined         time.Time
 	conn           *websocket.Conn
 	peer           MediaPeer
@@ -273,6 +274,7 @@ func (h *Handler) join(conn *websocket.Conn, cancel context.CancelFunc, m Client
 	case m.Role == RolePlayer && !lr.room.HasPlayer():
 		return nil, CodeBadRoom, "no player configured for this room"
 	}
+	h.replaceClient(lr, m.Client)
 	id := newID()
 	var err error
 	if bot {
@@ -288,7 +290,7 @@ func (h *Handler) join(conn *websocket.Conn, cancel context.CancelFunc, m Client
 	case err != nil:
 		return nil, CodeBadMessage, err.Error()
 	}
-	s := &session{id: id, name: m.Name, slug: m.Room, bot: bot, botKind: m.Role, joined: time.Now(), conn: conn, cancel: cancel, log: h.log.With("room", m.Room, "participant", id)}
+	s := &session{id: id, name: m.Name, slug: m.Room, bot: bot, botKind: m.Role, client: m.Client, joined: time.Now(), conn: conn, cancel: cancel, log: h.log.With("room", m.Room, "participant", id)}
 	peer, err := h.media.NewPeer(id, s, sfu.Handlers{OnPublisher: h.onPublisher, OnFailed: h.onFailed, TCPOnly: m.Media == MediaTCP})
 	if err != nil {
 		lr.room.Leave(id)
@@ -560,4 +562,29 @@ func (h *Handler) setReceiveVideo(s *session, receive bool) {
 		}
 	}
 	s.log.Info("receive video", "on", receive)
+}
+
+// replaceClient removes the earlier session of the same page from the room, if there is one:
+// the page reconnected while its old connection had not been closed yet.
+func (h *Handler) replaceClient(lr *liveRoom, client string) {
+	if client == "" {
+		return
+	}
+	h.mu.Lock()
+	var old *session
+	for _, o := range lr.members {
+		if o.client == client {
+			old = o
+			break
+		}
+	}
+	h.mu.Unlock()
+	if old == nil {
+		return
+	}
+	old.log.Info("replaced by a new session of the same page")
+	h.leave(old) // at once, so it neither counts toward capacity nor appears in the snapshot
+	// Close waits for the other side's answer; the new join must not wait for it.
+	go func() { _ = old.conn.Close(websocket.StatusNormalClosure, "replaced") }()
+	old.cancel()
 }
