@@ -1,0 +1,8 @@
+/bin/
+/dist/
+/web/node_modules/
+/web/dist/
+*.deb
+*.log
+.idea/
+.vscode/
