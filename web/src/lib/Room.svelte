@@ -2,7 +2,8 @@
   import ParticipantList from './ParticipantList.svelte';
   import ScreenView from './ScreenView.svelte';
   import type { Session } from './session';
-  import { t } from './i18n/i18n.svelte';
+  import { i18n, t } from './i18n/i18n.svelte';
+  import { errorText } from './i18n/errors';
 
   let { session }: { session: Session } = $props();
   // The session object lives for the whole page; Room never receives another one.
@@ -19,7 +20,7 @@
     rs.status === 'connected' ? (rs.transport === 'tcp' ? t('status.backup') : t('status.connected'))
       : rs.status === 'reconnecting' ? t('status.reconnecting')
       : rs.status === 'connecting' ? t('status.connecting')
-      : rs.status === 'error' ? t('status.error', { code: rs.errorCode })
+      : rs.status === 'error' ? errorText(i18n.lang, rs.errorCode, { retryAfter: rs.retryAfter, detail: rs.errorMessage })
       : '',
   );
 
