@@ -7,5 +7,5 @@ Internal voice meetings with desktop sharing for the company VPN. Esperanto: "me
 - `deploy/`: systemd unit, nginx site, deb packaging.
 
 
-Builds and tests run on the compute box: `make test`, `make build`, `make deb` (see Makefile).
+Builds and tests run locally: `make test`, `make build`, `make deb` (see Makefile).
 Private repository, internal use.
