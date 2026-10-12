@@ -3,9 +3,10 @@
 ## 1. Host
 - An Ubuntu host on the VPN. Note its VPN address (example `10.8.0.1`): it becomes `media.advertise_ip`.
 - Packages: `sudo apt install nginx`.
-- Firewall: allow TCP 443 and UDP 7000 from the VPN subnet only, for example
+- Firewall: allow TCP 443, UDP 7000 and TCP 7000 (ICE-TCP fallback) from the VPN subnets only, for example
   `sudo ufw allow from 10.8.0.0/24 to any port 7000 proto udp` and
-  `sudo ufw allow from 10.8.0.0/24 to any port 443 proto tcp`.
+  `sudo ufw allow from 10.8.0.0/24 to any port 443 proto tcp` and
+  `sudo ufw allow from 10.8.0.0/24 to any port 7000 proto tcp`.
 
 ## 2. TLS certificate
 Choose one:
@@ -35,6 +36,9 @@ sudo systemctl start kunveno-server
 (`noreplace`); the service restarts automatically.
 
 ## 6. Troubleshooting
+- Each session's route is logged as `media path` (transport udp or tcp, remote address); a
+  participant whose connection drops to `disconnected` after a few seconds over UDP has a broken
+  UDP path (NAT or firewall on a gateway). Browsers fall back to TCP 7000 when UDP fails outright.
 - Stuck at "connecting": the browser cannot reach `advertise_ip:7000/udp`. Check the firewall and
   that `advertise_ip` is the address the browser can route to.
 - `bad_message` on join: the request did not reach `/ws` as an upgrade; check the nginx

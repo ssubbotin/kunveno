@@ -28,6 +28,7 @@ type Config struct {
 	} `yaml:"http"`
 	Media struct {
 		UDPPort      int    `yaml:"udp_port"`
+		TCPPort      int    `yaml:"tcp_port"` // ICE-TCP fallback; -1 disables
 		AdvertiseIP  string `yaml:"advertise_ip"`
 		ShareMaxKbps int    `yaml:"share_max_kbps"`
 	} `yaml:"media"`
@@ -81,6 +82,9 @@ func (c *Config) applyDefaults() {
 	if c.Media.UDPPort == 0 {
 		c.Media.UDPPort = DefaultUDPPort
 	}
+	if c.Media.TCPPort == 0 {
+		c.Media.TCPPort = DefaultUDPPort
+	}
 	if c.Media.ShareMaxKbps == 0 {
 		c.Media.ShareMaxKbps = DefaultShareMaxKbps
 	}
@@ -96,6 +100,9 @@ func (c *Config) Validate() error {
 	var errs []error
 	if c.Media.UDPPort < 1 || c.Media.UDPPort > 65535 {
 		errs = append(errs, fmt.Errorf("media.udp_port %d out of range", c.Media.UDPPort))
+	}
+	if p := c.Media.TCPPort; p != -1 && (p < 1 || p > 65535) {
+		errs = append(errs, fmt.Errorf("media.tcp_port %d out of range (or -1 to disable)", p))
 	}
 	if ip := net.ParseIP(c.Media.AdvertiseIP); ip == nil || ip.To4() == nil {
 		errs = append(errs, fmt.Errorf("media.advertise_ip %q is not an IPv4 address", c.Media.AdvertiseIP))

@@ -45,6 +45,9 @@ func TestParseMinimalDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if cfg.Media.TCPPort != 7000 {
+		t.Errorf("tcp_port default = %d, want 7000", cfg.Media.TCPPort)
+	}
 	if cfg.RoomsFile != "/var/lib/kunveno/rooms.json" {
 		t.Errorf("rooms_file default = %q", cfg.RoomsFile)
 	}
@@ -61,6 +64,7 @@ func TestValidateRejects(t *testing.T) {
 		{"short pin", "media: {advertise_ip: 10.8.0.1}\nrooms: [{slug: a, name: A, pin: \"12\"}]\n", "pin"},
 		{"bad ip", "media: {advertise_ip: nope}\nrooms: [{slug: a, name: A, pin: \"1234\"}]\n", "advertise_ip"},
 		{"max too big", "media: {advertise_ip: 10.8.0.1}\nrooms: [{slug: a, name: A, pin: \"1234\", max_participants: 51}]\n", "max_participants"},
+		{"bad tcp port", "media: {advertise_ip: 10.8.0.1, tcp_port: 70000}\nrooms: [{slug: a, name: A, pin: \"1234\"}]\n", "tcp_port"},
 		{"numeric pin stays string", "media: {advertise_ip: 10.8.0.1}\nrooms: [{slug: a, name: A, pin: 0012}]\n", ""},
 	}
 	for _, c := range cases {
@@ -79,5 +83,12 @@ func TestValidateRejects(t *testing.T) {
 				t.Fatalf("err = %v, want containing %q", err, c.want)
 			}
 		})
+	}
+}
+
+func TestTCPPortCanBeDisabled(t *testing.T) {
+	cfg, err := Parse([]byte("media: {advertise_ip: 10.8.0.1, tcp_port: -1}\nrooms: [{slug: a, name: A, pin: \"1234\"}]\n"))
+	if err != nil || cfg.Media.TCPPort != -1 {
+		t.Fatalf("cfg.Media.TCPPort = %v, err = %v", cfg, err)
 	}
 }

@@ -46,6 +46,9 @@ var (
 	PeerStates = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "kunveno_peer_state_changes_total", Help: "Peer connection state transitions, by new state.",
 	}, []string{"state"})
+	Transports = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "kunveno_media_connections_total", Help: "Established media connections by transport (udp or tcp).",
+	}, []string{"transport"})
 	Offers = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "kunveno_offers_total", Help: "SDP offers sent to participants.",
 	})
@@ -75,7 +78,7 @@ func NewRegistry(rooms *room.Registry, version string) *prometheus.Registry {
 		collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		build, roomCollector{rooms},
 		Joins, Leaves, Sessions, SessionSeconds, Messages, BadMessages, MediaFailed,
-		RTPPackets, RTPBytes, PeerStates, Offers, NegotiationErrors, KeyframeRequests,
+		RTPPackets, RTPBytes, PeerStates, Transports, Offers, NegotiationErrors, KeyframeRequests,
 		RoomsCreated, RoomsDeleted,
 	)
 	return r

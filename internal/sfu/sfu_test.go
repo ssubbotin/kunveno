@@ -239,3 +239,51 @@ func TestSubscribeNeverUsesTheReceiveSlots(t *testing.T) {
 		}
 	}
 }
+
+// A client whose UDP path is broken must still connect through the passive ICE-TCP candidate.
+func TestConnectsOverTCPWhenUDPIsUnavailable(t *testing.T) {
+	eng, err := NewEngine(EngineConfig{UDPPort: 0, TCP: true, TCPPort: 0, AdvertiseIP: "127.0.0.1", IncludeLoopback: true}, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer eng.Close()
+	sig := &chanSignaler{offers: make(chan string, 8)}
+	p, err := eng.NewPeer("x", sig, Handlers{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+
+	m := &webrtc.MediaEngine{}
+	if err := m.RegisterDefaultCodecs(); err != nil {
+		t.Fatal(err)
+	}
+	se := webrtc.SettingEngine{}
+	se.SetIncludeLoopbackCandidate(true)
+	se.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeTCP4})
+	browser, err := webrtc.NewAPI(webrtc.WithMediaEngine(m), webrtc.WithSettingEngine(se)).NewPeerConnection(webrtc.Configuration{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer browser.Close()
+	connected := make(chan struct{})
+	var once sync.Once
+	browser.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
+		if s == webrtc.PeerConnectionStateConnected {
+			once.Do(func() { close(connected) })
+		}
+	})
+
+	done := make(chan struct{})
+	defer close(done)
+	go answerLoop(t, browser, sig.offers, p, done)
+	p.Negotiate()
+	select {
+	case <-connected:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no connection over TCP")
+	}
+	if got := p.Transport(); got != "tcp" {
+		t.Fatalf("Transport() = %q, want tcp", got)
+	}
+}
