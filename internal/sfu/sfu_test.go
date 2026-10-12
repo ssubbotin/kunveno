@@ -273,7 +273,7 @@ func (s staticSource) ID() string                               { return s.id }
 func (s staticSource) Track(k Kind) *webrtc.TrackLocalStaticRTP { return s.tracks[k] }
 func (s staticSource) RequestKeyframe(Kind)                     {}
 
-// The two receive slots (mid 0 audio, mid 1 video) carry the participant's own media; a
+// The receive slots (mid 0 audio, mid 1 screen, mid 2 camera) carry the participant's own media; a
 // forwarded track placed there reaches a browser whose slot is sendonly and is never played.
 func TestSubscribeNeverUsesTheReceiveSlots(t *testing.T) {
 	eng, err := NewEngine(EngineConfig{UDPPort: 0, AdvertiseIP: "127.0.0.1", IncludeLoopback: true}, slog.Default())
@@ -296,10 +296,10 @@ func TestSubscribeNeverUsesTheReceiveSlots(t *testing.T) {
 		t.Fatal(err)
 	}
 	trs := p.pc.GetTransceivers()
-	if len(trs) != 4 {
-		t.Fatalf("transceivers = %d, want 2 receive slots + 2 subscriptions", len(trs))
+	if len(trs) != 5 {
+		t.Fatalf("transceivers = %d, want 3 receive slots + 2 subscriptions", len(trs))
 	}
-	for i, tr := range trs[:2] {
+	for i, tr := range trs[:3] {
 		if tr.Sender() != nil && tr.Sender().Track() != nil {
 			t.Errorf("receive slot %d carries forwarded track %q", i, tr.Sender().Track().ID())
 		}
