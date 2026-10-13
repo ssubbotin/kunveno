@@ -4,14 +4,13 @@
   import { forgetPin, knownRooms, pinFor } from './pins';
   import { formatDate, i18n, setLang, t } from './i18n/i18n.svelte';
   import { LANGS, LANG_NAMES, type Lang } from './i18n/messages';
-  import { DEFAULT_TITLE, loadTitle } from './site';
+  import { loadInfo, site } from './site.svelte';
   import MicCheck from './MicCheck.svelte';
 
   type RoomItem = { slug: string; name: string; participants: number; capacity: number; created: boolean };
   let { onJoin, error = '' }: { onJoin: (room: string, pin: string, name: string) => void; error?: string } = $props();
 
   let rooms = $state<RoomItem[]>([]);
-  let title = $state(DEFAULT_TITLE);
   let room = $state('');
   // The PIN field follows the chosen room: the PIN this browser last entered it with, if any.
   let pin = $state('');
@@ -41,7 +40,7 @@
   }
 
   onMount(() => {
-    void loadTitle().then((t) => (title = t));
+    void loadInfo();
     void loadRooms();
     // Keep occupancy fresh while the lobby is open.
     const timer = setInterval(() => void loadRooms(room), 5000);
@@ -107,7 +106,7 @@
 <div class="lobby">
   <header class="brand">
     <svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="17" /><circle cx="20" cy="20" r="9" /><path d="M20 3v8M20 29v8M3 20h8M29 20h8" /><circle class="dot" cx="20" cy="20" r="2.5" /></svg>
-    <h1>{title}</h1>
+    <h1>{site.title}</h1>
   </header>
 
   <section class="rooms" aria-labelledby="rooms-title">

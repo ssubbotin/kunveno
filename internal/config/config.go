@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
@@ -48,6 +49,8 @@ type Config struct {
 	UI struct {
 		// Title names the service in the lobby and the browser tab, e.g. a company's name.
 		Title string `yaml:"title"`
+		// Reactions are the emoji participants can send; DefaultReactions when unset.
+		Reactions []string `yaml:"reactions"`
 	} `yaml:"ui"`
 	Rooms []Room `yaml:"rooms"`
 	// RoomsFile stores rooms created through the API (JSON, mode 0600: it holds PINs).
@@ -58,6 +61,7 @@ const (
 	DefaultListen          = "127.0.0.1:8080"
 	DefaultTitle           = "kunveno"
 	MaxTitleLen            = 80
+	MaxReactions           = 16
 	DefaultRoomsFile       = "/var/lib/kunveno/rooms.json"
 	DefaultUDPPort         = 7000
 	DefaultShareMaxKbps    = 2500
@@ -92,6 +96,9 @@ func Parse(data []byte) (*Config, error) {
 }
 
 func (c *Config) applyDefaults() {
+	if c.UI.Reactions == nil {
+		c.UI.Reactions = append([]string(nil), DefaultReactions...)
+	}
 	c.UI.Title = strings.TrimSpace(c.UI.Title)
 	if c.UI.Title == "" {
 		c.UI.Title = DefaultTitle
@@ -127,6 +134,9 @@ func (c *Config) Validate() error {
 	var errs []error
 	if c.Media.UDPPort < 1 || c.Media.UDPPort > 65535 {
 		errs = append(errs, fmt.Errorf("media.udp_port %d out of range", c.Media.UDPPort))
+	}
+	if err := validReactions(c.UI.Reactions); err != nil {
+		errs = append(errs, err)
 	}
 	if n := utf8.RuneCountInString(c.UI.Title); n > MaxTitleLen {
 		errs = append(errs, fmt.Errorf("ui.title is %d characters, at most %d", n, MaxTitleLen))
@@ -172,3 +182,31 @@ func (c *Config) Validate() error {
 }
 
 func bytesReader(b []byte) *bytes.Reader { return bytes.NewReader(b) }
+
+// DefaultReactions is the reaction set when ui.reactions is not configured.
+var DefaultReactions = []string{"👍", "👎", "👏", "😂", "❤️", "🎉", "😮", "🤔", "☕", "👋"}
+
+// validReactions accepts 1..MaxReactions distinct emoji. An entry is short (at most 16 bytes, room
+// for modifiers and joiners) and has no letters, digits, spaces or punctuation, so a reaction
+// cannot carry text.
+func validReactions(list []string) error {
+	if len(list) == 0 || len(list) > MaxReactions {
+		return fmt.Errorf("ui.reactions must list 1..%d emoji", MaxReactions)
+	}
+	seen := map[string]bool{}
+	for i, e := range list {
+		if e == "" || len(e) > 16 {
+			return fmt.Errorf("ui.reactions[%d] %q is not a single emoji", i, e)
+		}
+		for _, r := range e {
+			if unicode.IsLetter(r) || unicode.IsDigit(r) || unicode.IsSpace(r) || unicode.IsPunct(r) || r < 0x80 {
+				return fmt.Errorf("ui.reactions[%d] %q is not a single emoji", i, e)
+			}
+		}
+		if seen[e] {
+			return fmt.Errorf("ui.reactions[%d] %q is a duplicate", i, e)
+		}
+		seen[e] = true
+	}
+	return nil
+}

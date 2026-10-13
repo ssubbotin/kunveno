@@ -4,6 +4,7 @@
   import type { Session } from './session';
   import { i18n, t } from './i18n/i18n.svelte';
   import { errorText } from './i18n/errors';
+  import { site } from './site.svelte';
 
   let { session }: { session: Session } = $props();
   // The session object lives for the whole page; Room never receives another one.
@@ -15,8 +16,6 @@
 
   const sharerName = $derived(rs.participants.find((p) => p.id === rs.sharer)?.name ?? '');
   const shareBusy = $derived(rs.sharer !== '' && !rs.isSharing);
-  // The same eight the server accepts (internal/signal Reactions).
-  const REACTIONS = ['👍', '👏', '😂', '❤️', '🎉', '😮', '🤔', '👋'];
   let picking = $state(false);
   const echoPresent = $derived(rs.participants.some((p) => p.botKind === 'echo'));
   const statusText = $derived(
@@ -99,7 +98,7 @@
     <div class="react">
       {#if picking}
         <div class="picker" role="group" aria-label={t('control.react')}>
-          {#each REACTIONS as e (e)}
+          {#each site.reactions as e (e)}
             <button type="button" onclick={() => { session.react(e); picking = false; }} aria-label={e}>{e}</button>
           {/each}
         </div>
@@ -149,7 +148,8 @@
   .react { position: relative; }
   .picker {
     position: absolute; bottom: calc(100% + .5rem); left: 50%; transform: translateX(-50%); z-index: 5;
-    display: flex; gap: .15rem; padding: .35rem; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; justify-content: center; gap: .15rem; padding: .35rem; width: max-content; max-width: min(92vw, 30rem);
+    border-radius: 1.5rem; background: var(--panel-2); border: 1px solid var(--line);
     box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
   }
   .picker button { font-size: 1.5rem; line-height: 1; padding: .3rem; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }

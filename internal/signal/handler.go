@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"github.com/ssubbotin/kunveno/internal/config"
 	"github.com/ssubbotin/kunveno/internal/metrics"
 	"github.com/ssubbotin/kunveno/internal/quality"
 	"github.com/ssubbotin/kunveno/internal/ratelimit"
@@ -54,6 +55,7 @@ type Handler struct {
 
 	qualityEvery time.Duration      // how often connection quality is sampled
 	pins         *ratelimit.Limiter // wrong-PIN limit per client address
+	reactions    map[string]bool    // emoji participants may send (ui.reactions)
 
 	mu   sync.Mutex
 	live map[string]*liveRoom // slug -> members
@@ -80,7 +82,7 @@ type session struct {
 
 func New(reg *room.Registry, media Media, origins []string, log *slog.Logger) *Handler {
 	return &Handler{reg: reg, media: media, origins: origins, log: log, live: map[string]*liveRoom{}, qualityEvery: 3 * time.Second,
-		pins: ratelimit.New(5, 10*time.Minute, time.Minute)}
+		pins: ratelimit.New(5, 10*time.Minute, time.Minute), reactions: set(config.DefaultReactions)}
 }
 
 // lookup returns the live state of a registered room, creating it on first use. Rooms can be
@@ -597,8 +599,8 @@ const reactionGap = 700 * time.Millisecond
 
 // react shows a participant's emoji to everyone in the room, the sender included.
 func (h *Handler) react(s *session, emoji string) {
-	if s.bot || time.Since(s.lastReaction) < reactionGap {
-		return
+	if s.bot || !h.reactions[emoji] || time.Since(s.lastReaction) < reactionGap {
+		return // a helper, an emoji outside the configured set, or too fast
 	}
 	s.lastReaction = time.Now()
 	metrics.Reactions.WithLabelValues(emoji).Inc()
@@ -612,4 +614,15 @@ func (h *Handler) react(s *session, emoji string) {
 			o.log.Warn("reaction write", "err", err)
 		}
 	}
+}
+
+// SetReactions sets the emoji participants may send, from ui.reactions. Call before serving.
+func (h *Handler) SetReactions(list []string) { h.reactions = set(list) }
+
+func set(list []string) map[string]bool {
+	m := make(map[string]bool, len(list))
+	for _, e := range list {
+		m[e] = true
+	}
+	return m
 }

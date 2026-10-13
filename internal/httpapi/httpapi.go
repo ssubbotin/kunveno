@@ -177,9 +177,10 @@ func local(r *http.Request) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// Info serves GET /api/info: installation details the client shows, such as the title.
-func Info(title string) http.Handler {
-	body := map[string]string{"title": title}
+// Info serves GET /api/info: installation details the client shows: the title and the
+// reactions participants can send.
+func Info(title string, reactions []string) http.Handler {
+	body := map[string]any{"title": title, "reactions": reactions}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)

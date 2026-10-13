@@ -728,3 +728,18 @@ func TestReactionReachesEveryoneAndIsRateLimited(t *testing.T) {
 		t.Fatalf("after the limit = %q, want 👏 (🎉 must have been dropped)", m.Emoji)
 	}
 }
+
+// The reaction set comes from the configuration; anything outside it (say, from a page opened
+// before the set changed) is ignored without dropping the connection.
+func TestReactionsOutsideTheConfiguredSetAreIgnored(t *testing.T) {
+	e := newEnv(t, 15)
+	e.h.SetReactions([]string{"🚀"})
+	ca, _ := join(t, e, "Ann")
+	cb, _ := join(t, e, "Bob")
+	send(t, ca, `{"type":"react","emoji":"👍"}`)
+	time.Sleep(800 * time.Millisecond)
+	send(t, ca, `{"type":"react","emoji":"🚀"}`)
+	if m := expect(t, cb, "reaction"); m.Emoji != "🚀" {
+		t.Fatalf("reaction = %q, want 🚀 only", m.Emoji)
+	}
+}
