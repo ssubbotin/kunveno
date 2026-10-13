@@ -5,6 +5,8 @@
   import { i18n, t } from './i18n/i18n.svelte';
   import { errorText } from './i18n/errors';
   import { site } from './site.svelte';
+  import CopyLink from './CopyLink.svelte';
+  import { roomLink } from './link';
 
   let { session }: { session: Session } = $props();
   // The session object lives for the whole page; Room never receives another one.
@@ -108,6 +110,8 @@
         {t('control.react')}
       </button>
     </div>
+
+    <CopyLink link={roomLink(location.origin, rs.roomSlug, session.pin)} label={t('control.invite')} />
 
     <button class="btn danger leave" onclick={() => session.leave()}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10" /></svg>

@@ -31,6 +31,11 @@ const ru = {
   'rooms.pinKnown': 'PIN сохранён в этом браузере',
   'enter.join': 'Войти в «{room}»',
   'enter.chooseRoom': 'Выберите комнату',
+  'enter.copyLink': 'Скопировать ссылку',
+  'enter.linkCopied': 'Ссылка скопирована',
+  'enter.linkHint': 'В ссылке есть PIN: по ней войдёт любой, кто её получит.',
+  'enter.copyManually': 'Скопируйте ссылку вручную:',
+  'rooms.linkRoomMissing': 'Комнаты из ссылки больше нет. Выберите другую.',
 
   'footer.version': 'версия {version}',
   'footer.built': 'сборка от {date}',
@@ -95,6 +100,7 @@ const ru = {
   'control.noVideoHint': 'Не получать видео с камер других участников: звук и показ экрана останутся. Помогает на слабой связи.',
   'control.leave': 'Выйти',
   'control.react': 'Реакция',
+  'control.invite': 'Пригласить',
 
   'people.label': 'Участники',
   'people.you': 'вы',
@@ -140,6 +146,11 @@ const en: Messages = {
   'rooms.pinKnown': 'PIN saved in this browser',
   'enter.join': 'Join “{room}”',
   'enter.chooseRoom': 'Choose a room',
+  'enter.copyLink': 'Copy link',
+  'enter.linkCopied': 'Link copied',
+  'enter.linkHint': 'The link carries the PIN: anyone who has it can join.',
+  'enter.copyManually': 'Copy the link by hand:',
+  'rooms.linkRoomMissing': 'The room in the link no longer exists. Choose another.',
 
   'footer.version': 'version {version}',
   'footer.built': 'built {date}',
@@ -204,6 +215,7 @@ const en: Messages = {
   'control.noVideoHint': "Stop receiving other participants' cameras; audio and screen sharing stay. Helps on a weak connection.",
   'control.leave': 'Leave',
   'control.react': 'React',
+  'control.invite': 'Invite',
 
   'people.label': 'Participants',
   'people.you': 'you',
@@ -246,6 +258,11 @@ const es: Messages = {
   'rooms.pinKnown': 'PIN guardado en este navegador',
   'enter.join': 'Entrar en «{room}»',
   'enter.chooseRoom': 'Elige una sala',
+  'enter.copyLink': 'Copiar enlace',
+  'enter.linkCopied': 'Enlace copiado',
+  'enter.linkHint': 'El enlace incluye el PIN: cualquiera que lo tenga podrá entrar.',
+  'enter.copyManually': 'Copia el enlace a mano:',
+  'rooms.linkRoomMissing': 'La sala del enlace ya no existe. Elige otra.',
 
   'footer.version': 'versión {version}',
   'footer.built': 'compilado el {date}',
@@ -310,6 +327,7 @@ const es: Messages = {
   'control.noVideoHint': 'No recibir las cámaras de los demás; el audio y la pantalla compartida siguen. Ayuda con una conexión débil.',
   'control.leave': 'Salir',
   'control.react': 'Reaccionar',
+  'control.invite': 'Invitar',
 
   'people.label': 'Participantes',
   'people.you': 'tú',

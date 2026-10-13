@@ -2,6 +2,8 @@
   import { onMount } from 'svelte';
   import { build, repoUrl } from './build';
   import { forgetPin, knownRooms, pinFor } from './pins';
+  import { parseJoinLink, roomLink } from './link';
+  import CopyLink from './CopyLink.svelte';
   import { formatDate, i18n, setLang, t } from './i18n/i18n.svelte';
   import { LANGS, LANG_NAMES, type Lang } from './i18n/messages';
   import { loadInfo, site } from './site.svelte';
@@ -16,8 +18,11 @@
   let pin = $state('');
   let saved = $state<string[]>(knownRooms(localStorage));
   let showPin = $state(false);
+  // Opened through a room link: that room is chosen and its PIN filled in, ahead of a remembered one.
+  const fromLink = parseJoinLink(location.pathname, location.hash);
+  let linkRoomMissing = $state(false);
   $effect(() => {
-    pin = pinFor(localStorage, room);
+    pin = fromLink && room === fromLink.room && fromLink.pin ? fromLink.pin : pinFor(localStorage, room);
     showPin = false; // a newly chosen room starts hidden
   });
   let name = $state(localStorage.getItem('kunveno.name') ?? '');
@@ -43,7 +48,9 @@
 
   onMount(() => {
     void loadInfo();
-    void loadRooms();
+    void loadRooms(fromLink?.room).then(() => {
+      if (fromLink && room !== fromLink.room) linkRoomMissing = true;
+    });
     // Keep occupancy fresh while the lobby is open.
     const timer = setInterval(() => void loadRooms(room), 5000);
     return () => clearInterval(timer);
@@ -90,6 +97,7 @@
     ev.preventDefault();
     localStorage.setItem('kunveno.name', name.trim());
     sessionStorage.setItem('kunveno.room', room);
+    if (fromLink) history.replaceState(null, '', '/'); // the PIN leaves the address bar
     onJoin(room, pin, name.trim());
   }
 
@@ -114,6 +122,7 @@
   <section class="rooms" aria-labelledby="rooms-title">
     <h2 id="rooms-title">{t('rooms.title')}</h2>
     {#if loadError}<p class="error">{t('rooms.loadError')}</p>{/if}
+    {#if linkRoomMissing}<p class="error">{t('rooms.linkRoomMissing')}</p>{/if}
     <div class="list" role="radiogroup" aria-labelledby="rooms-title">
       {#each rooms as r (r.slug)}
         <label class="room" class:selected={r.slug === room}>
@@ -163,6 +172,10 @@
     <button class="btn primary wide" type="submit" disabled={!selected}>
       {selected ? t('enter.join', { room: selected.name }) : t('enter.chooseRoom')}
     </button>
+    <div class="share">
+      <CopyLink link={roomLink(location.origin, room, pin)} label={t('enter.copyLink')} disabled={!selected || pin === ''} />
+      <p class="hint">{t('enter.linkHint')}</p>
+    </div>
     {#if selected?.created}
       <button class="btn danger wide" type="button" disabled={selected.participants > 0} onclick={deleteRoom}>
         {selected.participants > 0 ? t('rooms.deleteOnlyEmpty') : t('rooms.delete')}
@@ -232,6 +245,8 @@
   .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 12rem); gap: 1rem; }
   .enter h2 { margin: 0 0 -.25rem; }
   .wide { justify-content: center; width: 100%; }
+  .share { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+  .hint { margin: 0; color: var(--muted); font-size: .85rem; }
 
   /* The footer sits at the bottom of the viewport on short pages and spans its full width. */
   .page { min-height: 100%; display: flex; flex-direction: column; }

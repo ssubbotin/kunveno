@@ -17,6 +17,9 @@ Licensed under the GNU Affero General Public License v3.0 only; a commercial lic
 - Audio from everyone, cameras (640x360, 15 fps), one shared screen at a time.
 - A pre-join check: microphone and camera choice, a level meter, and entering with the
   microphone or camera off. Works on computers without a camera.
+- Links to a room (`https://<host>/join/<room>#pin=…`), copied from the lobby or from inside a
+  room: the recipient lands in the pre-join check with the room and PIN filled in. The PIN sits
+  in the fragment, which the browser keeps to itself: it never reaches the server or its logs.
 - A connection-quality indicator on every participant (loss, round trip and jitter, measured
   on the server).
 - An echo sound check per room, rooms that play a video file in a loop, and rooms that show a

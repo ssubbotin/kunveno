@@ -24,6 +24,10 @@ export class Session {
   private rtc: Rtc | null = null;
   private mic: MediaStreamTrack | null = null;
   private wanted: Wanted | null = null;
+  // The PIN the current room was entered with, for invitation links.
+  get pin(): string {
+    return this.wanted?.pin ?? '';
+  }
   // One pending rejoin at most; see Reconnector.
   private readonly reconnector = new Reconnector(() => {
     if (this.wanted) void this.connect();

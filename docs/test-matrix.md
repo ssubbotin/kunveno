@@ -15,3 +15,6 @@ Run before every release. Record date, versions and results in the table.
 | 9 | Disable the network for 5 s; status shows reconnecting, then connected, audio resumes | | | | |
 | 10 | 16th participant gets "The room is full" (use `tools/loadgen -n 15`) | | | | |
 | 11 | 15 participants (14 loadgen + 1 browser) for 10 minutes: no audio dropouts, server CPU noted | | | | |
+| 12 | "Copy link" in the lobby (room chosen, PIN entered); open the link in another browser: the room is chosen, the PIN filled in, the mic check shown; Join enters the room | | | | |
+| 13 | "Invite" inside a room; open the link in a private window: as in 12; after joining the address bar shows `/` | | | | |
+| 14 | A link to a deleted room opens the lobby with "The room in the link no longer exists" and the room list | | | | |
