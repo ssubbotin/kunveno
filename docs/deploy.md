@@ -46,8 +46,9 @@ sudo systemctl start kunveno-server
 - 403 on `/ws`: Origin mismatch. Set `http.allowed_origins` in the config to the site URL.
 
 ## Docker Compose (alternative to the deb packages)
-nginx with the client, the server and the echo helper run from images that CI builds and publishes
-to GHCR (`.github/workflows/images.yml`): `ghcr.io/ssubbotin/kunveno-server`, `-web`, `-echo`.
+nginx with the client, the server and the echo and player helpers run from images that CI builds
+and publishes to GHCR (`.github/workflows/images.yml`): `ghcr.io/ssubbotin/kunveno-server`, `-web`,
+`-echo`, `-player`.
 A tag `vX.Y.Z` publishes `X.Y.Z` and `latest`; pushes to `main` publish `main` and `sha-<commit>`;
 a pull request from a branch of this repository publishes a preview `pr-<number>` (set
 `KUNVENO_VERSION=pr-<number>` to try it on the host, then switch back to a release).
@@ -63,7 +64,7 @@ It carries the compose file and configuration templates only.
 On the host, in `~/kunveno`:
 ```
 cp config.example.yaml config.yaml   # advertise_ip, rooms, PINs; pick a free http.listen port
-cp env.example .env                  # KUNVENO_VERSION, KUNVENO_UPSTREAM (must match http.listen)
+cp env.example .env                  # KUNVENO_VERSION (required), KUNVENO_UPSTREAM (= http.listen)
 mkdir -p certs                       # fullchain.pem and privkey.pem (see section 2)
 mkdir -p data && sudo chown 10001 data && sudo chmod 700 data   # rooms created in the lobby
 docker compose pull && docker compose up -d
@@ -72,7 +73,8 @@ Upgrade: set `KUNVENO_VERSION` in `.env` to the new release, then `docker compos
 Logs go to the host's systemd journal (Docker `journald` driver), so they survive container
 recreation and reboots; retention follows the journal. Last week of server logs:
 `journalctl -t kunveno-server --since "7 days ago" -o cat`; follow live with `-f`. The other
-services log as `kunveno-web`, `kunveno-echo`, `kunveno-prometheus`, `kunveno-grafana`.
+services log as `kunveno-web`, `kunveno-echo`, `kunveno-player`, `kunveno-prometheus`,
+`kunveno-grafana`.
 
 ### Sound check (echo)
 The `echo` service runs next to the server and stays idle. When someone presses "Эхо-тест" in a

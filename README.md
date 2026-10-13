@@ -44,8 +44,10 @@ browser ◀──WebRTC (UDP 7000, or TCP 7000)──▶ kunveno-server
 - The web client (Svelte 5, Vite, TypeScript) is a static bundle served by nginx, which also
   terminates TLS and proxies `/ws` and `/api/` to the server on loopback.
 - `kunveno-echo` and `kunveno-player` are helpers that join rooms as participants over loopback:
-  the echo plays a room's sound back with a delay when someone asks for it; the player plays a
-  configured video file in a loop.
+  the echo plays a room's sound back with a delay when someone asks for it; the player either plays
+  a configured video file in a loop or relays a live RTSP camera, as its own camera tile (a live
+  feed is marked as such). It uses ffmpeg: a file is transcoded once to VP8 and Opus and
+  cached, a feed is transcoded on the fly and reconnected every 5 s if it drops.
 
 [deployment guide](docs/deploy.md).
 
@@ -54,7 +56,7 @@ browser ◀──WebRTC (UDP 7000, or TCP 7000)──▶ kunveno-server
 | Path | What |
 |---|---|
 | `cmd/kunveno-server` | server process: configuration, HTTP, signaling, media |
-| `cmd/kunveno-echo`, `cmd/kunveno-player` | the echo and video-loop helpers |
+| `cmd/kunveno-echo`, `cmd/kunveno-player` | the echo, and the player for video files and RTSP cameras |
 | `internal/room`, `internal/signal`, `internal/sfu` | room state, WebSocket signaling, the SFU |
 | `internal/config`, `internal/httpapi`, `internal/metrics` | configuration, HTTP API, Prometheus metrics |
 | `internal/quality`, `internal/ratelimit`, `internal/roomstore` | connection grades, PIN limits, saved rooms |
@@ -102,7 +104,8 @@ docker login ghcr.io                                 # once, with a read:package
 docker compose pull && docker compose up -d
 ```
 
-Upgrading is `KUNVENO_VERSION=<release>` in `.env` followed by
+`KUNVENO_VERSION` in `.env` is required: it picks the image tag for all four services. Upgrading is
+setting it to the new release followed by
 `docker compose pull && docker compose up -d`. The full guide, including TLS, the firewall
 (TCP 443, UDP and TCP 7000), Debian packages and troubleshooting, is in [docs/deploy.md](docs/deploy.md).
 
@@ -118,7 +121,7 @@ Upgrading is `KUNVENO_VERSION=<release>` in `.env` followed by
 | `media.share_max_kbps` | bitrate cap for screen sharing |
 | `ui.title` | title shown in the lobby and the browser tab |
 | `ui.reactions` | emoji participants can send as reactions (1..16; ten by default) |
-| `rooms[]` | `slug`, `name`, `pin`, `max_participants`, and optionally `player: {file, name}` for a video loop from the media directory or `player: {url, name}` for a live RTSP camera |
+| `rooms[]` | `slug`, `name`, `pin`, `max_participants`, and optionally `player: {file, name}` for a video loop from the media directory or `player: {url, name}` for a live camera (`rtsp://` or `rtsps://`, credentials in the URL are masked in logs) |
 | `rooms_file` | where rooms created in the lobby are saved (`/var/lib/kunveno/rooms.json`) |
 
 `.env` next to the compose file sets the release (`KUNVENO_VERSION`), ports, the public host name
@@ -133,6 +136,8 @@ for Grafana and its admin password.
   provisioned "kunveno" dashboard.
 - Data to keep on the host: `config.yaml`, `.env`, `certs/`, `data/` (rooms created in the lobby,
   the player's cache) and `media/`.
+- An RTSP camera must be reachable from the host; the player pulls it over TCP. A room whose feed is
+  down keeps the player as a participant without video until the feed returns.
 
 ## Versions
 
