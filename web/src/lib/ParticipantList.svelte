@@ -85,7 +85,12 @@
     position: absolute; left: .5rem; bottom: .5rem; right: .5rem; justify-items: start; text-align: left;
     padding: .25rem .5rem; border-radius: var(--radius-sm); background: rgba(22, 32, 43, .72); width: fit-content; max-width: calc(100% - 1rem);
   }
-  .has-video .tags { justify-content: start; }
+  /* One line on a picture: "Alex · you". */
+  .has-video .who { display: flex; align-items: baseline; gap: .35rem; }
+  .has-video .tags { justify-content: start; flex-wrap: nowrap; white-space: nowrap; }
+  .has-video .tags span::before { content: '· '; }
+  .has-video .tags .live-tag::before { content: ''; }
+  .has-video .signal { padding: .25rem .3rem; border-radius: var(--radius-sm); background: rgba(22, 32, 43, .72); top: .5rem; left: .5rem; }
   .has-video.speaking { box-shadow: inset 0 0 0 3px var(--live); }
   .has-video .muted, .has-video .signal { z-index: 1; }
   .avatar {

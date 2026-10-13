@@ -19,6 +19,14 @@
   const sharerName = $derived(rs.participants.find((p) => p.id === rs.sharer)?.name ?? '');
   const shareBusy = $derived(rs.sharer !== '' && !rs.isSharing);
   let picking = $state(false);
+  let more = $state(false);
+  // Popovers close on Escape and on a click anywhere outside them.
+  function closePopovers(ev: Event) {
+    if (ev instanceof KeyboardEvent && ev.key !== 'Escape') return;
+    if (ev instanceof MouseEvent && (ev.target as Element).closest('.popover-anchor')) return;
+    picking = false;
+    more = false;
+  }
   const echoPresent = $derived(rs.participants.some((p) => p.botKind === 'echo'));
   const statusText = $derived(
     rs.status === 'connected' ? (rs.transport === 'tcp' ? t('status.backup') : t('status.connected'))
@@ -34,6 +42,8 @@
 
 </script>
 
+<svelte:window onkeydown={closePopovers} onpointerdown={closePopovers} />
+
 <main class="room" class:sharing={screenTrack !== null}>
   <header class="bar">
     <h1>{rs.roomName || rs.roomSlug}</h1>
@@ -41,6 +51,7 @@
       title={rs.transport === 'tcp' ? t('status.backupHint') : ''}>
       <span class="dot" aria-hidden="true"></span>{statusText}
     </span>
+    <span class="invite"><CopyLink link={roomLink(location.origin, rs.roomSlug, session.pin)} label={t('control.invite')} /></span>
     <span class="count">{people(rs.peopleCount)}</span>
   </header>
 
@@ -51,78 +62,82 @@
     <ParticipantList participants={rs.participants} selfId={rs.selfId} sharer={rs.sharer} speaking={rs.speaking} videos={rs.videos} reactions={rs.reactions} compact={screenTrack !== null} />
   </div>
 
+  <!-- Labels stay the same whatever the state, so buttons never change width; the icon, the colour
+       and aria-pressed carry the state. Below 1024 px only the icons remain. -->
   <footer class="controls">
-    <button class="btn mic" class:off={rs.muted} aria-pressed={!rs.muted} onclick={() => session.setMuted(!rs.muted)}>
-      {#if rs.muted}
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5a3 3 0 0 1 6 0v6M5 11a7 7 0 0 0 11.5 5.4M12 18v3M4 4l16 16" /></svg>
-        {t('control.micOff')}
-      {:else}
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
-        {t('control.mic')}
-        <span class="level" class:on={rs.selfSpeaking} aria-hidden="true"></span>
-      {/if}
-    </button>
-
-    <button class="btn" class:active={rs.cameraOn} aria-pressed={rs.cameraOn} disabled={rs.status !== 'connected' || !rs.hasCamera}
-      title={!rs.hasCamera ? t('camera.notFound') : rs.cameraError ? t('camera.unavailable') : ''}
-      onclick={() => void session.setCamera(!rs.cameraOn)}>
-      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2" /><path d="m16 10 5-3v10l-5-3" />{#if !rs.cameraOn}<path d="M3 3l18 18" />{/if}</svg>
-      {!rs.hasCamera ? t('control.cameraNone') : rs.cameraOn ? t('control.camera') : t('control.cameraOff')}
-    </button>
-
-    {#if rs.isSharing}
-      <button class="btn active" onclick={() => session.stopShare()}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="1.5" /><path d="M8 20h8M9 8l6 4M15 8l-6 4" /></svg>
-        {t('control.stopShare')}
+    <div class="main">
+      <button class="btn mic" class:off={rs.muted} aria-pressed={!rs.muted} title={t('control.mic')} onclick={() => session.setMuted(!rs.muted)}>
+        {#if rs.muted}
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5a3 3 0 0 1 6 0v6M5 11a7 7 0 0 0 11.5 5.4M12 18v3M4 4l16 16" /></svg>
+        {:else}
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" /></svg>
+        {/if}
+        <span class="label">{t('control.mic')}</span>
+        {#if !rs.muted}<span class="level" class:on={rs.selfSpeaking} aria-hidden="true"></span>{/if}
       </button>
-    {:else}
-      <button class="btn" disabled={shareBusy || rs.status !== 'connected'} onclick={() => session.startShare()}
-        title={shareBusy ? t('control.shareBusy', { name: sharerName }) : ''}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="1.5" /><path d="M8 20h8M12 13V7M9.5 9.5 12 7l2.5 2.5" /></svg>
-        {t('control.share')}
+
+      <button class="btn" class:off={rs.hasCamera && !rs.cameraOn} aria-pressed={rs.cameraOn} disabled={rs.status !== 'connected' || !rs.hasCamera}
+        title={!rs.hasCamera ? t('camera.notFound') : rs.cameraError ? t('camera.unavailable') : t('control.camera')}
+        onclick={() => void session.setCamera(!rs.cameraOn)}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2" /><path d="m16 10 5-3v10l-5-3" />{#if !rs.cameraOn}<path d="M3 3l18 18" />{/if}</svg>
+        <span class="label">{t('control.camera')}</span>
       </button>
-    {/if}
 
-    <button class="btn" class:active={rs.echo} aria-pressed={rs.echo} disabled={rs.status !== 'connected'}
-      onclick={() => session.setEcho(!rs.echo)}
-      title={t('control.echoHint')}>
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h2l2-5 3 10 3-8 2 3h4" /></svg>
-      {rs.echo ? (echoPresent ? t('control.echoStop') : t('control.echoStarting')) : t('control.echo')}
-    </button>
-
-    <button class="btn" class:active={!rs.receiveVideo} aria-pressed={!rs.receiveVideo}
-      onclick={() => session.setReceiveVideo(!rs.receiveVideo)}
-      title={t('control.noVideoHint')}>
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="2.5" />{#if !rs.receiveVideo}<path d="M3 3l18 18" />{/if}</svg>
-      {rs.receiveVideo ? t('control.noVideo') : t('control.noVideoActive')}
-    </button>
-
-    <div class="react">
-      {#if picking}
-        <div class="picker" role="group" aria-label={t('control.react')}>
-          {#each site.reactions as e (e)}
-            <button type="button" onclick={() => { session.react(e); picking = false; }} aria-label={e}>{e}</button>
-          {/each}
-        </div>
-      {/if}
-      <button class="btn" class:active={picking} aria-expanded={picking} disabled={rs.status !== 'connected'} onclick={() => (picking = !picking)}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01" /></svg>
-        {t('control.react')}
+      <button class="btn" class:active={rs.isSharing} aria-pressed={rs.isSharing} disabled={!rs.isSharing && (shareBusy || rs.status !== 'connected')}
+        title={shareBusy ? t('control.shareBusy', { name: sharerName }) : rs.isSharing ? t('control.stopShare') : t('control.share')}
+        onclick={() => (rs.isSharing ? session.stopShare() : session.startShare())}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="1.5" />{#if rs.isSharing}<path d="M8 20h8M9 8l6 4M15 8l-6 4" />{:else}<path d="M8 20h8M12 13V7M9.5 9.5 12 7l2.5 2.5" />{/if}</svg>
+        <span class="label">{t('control.share')}</span>
       </button>
+
+      <div class="popover-anchor">
+        {#if picking}
+          <div class="picker" role="group" aria-label={t('control.react')}>
+            {#each site.reactions as e (e)}
+              <button type="button" onclick={() => { session.react(e); picking = false; }} aria-label={e}>{e}</button>
+            {/each}
+          </div>
+        {/if}
+        <button class="btn" class:active={picking} aria-expanded={picking} disabled={rs.status !== 'connected'} title={t('control.react')}
+          onclick={() => { picking = !picking; more = false; }}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01" /></svg>
+          <span class="label">{t('control.react')}</span>
+        </button>
+      </div>
+
+      <div class="popover-anchor">
+        {#if more}
+          <div class="menu" role="group" aria-label={t('control.more')}>
+            <button type="button" class="row" aria-pressed={rs.echo} disabled={rs.status !== 'connected'} onclick={() => session.setEcho(!rs.echo)}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h2l2-5 3 10 3-8 2 3h4" /></svg>
+              <span class="text">{t('control.echo')}<small>{rs.echo && !echoPresent ? t('control.echoStarting') : t('control.echoHint')}</small></span>
+              <span class="switch" aria-hidden="true"></span>
+            </button>
+            <button type="button" class="row" aria-pressed={!rs.receiveVideo} onclick={() => session.setReceiveVideo(!rs.receiveVideo)}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="2.5" /><path d="M3 3l18 18" /></svg>
+              <span class="text">{t('control.noVideo')}<small>{t('control.noVideoHint')}</small></span>
+              <span class="switch" aria-hidden="true"></span>
+            </button>
+          </div>
+        {/if}
+        <button class="btn" class:active={more} class:flag={!more && (rs.echo || !rs.receiveVideo)} aria-expanded={more} title={t('control.more')}
+          onclick={() => { more = !more; picking = false; }}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="19" cy="12" r="1.3" /></svg>
+          <span class="label">{t('control.more')}</span>
+        </button>
+      </div>
     </div>
 
-    <CopyLink link={roomLink(location.origin, rs.roomSlug, session.pin)} label={t('control.invite')} />
-
-    <button class="btn danger leave" onclick={() => session.leave()}>
+    <button class="btn danger leave" title={t('control.leave')} onclick={() => session.leave()}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10" /></svg>
-      {t('control.leave')}
+      <span class="label">{t('control.leave')}</span>
     </button>
   </footer>
 </main>
 
 <style>
   .room { height: 100%; display: grid; grid-template-rows: auto 1fr auto; }
-  .bar { display: flex; align-items: baseline; gap: 1rem; flex-wrap: wrap; padding: 1rem 1.5rem; border-bottom: 1px solid var(--line); }
+  .bar { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; padding: .75rem 1.5rem; min-height: 3.75rem; border-bottom: 1px solid var(--line); }
   h1 { font-size: 1.25rem; font-weight: 600; margin: 0; }
   .status { display: inline-flex; align-items: center; gap: .4rem; color: var(--muted); font-size: .9rem; }
   .status .dot { width: .5rem; height: .5rem; border-radius: 50%; background: var(--muted); }
@@ -131,36 +146,67 @@
   .status.reconnecting .dot, .status.connecting .dot { background: var(--caution); }
   .status.error { color: #f1b5b3; }
   .status.error .dot { background: var(--danger); }
-  .count { margin-left: auto; color: var(--muted); font-size: .9rem; font-variant-numeric: tabular-nums; }
+  .invite { margin-left: auto; }
+  .invite :global(.btn) { padding: .45rem .9rem; }
+  .invite :global(.copy) { display: inline-grid; }
+  .count { color: var(--muted); font-size: .9rem; font-variant-numeric: tabular-nums; }
 
   .stage { min-height: 0; overflow: auto; padding: 1.5rem; }
   .room:not(.sharing) .stage { display: grid; align-content: center; }
   .sharing .stage { display: grid; grid-template-columns: 1fr 17rem; gap: 1.25rem; overflow: hidden; }
   .sharing .stage :global(.people) { overflow: auto; }
 
+  /* Three zones: an empty left column balances Leave on the right, so the main group is centred. */
   .controls {
-    display: flex; flex-wrap: wrap; gap: .6rem; justify-content: center; align-items: center;
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: .75rem;
     padding: .9rem 1.5rem; border-top: 1px solid var(--line); background: var(--panel);
   }
-  .controls .btn { padding: .7rem 1.1rem; }
+  .main { grid-column: 2; display: flex; gap: .5rem; }
+  .leave { grid-column: 3; justify-self: end; }
+  .controls .btn { padding: .7rem 1.1rem; justify-content: center; }
   .controls svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   .btn.active { border-color: var(--live); background: var(--live-soft); }
-  .mic.off { border-color: var(--caution); background: rgba(227, 161, 59, .15); color: #f3cf92; }
+  .btn.off { border-color: var(--caution); background: rgba(227, 161, 59, .15); color: #f3cf92; }
+  .btn.flag { box-shadow: inset 0 -2px 0 var(--live); }
   .level { width: .55rem; height: .55rem; border-radius: 50%; background: var(--line); transition: background .1s, box-shadow .1s; }
   .level.on { background: var(--live); box-shadow: 0 0 0 4px var(--live-soft); }
-  .leave { margin-left: auto; }
-  .react { position: relative; }
+  .popover-anchor { position: relative; }
+  .picker, .menu {
+    position: absolute; bottom: calc(100% + .5rem); z-index: 5;
+    background: var(--panel-2); border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
+  }
   .picker {
-    position: absolute; bottom: calc(100% + .5rem); left: 50%; transform: translateX(-50%); z-index: 5;
+    left: 50%; transform: translateX(-50%);
     display: flex; flex-wrap: wrap; justify-content: center; gap: .15rem; padding: .35rem; width: max-content; max-width: min(92vw, 30rem);
-    border-radius: 1.5rem; background: var(--panel-2); border: 1px solid var(--line);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
+    border-radius: 1.5rem;
   }
   .picker button { font-size: 1.5rem; line-height: 1; padding: .3rem; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
   .picker button:hover, .picker button:focus-visible { background: var(--panel); }
+  .menu { right: 0; width: min(22rem, 92vw); display: grid; padding: .35rem; border-radius: var(--radius); }
+  .row {
+    display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .75rem; text-align: left;
+    padding: .6rem .7rem; border: 0; border-radius: var(--radius-sm); background: transparent; cursor: pointer;
+  }
+  .row:hover:not(:disabled), .row:focus-visible { background: var(--panel); }
+  .row:disabled { opacity: .45; cursor: default; }
+  .row svg { width: 1.15rem; height: 1.15rem; }
+  .text { display: grid; gap: .1rem; }
+  .text small { color: var(--muted); font-size: .8rem; line-height: 1.3; }
+  .switch { width: 2rem; height: 1.15rem; border-radius: 999px; background: var(--line); position: relative; transition: background .15s; }
+  .switch::after { content: ''; position: absolute; top: .15rem; left: .15rem; width: .85rem; height: .85rem; border-radius: 50%; background: var(--text); transition: transform .15s; }
+  .row[aria-pressed='true'] .switch { background: var(--live); }
+  .row[aria-pressed='true'] .switch::after { transform: translateX(.85rem); }
 
+  @media (max-width: 1024px) {
+    .controls .label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    .controls .btn { min-width: 2.75rem; min-height: 2.75rem; padding: .6rem; }
+  }
   @media (max-width: 720px) {
     .sharing .stage { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
-    .leave { margin-left: 0; }
+  }
+  @media (max-width: 480px) {
+    .controls { padding: .6rem .75rem; gap: .5rem; }
+    .main { gap: .35rem; }
+    .bar { padding: .75rem 1rem; }
   }
 </style>
