@@ -64,13 +64,6 @@ jobs:
             file: deploy/docker/web.Dockerfile
             target: ''
             app: ''
-          # Upstream Grafana plus our provisioning and dashboard; the leak check would only flag
-          # files that ship with Grafana itself.
-          - name: kunveno-grafana
-            file: deploy/docker/grafana.Dockerfile
-            target: ''
-            app: ''
-            nocheck: true
     steps:
       - uses: actions/checkout@v4
         with:
@@ -112,7 +105,6 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,scope=${{ matrix.name }},mode=max
       - name: check for leaked sources and debug data
-        if: ${{ !matrix.nocheck }}
         run: deploy/docker/check-image.sh check/${{ matrix.name }}:ci
       - if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
         uses: docker/login-action@v3

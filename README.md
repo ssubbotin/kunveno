@@ -47,6 +47,7 @@ config.yaml     rooms, PINs and the title; the defaults work as they are
 data/           rooms created in the lobby, the player's cache
 certs/          TLS certificate: self-signed on first start, or your own
 media/          video files for rooms with a player
+grafana/        Grafana's data source and dashboard
 ```
 
 **2. Fill in two lines in `.env`:**
@@ -81,11 +82,11 @@ video).
 **Upgrade** to a new release, in the directory:
 
 ```bash
-curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz --strip-components=1 kunveno/docker-compose.yml
+curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz --strip-components=1 kunveno/docker-compose.yml kunveno/grafana
 docker compose pull && docker compose up -d
 ```
 
-Only `docker-compose.yml` changes; `.env`, `config.yaml` and the directories stay.
+Only `docker-compose.yml` and `grafana/` change; `.env`, `config.yaml` and the other directories stay.
 
 ### If something does not work
 
@@ -192,7 +193,7 @@ for Grafana and its admin password.
 
 Releases are git tags `vX.Y.Z` on merge commits to `main`; the version shows in the lobby footer
 and in the `kunveno_build_info` metric. A tag publishes the images
-`ghcr.io/ssubbotin/kunveno-{server,web,echo,player,grafana}` as `X.Y.Z` and `latest` and a GitHub
+`ghcr.io/ssubbotin/kunveno-{server,web,echo,player}` as `X.Y.Z` and `latest` and a GitHub
 release with `kunveno.tgz`, the stack directory with `docker-compose.yml` pinned to that
 version. `main` publishes `main`, and a pull request from this repository publishes a
 preview `pr-<number>` (`KUNVENO_VERSION=pr-<number>` in `.env` to try it).

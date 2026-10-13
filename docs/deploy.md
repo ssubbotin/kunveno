@@ -49,12 +49,12 @@ sudo systemctl start kunveno-server
 - 403 on `/ws`: Origin mismatch. Set `http.allowed_origins` in the config to the site URL.
 
 ## Docker Compose (recommended)
-nginx with the client, the server, the echo and player helpers and Grafana run from public images
-that CI builds and publishes to GHCR (`.github/workflows/images.yml`):
-`ghcr.io/ssubbotin/kunveno-server`, `-web`, `-echo`, `-player`, `-grafana`; Prometheus is the
-upstream image. A tag `vX.Y.Z` publishes `X.Y.Z` and `latest` and a GitHub release with
+nginx with the client, the server and the echo and player helpers run from public images that CI
+builds and publishes to GHCR (`.github/workflows/images.yml`): `ghcr.io/ssubbotin/kunveno-server`,
+`-web`, `-echo`, `-player`; Prometheus and Grafana are the upstream images. A tag `vX.Y.Z` publishes `X.Y.Z` and `latest` and a GitHub release with
 `kunveno.tgz`: the stack directory `deploy/kunveno` (`docker-compose.yml` pinned to that release,
-`.env`, `config.yaml`, empty `data/`, `certs/` and `media/`). Pushes to `main` publish `main` and
+`.env`, `config.yaml`, `grafana/` with the data source and the dashboard, empty `data/`, `certs/`
+and `media/`). Pushes to `main` publish `main` and
 `sha-<commit>`; a pull request from a branch of this repository publishes a preview `pr-<number>`
 (`KUNVENO_VERSION=pr-<number>` in `.env` to try it, then remove the line). CI checks the kunveno
 images before pushing (`deploy/docker/check-image.sh`): no sources, no source maps, Go binaries
@@ -74,7 +74,7 @@ Install: see "Setup" in the README (unpack the archive, two values in `.env`, th
 
 Upgrade: in the stack directory, take `docker-compose.yml` from the new release and pull:
 ```
-curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz --strip-components=1 kunveno/docker-compose.yml
+curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz --strip-components=1 kunveno/docker-compose.yml kunveno/grafana
 docker compose pull && docker compose up -d
 ```
 `.env`, `config.yaml`, `data/`, `certs/` and `media/` are untouched. If `config.yaml` goes missing,
@@ -112,6 +112,6 @@ host network, so it reaches cameras the host can reach.
 ### Monitoring (Prometheus and Grafana)
 `kunveno-server` exposes Prometheus metrics at `/metrics` to loopback clients only (nginx does not
 proxy it). The stack runs Prometheus on `127.0.0.1:${PROMETHEUS_PORT}` (default 9095, 30 days of
-data) and Grafana behind nginx at `https://<PUBLIC_HOST>/grafana/` with the "kunveno" dashboard
-built into the `kunveno-grafana` image. Log in as `admin` with `GRAFANA_ADMIN_PASSWORD` from
+data) and Grafana behind nginx at `https://<PUBLIC_HOST>/grafana/` with the Prometheus data source and
+the "kunveno" dashboard provisioned from `grafana/` in the stack directory. Log in as `admin` with `GRAFANA_ADMIN_PASSWORD` from
 `.env`; Grafana reads it on its first start only.
