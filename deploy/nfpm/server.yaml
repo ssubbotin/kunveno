@@ -5,6 +5,7 @@ version: ${VERSION}
 section: net
 priority: optional
 maintainer: Sergey Subbotin <ssubbotin@gmail.com>
+license: AGPL-3.0-only
 description: kunveno meeting server (WebSocket signaling and WebRTC SFU)
 contents:
   - src: bin/kunveno-server

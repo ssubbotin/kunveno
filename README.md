@@ -7,7 +7,8 @@ Built for an office or VPN where you want calls without third-party services: no
 STUN or TURN servers, no CDN, no analytics. A room is a name and a PIN; everything runs on one
 host behind nginx.
 
-Private repository, internal use.
+Licensed under the GNU Affero General Public License v3.0 only; a commercial license is available
+(see [License](#license)).
 
 ## Features
 
@@ -143,3 +144,19 @@ for Grafana and its admin password.
 
 Releases are git tags `vX.Y.Z` on merge commits to `main`; the version shows in the lobby footer
 and in the `kunveno_build_info` metric.
+
+## License
+
+Copyright (C) 2026 Sergey Subbotin <ssubbotin@gmail.com>
+
+kunveno is free software: you can redistribute it and/or modify it under the terms of the
+[GNU Affero General Public License, version 3](LICENSE) (`AGPL-3.0-only`). In short: you may run,
+study, change and share it; if you run a modified version as a network service, you must offer its
+users the source of that version.
+
+A commercial license is available for organizations that cannot accept the AGPL terms, for
+example to ship kunveno inside a proprietary product, to keep their changes private, or to offer
+kunveno as a hosted or resold service without publishing their changes. Commercial terms also
+cover support. Write to ssubbotin@gmail.com.
+
+The name "kunveno" identifies the original project; forks should use a different name.

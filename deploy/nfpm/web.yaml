@@ -5,6 +5,7 @@ version: ${VERSION}
 section: web
 priority: optional
 maintainer: Sergey Subbotin <ssubbotin@gmail.com>
+license: AGPL-3.0-only
 description: kunveno web client (static files for nginx)
 depends:
   - nginx
