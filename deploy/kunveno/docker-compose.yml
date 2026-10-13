@@ -6,6 +6,7 @@
 #   certs/         fullchain.pem and privkey.pem; a self-signed pair is issued on first start,
 #                  replace the two files with your own and restart web
 #   media/         video files for rooms with "player: {file: …}"
+#   grafana/       Grafana's data source and dashboard, provisioned on start
 # Start with: docker compose pull && docker compose up -d
 #
 # All services use host networking: the SFU advertises the host's address and one media port
@@ -118,13 +119,14 @@ services:
     volumes:
       - prometheus-data:/prometheus
 
-  # Dashboards at https://<PUBLIC_HOST>/grafana/ (user admin); the "kunveno" dashboard is built in.
+  # Dashboards at https://<PUBLIC_HOST>/grafana/ (user admin). The Prometheus data source and the
+  # "kunveno" dashboard come from ./grafana.
   grafana:
     logging:
       <<: *journald
       options:
         tag: kunveno-grafana
-    image: ghcr.io/ssubbotin/kunveno-grafana:${KUNVENO_VERSION:-__KUNVENO_RELEASE__}
+    image: grafana/grafana:12.1.1
     network_mode: host
     restart: unless-stopped
     depends_on:
@@ -144,6 +146,8 @@ services:
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/kunveno.json
       PROMETHEUS_PORT: ${PROMETHEUS_PORT:-9095}
     volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
 
 configs:
