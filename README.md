@@ -108,7 +108,8 @@ Only `docker-compose.yml` and `grafana/` change; `.env`, `config.yaml` and the o
   again.
 
 All `.env` settings are described in `.env` itself, all `config.yaml` settings in
-[Configuration](#configuration). Debian packages and details are in [docs/deploy.md](docs/deploy.md).
+[Configuration](#configuration). Certificates, the firewall, troubleshooting and the Debian packages
+are in [docs/deploy.md](docs/deploy.md).
 
 ## For administrators
 
@@ -165,7 +166,7 @@ users' computers. It works in Chrome and Firefox on Linux and Windows.
   feed is marked as such). It uses ffmpeg: a file is transcoded once to VP8 and Opus and
   cached, a feed is transcoded on the fly and reconnected every 5 s if it drops.
 
-[deployment guide](docs/deploy.md).
+Certificates, the firewall, troubleshooting and the helpers in detail: [docs/deploy.md](docs/deploy.md).
 
 ## Repository layout
 
@@ -180,7 +181,7 @@ users' computers. It works in Chrome and Firefox on Linux and Windows.
 | `web/` | the browser client |
 | `deploy/` | Docker images and compose stack, nginx, systemd unit, deb packaging, example configuration |
 | `tools/loadgen` | synthetic participants for load and end-to-end checks |
-| `docs/` | deployment guide, release test matrix, the architecture diagram and screenshots |
+| `docs/` | operations guide, manual checks before a release, the architecture diagram and screenshots |
 
 ## Development
 
@@ -199,7 +200,8 @@ cd web && npm run check                                          # svelte-check
 Running locally: copy `deploy/kunveno/config.yaml`, set `media.advertise_ip` to the machine's LAN
 address (browsers gather no loopback candidates, so `127.0.0.1` gives no media), start
 `bin/kunveno-server -config <file>`, then `cd web && npm run dev` (Vite proxies `/ws` and `/api/`
-to `127.0.0.1:8080`). `go run ./tools/loadgen -n 14 -duration 30s` adds synthetic participants.
+to `127.0.0.1:8080`). `go run ./tools/loadgen -n 14 -duration 30s` adds synthetic participants. Before a release, walk
+through the manual checks in [docs/test-matrix.md](docs/test-matrix.md).
 
 ## Configuration
 

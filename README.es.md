@@ -111,8 +111,8 @@ conservan.
   de nuevo.
 
 Todos los ajustes de `.env` están descritos en el propio `.env`; los de `config.yaml`, en
-[Configuración](#configuración). Paquetes Debian y detalles: [docs/deploy.md](docs/deploy.md)
-(en inglés).
+[Configuración](#configuración). Certificados, cortafuegos, resolución de problemas y paquetes Debian:
+[docs/deploy.md](docs/deploy.md) (en inglés).
 
 ## Para administradores
 
@@ -172,7 +172,8 @@ en los equipos de los usuarios. Funciona en Chrome y Firefox en Linux y Windows.
   y Opus y se guarda en caché; un directo se transcodifica al vuelo y se reconecta cada 5 s si se
   corta.
 
-[guía de despliegue](docs/deploy.md).
+Certificados, cortafuegos, resolución de problemas y los ayudantes en detalle: [docs/deploy.md](docs/deploy.md)
+(en inglés).
 
 ## Estructura del repositorio
 
@@ -187,7 +188,7 @@ en los equipos de los usuarios. Funciona en Chrome y Firefox en Linux y Windows.
 | `web/` | el cliente para el navegador |
 | `deploy/` | imágenes Docker y directorio compose, nginx, unidad systemd, paquetes deb, configuración de ejemplo |
 | `tools/loadgen` | participantes sintéticos para pruebas de carga y de extremo a extremo |
-| `docs/` | guía de despliegue, matriz de pruebas de cada versión, el diagrama y las capturas |
+| `docs/` | guía de operación, comprobaciones manuales antes de cada versión, el diagrama y las capturas |
 
 ## Desarrollo
 
@@ -207,7 +208,8 @@ Ejecución local: copia `deploy/kunveno/config.yaml`, pon en `media.advertise_ip
 máquina en la red local (los navegadores no recogen candidatos de loopback, así que con `127.0.0.1`
 no hay audio ni vídeo), arranca `bin/kunveno-server -config <archivo>` y luego
 `cd web && npm run dev` (Vite redirige `/ws` y `/api/` a `127.0.0.1:8080`).
-`go run ./tools/loadgen -n 14 -duration 30s` añade participantes sintéticos.
+`go run ./tools/loadgen -n 14 -duration 30s` añade participantes sintéticos. Antes de una versión,
+repasa las comprobaciones manuales de [docs/test-matrix.md](docs/test-matrix.md).
 
 ## Configuración
 
