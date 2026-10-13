@@ -236,8 +236,9 @@
   .devices:empty { display: none; }
   .center { display: grid; justify-items: center; gap: .9rem; }
   .cam { position: absolute; inset: 0; }
-  /* The preview is wider than the camera's 16:9; keep heads in the frame. */
-  .cam :global(video) { object-position: center 35%; }
+  /* The preview is wider than the camera's 16:9: show the whole picture, as others will see it,
+     rather than a crop. */
+  .cam :global(video) { object-fit: contain; background: transparent; }
   .toggles { position: absolute; right: .75rem; bottom: .75rem; display: flex; gap: .5rem; }
   .round {
     width: 2.6rem; height: 2.6rem; border-radius: 50%; display: grid; place-items: center; cursor: pointer;
