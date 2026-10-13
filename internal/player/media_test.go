@@ -99,3 +99,24 @@ func TestTranscodeSilentFile(t *testing.T) {
 		t.Fatalf("silent file: %+v", m)
 	}
 }
+
+// A still picture becomes a short silent clip that loops like any video.
+func TestTranscodeStill(t *testing.T) {
+	needFFmpeg(t)
+	dir := t.TempDir()
+	img := filepath.Join(dir, "pet.png")
+	if b, err := exec.Command("ffmpeg", "-nostdin", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=800x450", "-frames:v", "1", img).CombinedOutput(); err != nil {
+		t.Fatalf("make image: %v\n%s", err, b)
+	}
+	m, err := TranscodeStill(context.Background(), img, filepath.Join(dir, "cache"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Audio != "" || m.OpenAudio != nil {
+		t.Fatalf("still: %+v", m)
+	}
+	n, total := drain(t, m.OpenVideo)
+	if n < 28 || total < 1900*time.Millisecond || total > 2100*time.Millisecond {
+		t.Fatalf("still: %d frames over %v, want ~30 over 2 s (15 fps)", n, total)
+	}
+}
