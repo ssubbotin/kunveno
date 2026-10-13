@@ -91,8 +91,13 @@
   .has-video .tags span::before { content: '· '; }
   .has-video .tags .live-tag::before { content: ''; }
   .has-video .signal { padding: .25rem .3rem; border-radius: var(--radius-sm); background: rgba(22, 32, 43, .72); top: .5rem; left: .5rem; }
-  .has-video.speaking { box-shadow: inset 0 0 0 3px var(--live); }
-  .has-video .muted, .has-video .signal { z-index: 1; }
+  /* The video covers the tile's own inset shadow, so the speaking outline is a layer above it. */
+  .has-video::after {
+    content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; border-radius: inherit;
+    box-shadow: inset 0 0 0 3px transparent; transition: box-shadow .12s;
+  }
+  .has-video.speaking::after { box-shadow: inset 0 0 0 3px var(--live), inset 0 0 18px 2px rgba(200, 69, 143, .55); }
+  .has-video .muted, .has-video .signal, .has-video .who { z-index: 2; }
   .avatar {
     width: 4.5rem; height: 4.5rem; border-radius: 50%; display: grid; place-items: center;
     background: var(--panel-2); font-size: 1.4rem; font-weight: 600; letter-spacing: .02em;
