@@ -107,7 +107,9 @@
   .speaking { border-color: var(--live); }
   .speaking .avatar { box-shadow: 0 0 0 3px var(--live), 0 0 0 9px var(--live-soft); }
   .speaking .avatar svg { stroke: var(--live); }
-  .bot { border-style: dashed; }
+  /* Helpers without a picture (the echo) are marked by a dashed frame; on a picture the frame
+     would read as a glitch, and those tiles carry their own tag. */
+  .bot:not(.has-video) { border-style: dashed; }
   .who { display: grid; gap: .15rem; min-width: 0; max-width: 100%; }
   .name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tags { display: flex; flex-wrap: wrap; justify-content: center; gap: .25rem .5rem; color: var(--muted); font-size: .8rem; }
