@@ -2,17 +2,15 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Status
+## What this is
 
-kunveno is an internal voice-meeting service (up to 15 people per room, mic mute, one desktop
-share at a time) for the company VPN. As of 2026-10-12 the repository holds only the design and
-the implementation plan; code is written task by task from the plan:
-
-  file list, cross-package interfaces, "Review Focus" cases that must have tests).
-
-Before implementing, read the plan's "Global Constraints" and "Public interfaces" sections: later
-tasks rely on exactly those names. If the code and the plan disagree, the code wins once it exists;
-update the plan rather than silently diverging.
+kunveno is a self-hosted meeting service for a private network: voice, cameras and one shared
+screen per room, rooms with a PIN, a Go SFU server and a Svelte client, installed from a Docker
+Compose directory (`deploy/kunveno`, published as `kunveno.tgz` with every release). The README is
+the user-facing documentation (English, with Russian and Spanish copies that must be kept in step);
+`docs/deploy.md` is the operations guide. Working notes, design drafts and plans stay out of the
+repository (they are excluded by the global git ignore on the workstation); the code and these
+files are the source of truth.
 
 ## Commands
 
@@ -61,7 +59,9 @@ Go packages are separated so each is tested alone:
   between `room` and media. It depends on the `Media`/`MediaPeer` interfaces, so handler tests use a
   fake media layer; `cmd/kunveno-server` adapts the real `sfu.Engine` to it.
 - `internal/httpapi`: `GET /api/rooms` (never returns PINs), `GET /healthz`.
-- `internal/config`: YAML at `/etc/kunveno/config.yaml`; rooms are static, changes need a restart.
+- `internal/config`: YAML at `/etc/kunveno/config.yaml`, with `KUNVENO_LISTEN` and
+  `KUNVENO_ADVERTISE_IP` filling gaps; configured rooms need a restart to change, rooms created in
+  the lobby are kept in `rooms_file`.
 
 Media model, which explains most design choices:
 
@@ -80,9 +80,9 @@ Media model, which explains most design choices:
 - Reconnection is always a fresh `join` (the client keeps name and PIN in `sessionStorage`).
 
 Web client logic lives in `web/src/lib/` (`protocol.ts` validating parser, `state.svelte.ts` rune
-state, `signaling.ts` reconnect with 1 to 10 s backoff, `rtc.ts`, `levels.ts`, `session.ts`). Only
-`protocol.ts` and `state.svelte.ts` have unit tests; browser behaviour is covered by the manual matrix
-in `docs/test-matrix.md`. Rune state must stay in files named `*.svelte.ts`.
+state, `signaling.ts` reconnect with 1 to 10 s backoff, `rtc.ts`, `levels.ts`, `session.ts`,
+`link.ts`, `pins.ts`). The pure modules have unit tests (vitest); browser behaviour is covered by the
+manual checklist in `docs/test-matrix.md`. Rune state must stay in files named `*.svelte.ts`.
 
 ## Hard constraints
 
