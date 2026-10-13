@@ -59,6 +59,7 @@ type ClientMessage struct {
 	Client  string `json:"client,omitempty"`
 	On      *bool  `json:"on,omitempty"`      // echo, camera
 	Receive *bool  `json:"receive,omitempty"` // video: whether to receive cameras
+	Emoji   string `json:"emoji,omitempty"`   // react: one of Reactions
 }
 
 // ParseClient decodes and validates one client frame.
@@ -100,6 +101,10 @@ func ParseClient(data []byte) (ClientMessage, error) {
 	case "video":
 		if m.Receive == nil {
 			return m, fmt.Errorf("%w: video.receive", ErrBadMessage)
+		}
+	case "react":
+		if !Reactions[m.Emoji] {
+			return m, fmt.Errorf("%w: react.emoji", ErrBadMessage)
 		}
 	case "mute":
 		if m.Muted == nil {
@@ -174,6 +179,19 @@ func RetryLater(wait time.Duration) any {
 }
 
 func Offer(sdp string) any { return offerMsg{Type: "offer", SDP: sdp} }
+
+// Reactions is the fixed set of emoji a participant can send; anything else is refused, so a
+// reaction cannot carry free text.
+var Reactions = map[string]bool{"👍": true, "👏": true, "😂": true, "❤️": true, "🎉": true, "😮": true, "🤔": true, "👋": true}
+
+type reactionMsg struct {
+	Type  string `json:"type"`
+	From  string `json:"from"`
+	Emoji string `json:"emoji"`
+}
+
+// Reaction tells the room that a participant sent an emoji; it is not part of the room state.
+func Reaction(from, emoji string) any { return reactionMsg{Type: "reaction", From: from, Emoji: emoji} }
 
 func Participants(list []ParticipantInfo, sharer string, echo bool) any {
 	if list == nil {

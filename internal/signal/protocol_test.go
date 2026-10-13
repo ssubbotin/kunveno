@@ -17,6 +17,7 @@ func TestParseClientAccepts(t *testing.T) {
 		"leave":     `{"type":"leave"}`,
 		"echo":      `{"type":"echo","on":true}`,
 		"camera":    `{"type":"camera","on":true}`,
+		"react":     `{"type":"react","emoji":"👍"}`,
 		"video":     `{"type":"video","receive":false}`,
 	}
 	for name, raw := range cases {
@@ -48,6 +49,8 @@ func TestParseClientRejects(t *testing.T) {
 		"share bad":       `{"type":"share","action":"maybe"}`,
 		"echo no flag":    `{"type":"echo"}`,
 		"camera no flag":  `{"type":"camera"}`,
+		"react unknown":   `{"type":"react","emoji":"💩"}`,
+		"react text":      `{"type":"react","emoji":"hello"}`,
 		"video no flag":   `{"type":"video"}`,
 		"join bad media":  `{"type":"join","room":"ops","pin":"1234","name":"Ann","media":"carrier-pigeon"}`,
 		"join bad client": `{"type":"join","room":"ops","pin":"1234","name":"Ann","client":"no spaces allowed"}`,

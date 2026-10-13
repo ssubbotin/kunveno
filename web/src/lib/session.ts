@@ -9,6 +9,9 @@ import { Reconnector, newClientId } from './reconnect';
 import { forgetPin, rememberPin } from './pins';
 import { cameraConstraints, loadPrefs, savePrefs, splitStream } from './media';
 
+// How long a reaction stays on the sender's tile.
+const REACTION_MS = 4000;
+
 const FATAL_CODES = new Set(['bad_pin', 'bad_room', 'room_full', 'bad_message', 'too_many_attempts']);
 
 type Wanted = { room: string; pin: string; name: string };
@@ -118,6 +121,11 @@ export class Session {
         if (!this.state.receiveVideo) this.sig?.send({ type: 'video', receive: false });
         if (this.camera) void this.attachCamera();
         break;
+      case 'reaction': {
+        const r = this.state.reactions[m.from];
+        if (r) setTimeout(() => this.state.clearReaction(m.from, r.seq), REACTION_MS);
+        break;
+      }
       case 'offer':
         void this.rtc?.handleOffer(m.sdp).catch((e) => console.error('offer', e));
         break;
@@ -245,6 +253,11 @@ export class Session {
     this.state.cameraOn = false;
     const { [this.state.selfId]: _, ...rest } = this.state.videos;
     this.state.videos = rest;
+  }
+
+  // react sends one of the fixed emoji; the server shows it to everyone, us included.
+  react(emoji: string): void {
+    this.sig?.send({ type: 'react', emoji });
   }
 
   // Asks the server to bring the echo helper into this room, or to remove it.

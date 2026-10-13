@@ -95,6 +95,9 @@ var (
 	PINBlocks = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "kunveno_pin_blocks_total", Help: "Addresses blocked for a minute after too many wrong PINs.",
 	})
+	Reactions = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "kunveno_reactions_total", Help: "Reactions sent in rooms, by emoji (a fixed set of eight).",
+	}, []string{"emoji"})
 	RoomsCreated = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "kunveno_rooms_created_total", Help: "Rooms created from the lobby.",
 	})
@@ -118,7 +121,7 @@ func NewRegistry(rooms *room.Registry, version string) *prometheus.Registry {
 		RTTSeconds, LossRatio, JitterSeconds,
 		RTPPackets, RTPBytes, RTPSentPackets, RTPSentBytes, ActiveConnections, ConnectSeconds,
 		PeerStates, Transports, Offers, NegotiationErrors, KeyframeRequests, ViewerPLIs, NACKedPackets,
-		PINFailures, PINBlocks, RoomsCreated, RoomsDeleted,
+		PINFailures, PINBlocks, Reactions, RoomsCreated, RoomsDeleted,
 	)
 	return r
 }

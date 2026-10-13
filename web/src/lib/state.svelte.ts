@@ -22,6 +22,9 @@ export class RoomState {
   cameraError = $state('');
   receiveVideo = $state(true);
   echo = $state(false);
+  // The emoji each participant sent last, shown on their tile for a few seconds.
+  reactions = $state<Record<string, { emoji: string; seq: number }>>({});
+  private reactionSeq = 0;
   transport = $state<'udp' | 'tcp' | ''>(''); // media path of this browser, once connected
 
   get isSharing(): boolean {
@@ -30,6 +33,11 @@ export class RoomState {
 
   get selfSpeaking(): boolean {
     return this.selfId !== '' && !!this.speaking[this.selfId];
+  }
+
+  // clearReaction removes a reaction when its time is up, unless a newer one replaced it.
+  clearReaction(id: string, seq: number): void {
+    if (this.reactions[id]?.seq === seq) delete this.reactions[id];
   }
 
   get peopleCount(): number {
@@ -48,6 +56,7 @@ export class RoomState {
     this.sharer = '';
     this.speaking = {};
     this.videos = {};
+    this.reactions = {};
     this.cameraOn = false;
     this.echo = false;
     this.transport = '';
@@ -73,6 +82,9 @@ export class RoomState {
         this.errorCode = msg.code;
         this.errorMessage = msg.message;
         this.retryAfter = msg.retryAfter ?? 0;
+        break;
+      case 'reaction':
+        this.reactions[msg.from] = { emoji: msg.emoji, seq: ++this.reactionSeq };
         break;
       case 'offer':
         break;

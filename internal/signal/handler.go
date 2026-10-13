@@ -66,10 +66,11 @@ type liveRoom struct {
 
 type session struct {
 	id, name, slug string
-	bot            bool   // a helper: the echo or a player
-	botKind        string // RoleEcho or RolePlayer
-	noVideo        bool   // declined other participants' cameras; guarded by Handler.mu
-	client         string // the page's id from join, if it sent one
+	bot            bool      // a helper: the echo or a player
+	botKind        string    // RoleEcho or RolePlayer
+	noVideo        bool      // declined other participants' cameras; guarded by Handler.mu
+	client         string    // the page's id from join, if it sent one
+	lastReaction   time.Time // for the reaction rate limit; only the session's read loop uses it
 	joined         time.Time
 	conn           *websocket.Conn
 	peer           MediaPeer
@@ -234,6 +235,8 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 			if lr.room.SetCamera(s.id, *m.On) {
 				h.broadcast(lr)
 			}
+		case "react":
+			h.react(s, m.Emoji)
 		case "video":
 			h.setReceiveVideo(s, *m.Receive)
 		case "echo":
@@ -587,4 +590,26 @@ func (h *Handler) replaceClient(lr *liveRoom, client string) {
 	// Close waits for the other side's answer; the new join must not wait for it.
 	go func() { _ = old.conn.Close(websocket.StatusNormalClosure, "replaced") }()
 	old.cancel()
+}
+
+// reactionGap is the least time between two reactions of one participant; faster ones are dropped.
+const reactionGap = 700 * time.Millisecond
+
+// react shows a participant's emoji to everyone in the room, the sender included.
+func (h *Handler) react(s *session, emoji string) {
+	if s.bot || time.Since(s.lastReaction) < reactionGap {
+		return
+	}
+	s.lastReaction = time.Now()
+	metrics.Reactions.WithLabelValues(emoji).Inc()
+	lr, _ := h.lookup(s.slug)
+	h.mu.Lock()
+	members := lr.membersExcept("")
+	h.mu.Unlock()
+	msg := Reaction(s.id, emoji)
+	for _, o := range members {
+		if err := o.write(msg); err != nil {
+			o.log.Warn("reaction write", "err", err)
+		}
+	}
 }
