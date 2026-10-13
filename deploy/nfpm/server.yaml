@@ -16,7 +16,7 @@ contents:
     dst: /lib/systemd/system/kunveno-server.service
     file_info:
       mode: 0644
-  - src: deploy/config.example.yaml
+  - src: deploy/kunveno/config.yaml
     dst: /etc/kunveno/config.yaml
     type: config|noreplace
     file_info:

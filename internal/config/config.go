@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -75,22 +76,53 @@ const (
 
 var slugRe = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
 
-// Load reads and validates the file at path.
+// Environment variables that fill settings the file leaves out, so that the configuration
+// template works unchanged in a container.
+const (
+	EnvListen      = "KUNVENO_LISTEN"       // http.listen
+	EnvAdvertiseIP = "KUNVENO_ADVERTISE_IP" // media.advertise_ip
+)
+
+// Load reads and validates the file at path. Settings the file leaves out come from the
+// environment (EnvListen, EnvAdvertiseIP); media.advertise_ip falls back to the host's primary
+// IPv4 address (DetectIP).
 func Load(path string) (*Config, error) {
+	if st, err := os.Stat(path); err == nil && st.IsDir() {
+		// Docker creates a directory in place of a bind-mounted file that does not exist.
+		return nil, fmt.Errorf("config: %s is a directory (Docker creates one when the file is missing): remove it and restore config.yaml from the kunveno archive", path)
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	return Parse(data)
+	return parse(data, os.Getenv, DetectIP)
 }
 
-// Parse decodes YAML, applies defaults and validates.
+// Parse decodes YAML, applies defaults and validates. It reads no environment.
 func Parse(data []byte) (*Config, error) {
+	return parse(data, func(string) string { return "" }, nil)
+}
+
+func parse(data []byte, getenv func(string) string, detect func() (string, error)) (*Config, error) {
 	var cfg Config
 	dec := yaml.NewDecoder(bytesReader(data))
 	dec.KnownFields(true)
-	if err := dec.Decode(&cfg); err != nil {
+	// A file with nothing but comments is an empty configuration.
+	if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("config: %w", err)
+	}
+	if cfg.HTTP.Listen == "" {
+		cfg.HTTP.Listen = getenv(EnvListen)
+	}
+	if cfg.Media.AdvertiseIP == "" {
+		cfg.Media.AdvertiseIP = getenv(EnvAdvertiseIP)
+	}
+	if cfg.Media.AdvertiseIP == "" && detect != nil {
+		ip, err := detect()
+		if err != nil {
+			return nil, err
+		}
+		cfg.Media.AdvertiseIP = ip
 	}
 	cfg.applyDefaults()
 	if err := cfg.Validate(); err != nil {
@@ -160,9 +192,6 @@ func (c *Config) Validate() error {
 	if c.Media.ShareMaxKbps < 200 || c.Media.ShareMaxKbps > 20000 {
 		errs = append(errs, fmt.Errorf("media.share_max_kbps %d out of range 200..20000", c.Media.ShareMaxKbps))
 	}
-	if len(c.Rooms) == 0 {
-		errs = append(errs, errors.New("rooms: at least one room is required"))
-	}
 	seen := map[string]bool{}
 	for i, r := range c.Rooms {
 		if !slugRe.MatchString(r.Slug) {
@@ -198,6 +227,44 @@ func (c *Config) Validate() error {
 }
 
 func bytesReader(b []byte) *bytes.Reader { return bytes.NewReader(b) }
+
+// DetectIP returns the host's primary IPv4 address: the source address of the default route, or,
+// on a host without one, the first IPv4 address of an interface that is up (container bridges
+// skipped). Dialing UDP only looks up the route; no packet is sent.
+func DetectIP() (string, error) {
+	if c, err := net.Dial("udp4", "192.0.2.1:9"); err == nil {
+		a, ok := c.LocalAddr().(*net.UDPAddr)
+		c.Close()
+		if ok && !a.IP.IsLoopback() && !a.IP.IsUnspecified() {
+			return a.IP.String(), nil
+		}
+	}
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "", err
+	}
+	for _, ifc := range ifaces {
+		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 || bridgeName(ifc.Name) {
+			continue
+		}
+		addrs, _ := ifc.Addrs()
+		for _, a := range addrs {
+			if n, ok := a.(*net.IPNet); ok && n.IP.To4() != nil && !n.IP.IsLinkLocalUnicast() {
+				return n.IP.String(), nil
+			}
+		}
+	}
+	return "", fmt.Errorf("no IPv4 address found: set media.advertise_ip or %s", EnvAdvertiseIP)
+}
+
+func bridgeName(name string) bool {
+	for _, p := range []string{"docker", "br-", "veth", "virbr", "cni", "flannel"} {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
+}
 
 // DefaultReactions is the reaction set when ui.reactions is not configured.
 var DefaultReactions = []string{"👍", "👎", "👏", "😂", "❤️", "🎉", "😮", "🤔", "☕", "👋"}

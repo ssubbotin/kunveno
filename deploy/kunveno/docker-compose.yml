@@ -1,0 +1,162 @@
+# kunveno: meetings server, nginx with the web client, the echo and player helpers, Prometheus and
+# Grafana, all from images. This directory (unpacked from kunveno.tgz) is the whole installation:
+#   .env           settings; fill in PUBLIC_HOST and GRAFANA_ADMIN_PASSWORD, the rest is optional
+#   config.yaml    rooms, PINs, title and media settings
+#   data/          rooms created in the lobby and the player's cache (written by the server)
+#   certs/         fullchain.pem and privkey.pem; a self-signed pair is issued on first start,
+#                  replace the two files with your own and restart web
+#   media/         video files for rooms with "player: {file: …}"
+# Start with: docker compose pull && docker compose up -d
+#
+# All services use host networking: the SFU advertises the host's address and one media port
+# (UDP and TCP 7000), nginx serves 80/443 and reaches the other services on loopback. The server
+# and the player run as the owner of data/, so the files they write belong to whoever unpacked the
+# archive. Prometheus and Grafana keep their state in Docker volumes. Logs go to the host's systemd
+# journal and outlive container recreation:
+#   journalctl -t kunveno-server --since "7 days ago"
+name: kunveno
+
+x-logging: &journald
+  driver: journald
+
+services:
+  server:
+    logging:
+      <<: *journald
+      options:
+        tag: kunveno-server
+    image: ghcr.io/ssubbotin/kunveno-server:${KUNVENO_VERSION:-__KUNVENO_RELEASE__}
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      # Used when config.yaml does not set http.listen and media.advertise_ip; the address
+      # defaults to the host's primary IPv4 address.
+      KUNVENO_LISTEN: ${KUNVENO_UPSTREAM:-127.0.0.1:8080}
+      KUNVENO_ADVERTISE_IP: ${KUNVENO_ADVERTISE_IP:-}
+    volumes:
+      - ./config.yaml:/etc/kunveno/config.yaml:ro
+      - ./data:/var/lib/kunveno
+
+  web:
+    logging:
+      <<: *journald
+      options:
+        tag: kunveno-web
+    image: ghcr.io/ssubbotin/kunveno-web:${KUNVENO_VERSION:-__KUNVENO_RELEASE__}
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      - server
+    environment:
+      SERVER_NAME: ${SERVER_NAME:-_}
+      HTTP_PORT: ${HTTP_PORT:-80}
+      HTTPS_PORT: ${HTTPS_PORT:-443}
+      KUNVENO_UPSTREAM: ${KUNVENO_UPSTREAM:-127.0.0.1:8080}
+      GRAFANA_PORT: ${GRAFANA_PORT:-3000}
+      # Names in the self-signed certificate issued on first start.
+      PUBLIC_HOST: ${PUBLIC_HOST:?set PUBLIC_HOST in .env}
+      TLS_NAMES: ${TLS_NAMES:-}
+    volumes:
+      - ./certs:/etc/ssl/kunveno
+
+  # Sound check. Idle until someone presses "Эхо-тест" in a room; then it joins that room and plays
+  # its audio back after ECHO_DELAY. Talks to the server over loopback only.
+  echo:
+    logging:
+      <<: *journald
+      options:
+        tag: kunveno-echo
+    image: ghcr.io/ssubbotin/kunveno-echo:${KUNVENO_VERSION:-__KUNVENO_RELEASE__}
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      - server
+    environment:
+      ECHO_URL: ws://${KUNVENO_UPSTREAM:-127.0.0.1:8080}/ws
+      ECHO_CONTROL_URL: http://${KUNVENO_UPSTREAM:-127.0.0.1:8080}/internal/echo
+      ECHO_DELAY: ${ECHO_DELAY:-2s}
+
+  # Video files and RTSP cameras for rooms with "player:" in config.yaml; idle otherwise.
+  player:
+    logging:
+      <<: *journald
+      options:
+        tag: kunveno-player
+    image: ghcr.io/ssubbotin/kunveno-player:${KUNVENO_VERSION:-__KUNVENO_RELEASE__}
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      - server
+    environment:
+      PLAYER_URL: ws://${KUNVENO_UPSTREAM:-127.0.0.1:8080}/ws
+      KUNVENO_LISTEN: ${KUNVENO_UPSTREAM:-127.0.0.1:8080}
+      KUNVENO_ADVERTISE_IP: ${KUNVENO_ADVERTISE_IP:-}
+    volumes:
+      - ./config.yaml:/etc/kunveno/config.yaml:ro
+      - ./media:/media:ro
+      - ./data:/var/lib/kunveno
+
+  # Metrics: scrapes the server's /metrics on loopback. Listens on loopback only.
+  prometheus:
+    logging:
+      <<: *journald
+      options:
+        tag: kunveno-prometheus
+    image: prom/prometheus:v3.5.0
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      - server
+    configs:
+      - source: prometheus
+        target: /etc/prometheus/prometheus.yml
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-30d}
+      - --web.listen-address=127.0.0.1:${PROMETHEUS_PORT:-9095}
+    volumes:
+      - prometheus-data:/prometheus
+
+  # Dashboards at https://<PUBLIC_HOST>/grafana/ (user admin); the "kunveno" dashboard is built in.
+  grafana:
+    logging:
+      <<: *journald
+      options:
+        tag: kunveno-grafana
+    image: ghcr.io/ssubbotin/kunveno-grafana:${KUNVENO_VERSION:-__KUNVENO_RELEASE__}
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+    environment:
+      GF_SERVER_HTTP_ADDR: 127.0.0.1
+      GF_SERVER_HTTP_PORT: ${GRAFANA_PORT:-3000}
+      GF_SERVER_ROOT_URL: https://${PUBLIC_HOST:?set PUBLIC_HOST in .env}:${HTTPS_PORT:-443}/grafana/
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      # Read on the first start only; later changes go through Grafana itself.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/kunveno.json
+      PROMETHEUS_PORT: ${PROMETHEUS_PORT:-9095}
+    volumes:
+      - grafana-data:/var/lib/grafana
+
+configs:
+  prometheus:
+    content: |
+      global:
+        scrape_interval: 15s
+        evaluation_interval: 15s
+      scrape_configs:
+        - job_name: kunveno
+          static_configs:
+            - targets: ["${KUNVENO_UPSTREAM:-127.0.0.1:8080}"]
+
+volumes:
+  prometheus-data:
+  grafana-data:

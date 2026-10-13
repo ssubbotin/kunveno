@@ -1,5 +1,8 @@
 # Deploying kunveno on Ubuntu (24.04 or 26.04)
 
+The quickest way is Docker Compose (section "Docker Compose" below and "Setup" in the README).
+The numbered sections describe installing from Debian packages with the host's own nginx.
+
 ## 1. Host
 - An Ubuntu host on the VPN. Note its VPN address (example `10.8.0.1`): it becomes `media.advertise_ip`.
 - Packages: `sudo apt install nginx`.
@@ -45,31 +48,38 @@ sudo systemctl start kunveno-server
   `Upgrade`/`Connection` headers.
 - 403 on `/ws`: Origin mismatch. Set `http.allowed_origins` in the config to the site URL.
 
-## Docker Compose (alternative to the deb packages)
-nginx with the client, the server and the echo and player helpers run from images that CI builds
-and publishes to GHCR (`.github/workflows/images.yml`): `ghcr.io/ssubbotin/kunveno-server`, `-web`,
-`-echo`, `-player`.
-A tag `vX.Y.Z` publishes `X.Y.Z` and `latest`; pushes to `main` publish `main` and `sha-<commit>`;
-a pull request from a branch of this repository publishes a preview `pr-<number>` (set
-`KUNVENO_VERSION=pr-<number>` to try it on the host, then switch back to a release).
-CI checks every image before pushing (`deploy/docker/check-image.sh`): no sources, no source maps,
-Go binaries built with `-trimpath -s -w`. The images are private.
+## Docker Compose (recommended)
+nginx with the client, the server, the echo and player helpers and Grafana run from public images
+that CI builds and publishes to GHCR (`.github/workflows/images.yml`):
+`ghcr.io/ssubbotin/kunveno-server`, `-web`, `-echo`, `-player`, `-grafana`; Prometheus is the
+upstream image. A tag `vX.Y.Z` publishes `X.Y.Z` and `latest` and a GitHub release with
+`kunveno.tgz`: the stack directory `deploy/kunveno` (`docker-compose.yml` pinned to that release,
+`.env`, `config.yaml`, empty `data/`, `certs/` and `media/`). Pushes to `main` publish `main` and
+`sha-<commit>`; a pull request from a branch of this repository publishes a preview `pr-<number>`
+(`KUNVENO_VERSION=pr-<number>` in `.env` to try it, then remove the line). CI checks the kunveno
+images before pushing (`deploy/docker/check-image.sh`): no sources, no source maps, Go binaries
+built with `-trimpath -s -w`.
 
-Once per host, log in to GHCR with a GitHub token that can only read packages (`read:packages`):
-`docker login ghcr.io -u <github user>` and paste the token as the password.
+Install: see "Setup" in the README (unpack the archive, two values in `.env`, then
+`docker compose pull && docker compose up -d`). What the stack does on its own:
+- the server, the player and nginx run as root in their containers, so `data/` and `certs/` need
+  no particular ownership; what the server writes to `data/` belongs to root (`sudo` to copy or
+  remove it);
+- `http.listen` and `media.advertise_ip` come from `.env` (`KUNVENO_UPSTREAM`,
+  `KUNVENO_ADVERTISE_IP`) when `config.yaml` leaves them out, and the address from the host's
+  default route when neither sets it; the `started` log line shows the result;
+- the web container issues a self-signed certificate for `PUBLIC_HOST` and `TLS_NAMES` into
+  `certs/` when it is empty, owned by the directory's owner; replace the two files with a
+  certificate from your CA (section 2) and restart `web`.
 
-On the workstation: `make deploy-bundle`, then `rsync -a dist/kunveno-docker/ <host>:kunveno/`.
-It carries the compose file and configuration templates only.
-
-On the host, in `~/kunveno`:
+Upgrade: in the stack directory, take `docker-compose.yml` from the new release and pull:
 ```
-cp config.example.yaml config.yaml   # advertise_ip, rooms, PINs; pick a free http.listen port
-cp env.example .env                  # KUNVENO_VERSION (required), KUNVENO_UPSTREAM (= http.listen)
-mkdir -p certs                       # fullchain.pem and privkey.pem (see section 2)
-mkdir -p data && sudo chown 10001 data && sudo chmod 700 data   # rooms created in the lobby
+curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz --strip-components=1 kunveno/docker-compose.yml
 docker compose pull && docker compose up -d
 ```
-Upgrade: set `KUNVENO_VERSION` in `.env` to the new release, then `docker compose pull && docker compose up -d`.
+`.env`, `config.yaml`, `data/`, `certs/` and `media/` are untouched. If `config.yaml` goes missing,
+Docker creates a directory in its place and the server stops saying so: remove the directory and
+restore the file from the archive.
 Logs go to the host's systemd journal (Docker `journald` driver), so they survive container
 recreation and reboots; retention follows the journal. Last week of server logs:
 `journalctl -t kunveno-server --since "7 days ago" -o cat`; follow live with `-f`. The other
@@ -103,4 +113,5 @@ host network, so it reaches cameras the host can reach.
 `kunveno-server` exposes Prometheus metrics at `/metrics` to loopback clients only (nginx does not
 proxy it). The stack runs Prometheus on `127.0.0.1:${PROMETHEUS_PORT}` (default 9095, 30 days of
 data) and Grafana behind nginx at `https://<PUBLIC_HOST>/grafana/` with the "kunveno" dashboard
-provisioned. Set `PUBLIC_HOST` and `GRAFANA_ADMIN_PASSWORD` in `.env`; log in as `admin`.
+built into the `kunveno-grafana` image. Log in as `admin` with `GRAFANA_ADMIN_PASSWORD` from
+`.env`; Grafana reads it on its first start only.

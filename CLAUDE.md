@@ -25,7 +25,7 @@ make test-go
 make test-web
 make build       # CGO_ENABLED=0 bin/kunveno-server, plus web/dist via npm run build
 make deb         # nfpm: dist/kunveno-server_*.deb and dist/kunveno-web_*.deb
-make deploy-bundle  # dist/kunveno-docker: compose file and config templates (images come from GHCR)
+make deploy-bundle  # dist/kunveno.tgz: the stack directory deploy/kunveno with the version stamped in
 make fmt         # gofmt + go mod tidy
 
 go test ./internal/sfu -run TestNegotiateCoalesces -v    # single Go test
@@ -35,7 +35,7 @@ cd web && npm run dev                                    # Vite proxies /ws and 
 go run ./tools/loadgen -url wss://host/ws -room ops -pin 1234 -n 14 -duration 10m [-insecure]
 ```
 
-Local smoke run: copy `deploy/config.example.yaml`, set `advertise_ip` to this laptop's LAN address
+Local smoke run: copy `deploy/kunveno/config.yaml`, set `advertise_ip` to this laptop's LAN address
 (`ip -4 route get 1.1.1.1`), start `bin/kunveno-server -config <file>`, then `curl localhost:8080/healthz`,
 `/api/rooms`, and `go run ./tools/loadgen -n 14 -duration 30s` (expect `tracks=182`). With
 `advertise_ip: 127.0.0.1` HTTP works but no media connects: browsers and pion clients gather no

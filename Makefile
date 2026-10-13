@@ -26,14 +26,16 @@ deb: build
 	VERSION=$(VERSION) nfpm package -f deploy/nfpm/server.yaml -p deb -t dist/
 	VERSION=$(VERSION) nfpm package -f deploy/nfpm/web.yaml -p deb -t dist/
 
-# Files the host needs next to the images CI publishes to GHCR: compose file and configuration
-# templates only. No binaries and no client bundle travel to the host.
+# The directory a host runs, packed as dist/kunveno.tgz and attached to every GitHub release:
+# deploy/kunveno with this version as the default release in docker-compose.yml. Images come from
+# GHCR; no binaries and no client bundle are inside.
 deploy-bundle:
-	rm -rf dist/kunveno-docker && mkdir -p dist/kunveno-docker
-	cp deploy/docker/docker-compose.yml deploy/docker/prometheus.yml.template dist/kunveno-docker/
-	cp deploy/docker/env.example deploy/config.example.yaml dist/kunveno-docker/
-	cp -r deploy/docker/grafana dist/kunveno-docker/grafana
-	mkdir -p dist/kunveno-docker/media
+	rm -rf dist/kunveno dist/kunveno.tgz && mkdir -p dist
+	cp -r deploy/kunveno dist/kunveno
+	find dist/kunveno -name .gitkeep -delete
+	sed 's/__KUNVENO_RELEASE__/$(VERSION)/' deploy/kunveno/docker-compose.yml > dist/kunveno/docker-compose.yml
+	chmod 600 dist/kunveno/.env dist/kunveno/config.yaml
+	tar --owner=0 --group=0 --numeric-owner -czf dist/kunveno.tgz -C dist kunveno
 
 clean:
 	rm -rf bin dist web/dist

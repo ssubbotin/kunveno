@@ -16,6 +16,8 @@ RUN VITE_APP_VERSION=${VERSION} VITE_BUILD_DATE=${BUILD_DATE} npm run build \
 # The official image renders templates/*.template with envsubst on start, substituting only
 # variables defined in the environment (nginx's own $vars are kept).
 FROM nginx:1.27-alpine
-RUN rm -f /etc/nginx/conf.d/default.conf
+RUN rm -f /etc/nginx/conf.d/default.conf && apk add --no-cache openssl
+# Issues a self-signed certificate on first start when ./certs is empty.
+COPY --chmod=0755 deploy/docker/web-cert.sh /docker-entrypoint.d/05-kunveno-cert.sh
 COPY --from=build /web/dist/ /usr/share/nginx/kunveno/
 COPY deploy/docker/nginx.conf.template /etc/nginx/templates/kunveno.conf.template

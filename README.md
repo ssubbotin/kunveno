@@ -27,6 +27,79 @@ Licensed under the GNU Affero General Public License v3.0 only; a commercial lic
 - Protection against PIN guessing, Prometheus metrics with a Grafana dashboard, logs in the host
   journal.
 
+## Setup
+
+You need a Linux server with Docker that your users can reach over the network.
+
+**1. Download and unpack** the stack:
+
+```bash
+curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz
+cd kunveno
+```
+
+The directory is the whole installation:
+
+```
+docker-compose.yml
+.env            settings: fill in two lines, the rest is optional
+config.yaml     rooms, PINs and the title; the defaults work as they are
+data/           rooms created in the lobby, the player's cache
+certs/          TLS certificate: self-signed on first start, or your own
+media/          video files for rooms with a player
+```
+
+**2. Fill in two lines in `.env`:**
+
+```bash
+PUBLIC_HOST=10.0.0.5            # the server's address or name, as users type it in the browser
+GRAFANA_ADMIN_PASSWORD=...      # any strong password; generate one with: openssl rand -base64 24
+```
+
+**3. Start:**
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+**4. Open `https://<PUBLIC_HOST>/`** and join a room with its PIN from `config.yaml`. The
+certificate is self-signed, so each browser asks to accept it once.
+
+**5. Open the firewall** to your users: TCP 443 (web) and port 7000 over UDP and TCP (audio and
+video).
+
+### Everyday tasks
+
+| Task | How |
+|---|---|
+| Apply changes to `config.yaml` | `docker compose restart server player` |
+| Read the logs | `journalctl -t kunveno-server -f` |
+| Monitoring | `https://<PUBLIC_HOST>/grafana/`, user `admin`, the password from `.env` |
+| Use your own certificate | replace `certs/fullchain.pem` and `certs/privkey.pem`, then `docker compose restart web` |
+| Back up | copy the directory (`data/` is written by root, so with `sudo`) |
+
+**Upgrade** to a new release, in the directory:
+
+```bash
+curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz --strip-components=1 kunveno/docker-compose.yml
+docker compose pull && docker compose up -d
+```
+
+Only `docker-compose.yml` changes; `.env`, `config.yaml` and the directories stay.
+
+### If something does not work
+
+- **Users join but hear and see nothing:** the server guessed the wrong address for media. Add
+  `KUNVENO_ADVERTISE_IP=<the address users reach, e.g. the VPN one>` to `.env` and run
+  `docker compose up -d`.
+- **Ports 80 or 443 are taken:** set `HTTP_PORT` and `HTTPS_PORT` in `.env`.
+- **The server stops with "config.yaml is a directory":** the file went missing and Docker created
+  a directory in its place; remove the directory, restore `config.yaml` from the archive and start
+  again.
+
+All `.env` settings are described in `.env` itself, all `config.yaml` settings in
+[Configuration](#configuration). Debian packages and details are in [docs/deploy.md](docs/deploy.md).
+
 ## How it works
 
 ```
@@ -80,35 +153,10 @@ cd web && npx vitest run src/lib/pins.test.ts                    # one web test 
 cd web && npm run check                                          # svelte-check
 ```
 
-Running locally: copy `deploy/config.example.yaml`, set `media.advertise_ip` to the machine's LAN
+Running locally: copy `deploy/kunveno/config.yaml`, set `media.advertise_ip` to the machine's LAN
 address (browsers gather no loopback candidates, so `127.0.0.1` gives no media), start
 `bin/kunveno-server -config <file>`, then `cd web && npm run dev` (Vite proxies `/ws` and `/api/`
 to `127.0.0.1:8080`). `go run ./tools/loadgen -n 14 -duration 30s` adds synthetic participants.
-
-## Deployment
-
-CI (`.github/workflows/images.yml`) builds four images, checks that none of them carries sources,
-source maps or debug data, and publishes them to GHCR (private):
-`ghcr.io/ssubbotin/kunveno-{server,web,echo,player}`. A tag `vX.Y.Z` publishes `X.Y.Z` and
-`latest`, `main` publishes `main`, and a pull request from this repository publishes a preview
-`pr-<number>`.
-
-On the host, the compose stack in `deploy/docker` runs those images next to Prometheus and Grafana:
-
-```bash
-make deploy-bundle                                   # compose file and configuration templates only
-rsync -a dist/kunveno-docker/ <host>:kunveno/        # on later updates keep config.yaml, .env,
-                                                     # certs/, data/ and media/ out of --delete
-# on the host, in ~/kunveno:
-cp config.example.yaml config.yaml && cp env.example .env   # then edit both
-docker login ghcr.io                                 # once, with a read:packages token
-docker compose pull && docker compose up -d
-```
-
-`KUNVENO_VERSION` in `.env` is required: it picks the image tag for all four services. Upgrading is
-setting it to the new release followed by
-`docker compose pull && docker compose up -d`. The full guide, including TLS, the firewall
-(TCP 443, UDP and TCP 7000), Debian packages and troubleshooting, is in [docs/deploy.md](docs/deploy.md).
 
 ## Configuration
 
@@ -116,8 +164,8 @@ setting it to the new release followed by
 
 | Key | Meaning |
 |---|---|
-| `http.listen` | address nginx proxies to, on loopback |
-| `media.advertise_ip` | the address browsers send media to (the host's VPN or LAN address) |
+| `http.listen` | address nginx proxies to, on loopback (default `KUNVENO_UPSTREAM` from `.env`, else `127.0.0.1:8080`) |
+| `media.advertise_ip` | the address browsers send media to (default `KUNVENO_ADVERTISE_IP` from `.env`, else the host's primary IPv4 address) |
 | `media.udp_port`, `media.tcp_port` | media ports (7000 by default; `tcp_port: -1` turns the TCP fallback off) |
 | `media.share_max_kbps` | bitrate cap for screen sharing |
 | `ui.title` | title shown in the lobby and the browser tab |
@@ -135,15 +183,19 @@ for Grafana and its admin password.
   its media path (UDP or TCP), quality changes and wrong PINs.
 - Metrics: `/metrics` on the server (loopback only); Grafana at `https://<host>/grafana/` with the
   provisioned "kunveno" dashboard.
-- Data to keep on the host: `config.yaml`, `.env`, `certs/`, `data/` (rooms created in the lobby,
-  the player's cache) and `media/`.
+- Data to keep on the host, all next to `docker-compose.yml`: `config.yaml`, `.env`, `data/` (rooms
+  created in the lobby, the player's cache), `certs/` and `media/`.
 - An RTSP camera must be reachable from the host; the player pulls it over TCP. A room whose feed is
   down keeps the player as a participant without video until the feed returns.
 
 ## Versions
 
 Releases are git tags `vX.Y.Z` on merge commits to `main`; the version shows in the lobby footer
-and in the `kunveno_build_info` metric.
+and in the `kunveno_build_info` metric. A tag publishes the images
+`ghcr.io/ssubbotin/kunveno-{server,web,echo,player,grafana}` as `X.Y.Z` and `latest` and a GitHub
+release with `kunveno.tgz`, the stack directory with `docker-compose.yml` pinned to that
+version. `main` publishes `main`, and a pull request from this repository publishes a
+preview `pr-<number>` (`KUNVENO_VERSION=pr-<number>` in `.env` to try it).
 
 ## License
 

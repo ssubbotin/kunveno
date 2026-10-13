@@ -15,20 +15,21 @@ ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=${VERSION}" -o /out/app ./cmd/${APP}
 
 FROM alpine:3.22 AS base
-RUN adduser -D -H -u 10001 kunveno
-USER kunveno
 
+# The server and the player write to /var/lib/kunveno, which the compose stack bind-mounts from
+# the host; they run as root so that the directory needs no particular ownership.
 FROM base AS server
 COPY --from=build /out/app /usr/local/bin/kunveno-server
 ENTRYPOINT ["/usr/local/bin/kunveno-server", "-config", "/etc/kunveno/config.yaml"]
 
 FROM base AS echo
+RUN adduser -D -H -u 10001 kunveno
+USER kunveno
 COPY --from=build /out/app /usr/local/bin/kunveno-echo
 ENTRYPOINT ["/usr/local/bin/kunveno-echo"]
 
 # The player transcodes media files once with ffmpeg, so its image carries ffmpeg.
 FROM alpine:3.22 AS player
-RUN apk add --no-cache ffmpeg && adduser -D -H -u 10001 kunveno
+RUN apk add --no-cache ffmpeg
 COPY --from=build /out/app /usr/local/bin/kunveno-player
-USER kunveno
 ENTRYPOINT ["/usr/local/bin/kunveno-player"]
