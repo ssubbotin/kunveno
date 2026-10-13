@@ -34,7 +34,7 @@ Licensed under the GNU Affero General Public License v3.0 only; a commercial lic
 - Protection against PIN guessing, Prometheus metrics with a Grafana dashboard, logs in the host
   journal.
 
-![A room with six participants](docs/images/room.png)
+![A room with six participants, cameras on](docs/images/room.png)
 
 ## Setup
 
@@ -200,7 +200,8 @@ cd web && npm run check                                          # svelte-check
 Running locally: copy `deploy/kunveno/config.yaml`, set `media.advertise_ip` to the machine's LAN
 address (browsers gather no loopback candidates, so `127.0.0.1` gives no media), start
 `bin/kunveno-server -config <file>`, then `cd web && npm run dev` (Vite proxies `/ws` and `/api/`
-to `127.0.0.1:8080`). `go run ./tools/loadgen -n 14 -duration 30s` adds synthetic participants. Before a release, walk
+to `127.0.0.1:8080`). `go run ./tools/loadgen -n 14 -duration 30s` adds synthetic participants (`-camera <picture or
+directory>` gives them cameras showing still pictures, `-names a,b,c` names them; needs ffmpeg). Before a release, walk
 through the manual checks in [docs/test-matrix.md](docs/test-matrix.md).
 
 ## Configuration
