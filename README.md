@@ -1,5 +1,7 @@
 # kunveno
 
+English · [Русский](README.ru.md) · [Español](README.es.md)
+
 Self-hosted video meetings for a company network: voice, cameras and screen sharing in the
 browser, with a small Go server you run yourself. Esperanto: "meeting".
 
@@ -9,6 +11,8 @@ host behind nginx.
 
 Licensed under the GNU Affero General Public License v3.0 only; a commercial license is available
 (see [License](#license)).
+
+![The lobby: rooms and the pre-join check](docs/images/lobby.png)
 
 ## Features
 
@@ -29,6 +33,8 @@ Licensed under the GNU Affero General Public License v3.0 only; a commercial lic
 - Interface in Russian (default), English and Spanish; the installation title is configurable.
 - Protection against PIN guessing, Prometheus metrics with a Grafana dashboard, logs in the host
   journal.
+
+![A room with six participants](docs/images/room.png)
 
 ## Setup
 
@@ -104,13 +110,45 @@ Only `docker-compose.yml` and `grafana/` change; `.env`, `config.yaml` and the o
 All `.env` settings are described in `.env` itself, all `config.yaml` settings in
 [Configuration](#configuration). Debian packages and details are in [docs/deploy.md](docs/deploy.md).
 
+## For administrators
+
+**Where the media goes.** kunveno is a selective forwarding unit (SFU): every participant sends
+the server one stream per kind (voice, camera, screen) and the server sends copies to everyone
+else. Nothing travels between participants directly, so each participant's upstream stays small
+and the load lands on the server's network link.
+
+**Encryption.** Media is encrypted with DTLS-SRTP between each browser and the server, so on the
+wire everything is encrypted. The server decrypts the streams to forward them; there is no
+end-to-end encryption between participants. The site and signaling go over HTTPS.
+
+**Bandwidth.** Per participant, roughly: voice about 40 kbit/s, a camera about 350 kbit/s, screen
+sharing up to 2.5 Mbit/s (`media.share_max_kbps`). The server receives one stream of each kind
+from every participant and sends (N − 1) copies of each. For 15 people with cameras on and one
+screen shared that is about 120 Mbit/s outbound from the server in the worst case; a voice-only
+meeting of the same size needs under 10 Mbit/s.
+
+**Ports.** Everything runs on the one host:
+
+| Port | What it carries |
+|---|---|
+| TCP 443 | the site (HTTPS) and signaling (WebSocket through nginx) |
+| TCP 80 | a redirect to 443, nothing else |
+| UDP 7000 | the media channel: voice and video of all participants on one port; no per-call ports are opened |
+| TCP 7000 | the fallback media channel for a participant whose UDP does not get through (typically a NAT or a firewall on a gateway that drops long UDP flows); the browser switches to it on its own |
+
+No STUN, TURN or other external service is involved. The server's own ports (API, metrics,
+Prometheus, Grafana) listen on 127.0.0.1 only; Grafana is reached through 443 at `/grafana/`.
+
+**Firewall rule.** Allow from your users' networks to the host: TCP 443 (and 80), UDP 7000 and
+TCP 7000. If a network segment can only use TCP 7000, letting its UDP 7000 through gives those
+users the faster path.
+
+**Screen sharing** is the browser's own feature (`getDisplayMedia`); nothing is installed on
+users' computers. It works in Chrome and Firefox on Linux and Windows.
+
 ## How it works
 
-```
-browser ──HTTPS/WSS──▶ nginx ──▶ kunveno-server  (signaling, SFU, HTTP API)
-browser ◀──WebRTC (UDP 7000, or TCP 7000)──▶ kunveno-server
-                         kunveno-echo, kunveno-player ──loopback──▶ kunveno-server
-```
+![How kunveno fits together](docs/images/architecture.svg)
 
 - `kunveno-server` (Go, [pion/webrtc](https://github.com/pion/webrtc)) is a selective forwarding
   unit: each participant sends one stream per kind (audio, screen, camera) and the server forwards
@@ -142,6 +180,7 @@ browser ◀──WebRTC (UDP 7000, or TCP 7000)──▶ kunveno-server
 | `web/` | the browser client |
 | `deploy/` | Docker images and compose stack, nginx, systemd unit, deb packaging, example configuration |
 | `tools/loadgen` | synthetic participants for load and end-to-end checks |
+| `docs/` | deployment guide, release test matrix, the architecture diagram and screenshots |
 
 ## Development
 
