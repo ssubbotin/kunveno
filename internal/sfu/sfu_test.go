@@ -412,3 +412,29 @@ func TestTCPOnlyPeerOffersNoUDPCandidates(t *testing.T) {
 		t.Fatalf("Transport() = %q, want tcp", got)
 	}
 }
+
+// A participant leaving closes its connection; renegotiation that races with that (others leave
+// at the same moment) is not a media failure and must not be counted as one.
+func TestNegotiationOnAClosedConnectionIsNotAFailure(t *testing.T) {
+	eng, err := NewEngine(EngineConfig{UDPPort: 0, AdvertiseIP: "127.0.0.1", IncludeLoopback: true}, slog.Default())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer eng.Close()
+	failed := make(chan struct{}, 1)
+	p, err := eng.NewPeer("x", &chanSignaler{offers: make(chan string, 4)}, Handlers{OnFailed: func(Source) { failed <- struct{}{} }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	errorsBefore := testutil.ToFloat64(metrics.NegotiationErrors)
+	_ = p.pc.Close() // the browser went away; the session has not noticed yet
+	p.Negotiate()
+	select {
+	case <-failed:
+		t.Fatal("OnFailed for a connection that was closed")
+	case <-time.After(300 * time.Millisecond):
+	}
+	if d := testutil.ToFloat64(metrics.NegotiationErrors) - errorsBefore; d != 0 {
+		t.Fatalf("negotiation errors counted: %v", d)
+	}
+}

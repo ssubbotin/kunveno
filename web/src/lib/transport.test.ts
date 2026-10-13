@@ -8,13 +8,14 @@ class MemoryStorage {
 }
 
 describe('TCP preference', () => {
-  it('is off by default and on for a day after a failure', () => {
+  it('is off by default and on for a week after a failure', () => {
     const s = new MemoryStorage();
     const now = 1_000_000;
+    const day = 24 * 3600_000;
     expect(prefersTcp(s, now)).toBe(false);
     rememberTcp(s, now);
-    expect(prefersTcp(s, now + 23 * 3600_000)).toBe(true);
-    expect(prefersTcp(s, now + 25 * 3600_000)).toBe(false);
+    expect(prefersTcp(s, now + 6 * day)).toBe(true);
+    expect(prefersTcp(s, now + 8 * day)).toBe(false);
   });
 
   it('ignores garbage in storage', () => {
@@ -46,6 +47,27 @@ describe('watchConnection', () => {
     vi.advanceTimersByTime(3000);
     w('connected');
     vi.advanceTimersByTime(10_000);
+    expect(onFailed).not.toHaveBeenCalled();
+  });
+
+  it('reports a connection that never comes up within the connect window', () => {
+    const onFailed = vi.fn();
+    const w = watchConnection(onFailed, 5000, 8000);
+    w('new');
+    w('connecting');
+    vi.advanceTimersByTime(7999);
+    expect(onFailed).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onFailed).toHaveBeenCalledTimes(1);
+  });
+
+  it('a connection that comes up in time cancels the connect window', () => {
+    const onFailed = vi.fn();
+    const w = watchConnection(onFailed, 5000, 8000);
+    w('new');
+    vi.advanceTimersByTime(3000);
+    w('connected');
+    vi.advanceTimersByTime(20_000);
     expect(onFailed).not.toHaveBeenCalled();
   });
 

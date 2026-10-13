@@ -29,23 +29,39 @@ func TestGrade(t *testing.T) {
 	}
 }
 
-func TestTrackerDropsAtOnceAndRecoversSlowly(t *testing.T) {
-	var tr Tracker
+// The grade follows the median of the last three samples: a problem shows once it holds for two
+// of them (~6 s), and a single spike in one 3-second window does not move the indicator.
+func TestTrackerFollowsTheMedianOfThreeSamples(t *testing.T) {
 	good := Sample{RTT: 20 * time.Millisecond}
-	poor := Sample{UpLoss: 0.1}
-	if g, changed := tr.Update(good); g != Good || !changed {
-		t.Fatalf("first sample: %q changed=%v", g, changed)
+	poor := Sample{UpLoss: 0.11}
+	var tr Tracker
+	steps := []struct {
+		s       Sample
+		want    string
+		changed bool
+	}{
+		{good, Good, true},  // first sample sets the grade
+		{poor, Good, false}, // one bad sample of two: not yet
+		{poor, Poor, true},  // two of three
+		{good, Poor, false}, // still two of three bad
+		{good, Good, true},  // two of three good again
 	}
-	if g, changed := tr.Update(poor); g != Poor || !changed {
-		t.Fatalf("drop: %q changed=%v", g, changed)
+	for i, st := range steps {
+		g, changed := tr.Update(st.s)
+		if g != st.want || changed != st.changed {
+			t.Fatalf("step %d: %q changed=%v, want %q changed=%v", i, g, changed, st.want, st.changed)
+		}
 	}
-	if g, changed := tr.Update(good); g != Poor || changed {
-		t.Fatalf("one good sample must not recover yet: %q changed=%v", g, changed)
-	}
-	if g, changed := tr.Update(good); g != Good || !changed {
-		t.Fatalf("second good sample recovers: %q changed=%v", g, changed)
-	}
-	if _, changed := tr.Update(good); changed {
-		t.Fatal("steady state reported as a change")
+}
+
+func TestTrackerIgnoresASingleSpike(t *testing.T) {
+	good := Sample{RTT: 20 * time.Millisecond}
+	var tr Tracker
+	tr.Update(good)
+	tr.Update(good)
+	for i, s := range []Sample{{UpLoss: 0.18}, good, {DownLoss: 0.17}, good} {
+		if g, changed := tr.Update(s); g != Good || changed {
+			t.Fatalf("spike %d moved the grade: %q changed=%v", i, g, changed)
+		}
 	}
 }
