@@ -18,7 +18,8 @@ Private repository, internal use.
   microphone or camera off. Works on computers without a camera.
 - A connection-quality indicator on every participant (loss, round trip and jitter, measured
   on the server).
-- An echo sound check per room, and rooms that play a video file in a loop.
+- An echo sound check per room, rooms that play a video file in a loop, and rooms that show a
+  live RTSP camera.
 - Works behind awkward networks: when a participant's UDP path fails, the browser falls back to
   ICE over TCP on the same port.
 - Interface in Russian (default), English and Spanish; the installation title is configurable.
@@ -117,7 +118,7 @@ Upgrading is `KUNVENO_VERSION=<release>` in `.env` followed by
 | `media.share_max_kbps` | bitrate cap for screen sharing |
 | `ui.title` | title shown in the lobby and the browser tab |
 | `ui.reactions` | emoji participants can send as reactions (1..16; ten by default) |
-| `rooms[]` | `slug`, `name`, `pin`, `max_participants`, and optionally `player: {file, name}` for a video loop from the media directory |
+| `rooms[]` | `slug`, `name`, `pin`, `max_participants`, and optionally `player: {file, name}` for a video loop from the media directory or `player: {url, name}` for a live RTSP camera |
 | `rooms_file` | where rooms created in the lobby are saved (`/var/lib/kunveno/rooms.json`) |
 
 `.env` next to the compose file sets the release (`KUNVENO_VERSION`), ports, the public host name

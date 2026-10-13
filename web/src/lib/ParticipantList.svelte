@@ -36,6 +36,7 @@
           {#if p.id === selfId}<span>{t('people.you')}</span>{/if}
           {#if p.botKind === 'echo'}<span>{t('people.echoTag')}</span>{/if}
           {#if p.botKind === 'player'}<span>{t('people.playerTag')}</span>{/if}
+          {#if p.botKind === 'camera'}<span class="live-tag">{t('people.cameraTag')}</span>{/if}
           {#if p.id === sharer}<span class="share">{t('people.sharing')}</span>{/if}
         </span>
       </span>
@@ -101,6 +102,7 @@
   .name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tags { display: flex; flex-wrap: wrap; justify-content: center; gap: .25rem .5rem; color: var(--muted); font-size: .8rem; }
   .tags .share { color: var(--live); }
+  .tags .live-tag::before { content: ''; display: inline-block; width: .45rem; height: .45rem; border-radius: 50%; background: var(--danger); margin-right: .3rem; vertical-align: middle; }
   .muted {
     position: absolute; top: .6rem; right: .6rem; width: 1.75rem; height: 1.75rem; border-radius: 50%;
     display: grid; place-items: center; background: rgba(227, 161, 59, .15);

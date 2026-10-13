@@ -89,6 +89,14 @@ re-encodes it. The player joins over loopback only, and only rooms with `player:
 takes one place in the room and sends about 0.5 Mbit/s to the server while running.
 `journalctl -t kunveno-player` shows the transcoding and the loop rounds.
 
+### Live camera rooms (RTSP)
+`player: {url: rtsp://user:password@camera:554/stream}` instead of `file:` plays a camera's feed:
+the player probes it for sound, encodes it live with ffmpeg (VP8 640x360 at 15 fps, keyframe every
+2 s, Opus) and sends frames as they arrive, one ffmpeg process per camera. The feed is read over
+TCP. When the camera is unreachable the player stays in the room and retries every 5 s. The
+password is masked in the logs; `config.yaml` keeps it (mode 0640). The player container uses the
+host network, so it reaches cameras the host can reach.
+
 ### Monitoring (Prometheus and Grafana)
 `kunveno-server` exposes Prometheus metrics at `/metrics` to loopback clients only (nginx does not
 proxy it). The stack runs Prometheus on `127.0.0.1:${PROMETHEUS_PORT}` (default 9095, 30 days of

@@ -32,7 +32,8 @@ const (
 const (
 	MaxNameLen = 32
 	RoleEcho   = "echo"
-	RolePlayer = "player"
+	RolePlayer = "player" // a media file in a loop
+	RoleCamera = "camera" // a live RTSP feed, through the same player service
 	MediaTCP   = "tcp"
 	MaxSDPLen  = 256 * 1024
 )
@@ -78,7 +79,7 @@ func ParseClient(data []byte) (ClientMessage, error) {
 			return m, fmt.Errorf("%w: join.client", ErrBadMessage)
 		case m.Media != "" && m.Media != MediaTCP:
 			return m, fmt.Errorf("%w: join.media", ErrBadMessage)
-		case m.Role != "" && m.Role != RoleEcho && m.Role != RolePlayer:
+		case m.Role != "" && m.Role != RoleEcho && m.Role != RolePlayer && m.Role != RoleCamera:
 			return m, fmt.Errorf("%w: join.role", ErrBadMessage)
 		case m.Role == "" && (len(m.PIN) < 1 || len(m.PIN) > 16):
 			return m, fmt.Errorf("%w: join.pin", ErrBadMessage)

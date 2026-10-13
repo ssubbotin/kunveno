@@ -1,6 +1,7 @@
-// Command kunveno-player keeps a looped video playing in every room whose configuration has a
-// player: it transcodes the file once (ffmpeg, cached), joins the room as the "player" helper
-// over loopback, and sends the video on the camera slot and the sound as audio, round after round.
+// Command kunveno-player keeps a picture playing in every room whose configuration has a player:
+// a media file in a loop (transcoded once with ffmpeg and cached) or a live RTSP feed (encoded as
+// it arrives). It joins the room as the "player" helper over loopback and sends the video on the
+// camera slot and the sound as audio.
 // Every flag can also be set by the environment variable named in its help text.
 package main
 
@@ -54,7 +55,12 @@ func main() {
 			continue
 		}
 		players++
-		go serveRoom(ctx, log.With("room", r.Slug), *url, r.Slug, r.Player.Name, filepath.Join(*mediaDir, r.Player.File), *cacheDir)
+		rlog := log.With("room", r.Slug)
+		if r.Player.URL != "" {
+			go serveFeed(ctx, rlog, *url, r.Slug, r.Player.Name, r.Player.URL)
+		} else {
+			go serveRoom(ctx, rlog, *url, r.Slug, r.Player.Name, filepath.Join(*mediaDir, r.Player.File), *cacheDir)
+		}
 	}
 	if players == 0 {
 		log.Info("no room has a player; idle")
@@ -79,8 +85,59 @@ func serveRoom(ctx context.Context, log *slog.Logger, url, room, name, file, cac
 		}
 	}
 	log.Info("ready", "video", m.Video, "audio", m.Audio != "")
+	loop := func(ctx context.Context, writeVideo, writeAudio func(player.Sample) error) error {
+		return player.Loop(ctx, m.OpenVideo, m.OpenAudio, writeVideo, writeAudio, func(round int) {
+			if round == 1 || round%100 == 0 {
+				log.Info("loop", "round", round)
+			}
+		})
+	}
+	stayInRoom(ctx, log, url, room, name, "player", loop)
+}
+
+// serveFeed keeps a live RTSP feed in the room. While the camera is unreachable the player stays
+// in the room and retries every 5 s.
+func serveFeed(ctx context.Context, log *slog.Logger, url, room, name, feed string) {
+	log = log.With("feed", player.Redact(feed))
+	input := player.RTSPInput(feed)
+	run := func(ctx context.Context, writeVideo, writeAudio func(player.Sample) error) error {
+		for ctx.Err() == nil {
+			if err := playFeed(ctx, log, input, writeVideo, writeAudio); err != nil && ctx.Err() == nil {
+				log.Warn("feed stopped; retrying in 5 s", "err", err)
+			}
+			select {
+			case <-ctx.Done():
+			case <-time.After(5 * time.Second):
+			}
+		}
+		return ctx.Err()
+	}
+	stayInRoom(ctx, log, url, room, name, "camera", run)
+}
+
+func playFeed(ctx context.Context, log *slog.Logger, input []string, writeVideo, writeAudio func(player.Sample) error) error {
+	probeCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	withAudio, err := player.Probe(probeCtx, input)
+	cancel()
+	if err != nil {
+		return err
+	}
+	live, err := player.StartLive(ctx, input, withAudio)
+	if err != nil {
+		return err
+	}
+	log.Info("feed playing", "audio", withAudio)
+	err = player.PlayLive(ctx, live, writeVideo, writeAudio)
+	if msg := live.Err(); msg != "" && ctx.Err() == nil {
+		log.Warn("ffmpeg", "stderr", msg)
+	}
+	return err
+}
+
+// stayInRoom keeps the player joined, rejoining after drops, and runs the media while connected.
+func stayInRoom(ctx context.Context, log *slog.Logger, url, room, name, role string, run mediaFunc) {
 	for {
-		err := play(ctx, log, url, room, name, m)
+		err := play(ctx, log, url, room, name, role, run)
 		if ctx.Err() != nil {
 			return
 		}
@@ -93,7 +150,10 @@ func serveRoom(ctx context.Context, log *slog.Logger, url, room, name, file, cac
 	}
 }
 
-func play(ctx context.Context, log *slog.Logger, url, room, name string, m player.Media) error {
+// mediaFunc sends video and audio samples until ctx ends or the media fails.
+type mediaFunc func(ctx context.Context, writeVideo, writeAudio func(player.Sample) error) error
+
+func play(ctx context.Context, log *slog.Logger, url, room, name, role string, run mediaFunc) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	conn, err := botclient.Dial(ctx, url, false)
@@ -144,17 +204,12 @@ func play(ctx context.Context, log *slog.Logger, url, room, name string, m playe
 		write := func(t *webrtc.TrackLocalStaticSample) func(player.Sample) error {
 			return func(s player.Sample) error { return t.WriteSample(media.Sample{Data: s.Data, Duration: s.Duration}) }
 		}
-		err := player.Loop(ctx, m.OpenVideo, m.OpenAudio, write(video), write(audio), func(round int) {
-			if round == 1 || round%100 == 0 {
-				log.Info("loop", "round", round)
-			}
-		})
-		if err != nil && ctx.Err() == nil {
+		if err := run(ctx, write(video), write(audio)); err != nil && ctx.Err() == nil {
 			log.Error("playback", "err", err)
 			cancel()
 		}
 	}()
-	return botclient.Serve(ctx, conn, pc, room, name, "player", func(send func(any) error) {
+	return botclient.Serve(ctx, conn, pc, room, name, role, func(send func(any) error) {
 		log.Info("joined")
 		_ = send(map[string]any{"type": "camera", "on": true}) // the video shows on our tile
 	})
