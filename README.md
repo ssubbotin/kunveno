@@ -12,7 +12,7 @@ host behind nginx.
 Licensed under the GNU Affero General Public License v3.0 only; a commercial license is available
 (see [License](#license)).
 
-![The lobby: rooms and the pre-join check](docs/images/lobby.png)
+![A room with six participants, cameras on](docs/images/room.png)
 
 ## Features
 
@@ -34,7 +34,7 @@ Licensed under the GNU Affero General Public License v3.0 only; a commercial lic
 - Protection against PIN guessing, Prometheus metrics with a Grafana dashboard, logs in the host
   journal.
 
-![A room with six participants, cameras on](docs/images/room.png)
+![The lobby: rooms and the pre-join check](docs/images/lobby.png)
 
 ## Setup
 
