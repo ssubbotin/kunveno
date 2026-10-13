@@ -1,6 +1,10 @@
 package config
 
 import (
+	"errors"
+	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -61,7 +65,6 @@ func TestParseMinimalDefaults(t *testing.T) {
 
 func TestValidateRejects(t *testing.T) {
 	cases := []struct{ name, yaml, want string }{
-		{"no rooms", "media: {advertise_ip: 10.8.0.1}\nrooms: []\n", "at least one room"},
 		{"bad slug", "media: {advertise_ip: 10.8.0.1}\nrooms: [{slug: Ops!, name: A, pin: \"1234\"}]\n", "slug"},
 		{"dup slug", "media: {advertise_ip: 10.8.0.1}\nrooms: [{slug: a, name: A, pin: \"1234\"}, {slug: a, name: B, pin: \"1234\"}]\n", "duplicate"},
 		{"short pin", "media: {advertise_ip: 10.8.0.1}\nrooms: [{slug: a, name: A, pin: \"12\"}]\n", "pin"},
@@ -171,5 +174,97 @@ func TestPlayerFromRTSP(t *testing.T) {
 		if _, err := Parse([]byte(room(player))); err == nil || !strings.Contains(err.Error(), "player") {
 			t.Errorf("%s: err = %v, want a player error", name, err)
 		}
+	}
+}
+
+func TestNoRoomsIsValid(t *testing.T) {
+	cfg, err := Parse([]byte("media: {advertise_ip: 10.8.0.1}\n"))
+	if err != nil || len(cfg.Rooms) != 0 {
+		t.Fatalf("cfg=%+v err=%v", cfg, err)
+	}
+}
+
+func TestLoadFillsGapsFromEnvironment(t *testing.T) {
+	t.Setenv(EnvListen, "127.0.0.1:8090")
+	t.Setenv(EnvAdvertiseIP, "10.8.0.7")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("# only comments, like a fresh template\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.HTTP.Listen != "127.0.0.1:8090" || cfg.Media.AdvertiseIP != "10.8.0.7" || cfg.Media.UDPPort != DefaultUDPPort ||
+		cfg.UI.Title != DefaultTitle || len(cfg.Rooms) != 0 {
+		t.Fatalf("cfg=%+v", cfg)
+	}
+}
+
+func TestLoadNeedsTheFile(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Load(filepath.Join(dir, "config.yaml")); err == nil {
+		t.Fatal("a missing file must fail")
+	}
+	// What Docker leaves when the bind-mounted file is missing.
+	path := filepath.Join(dir, "mounted.yaml")
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "is a directory") {
+		t.Fatalf("err = %v, want the directory explained", err)
+	}
+}
+
+func TestFileWinsOverEnvironment(t *testing.T) {
+	t.Setenv(EnvListen, "127.0.0.1:8090")
+	t.Setenv(EnvAdvertiseIP, "10.8.0.7")
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("http: {listen: \"127.0.0.1:9000\"}\nmedia: {advertise_ip: 10.8.0.1}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil || cfg.HTTP.Listen != "127.0.0.1:9000" || cfg.Media.AdvertiseIP != "10.8.0.1" {
+		t.Fatalf("cfg=%+v err=%v", cfg, err)
+	}
+}
+
+func TestAdvertiseIPDetectedLast(t *testing.T) {
+	noEnv := func(string) string { return "" }
+	cfg, err := parse(nil, noEnv, func() (string, error) { return "10.9.0.1", nil })
+	if err != nil || cfg.Media.AdvertiseIP != "10.9.0.1" {
+		t.Fatalf("cfg=%+v err=%v", cfg, err)
+	}
+	if _, err := parse(nil, noEnv, func() (string, error) { return "", errors.New("no address") }); err == nil {
+		t.Fatal("a failed detection must fail the load")
+	}
+	called := false
+	if _, err := parse([]byte("media: {advertise_ip: 10.8.0.1}\n"), noEnv, func() (string, error) { called = true; return "", nil }); err != nil || called {
+		t.Fatalf("detection must not run when the file sets the address (err=%v)", err)
+	}
+}
+
+func TestDetectIP(t *testing.T) {
+	ip, err := DetectIP()
+	if err != nil {
+		t.Skipf("no IPv4 address on this machine: %v", err)
+	}
+	if p := net.ParseIP(ip); p == nil || p.To4() == nil || p.IsLoopback() {
+		t.Fatalf("DetectIP = %q", ip)
+	}
+}
+
+// The template users copy to config.yaml must load unchanged.
+func TestTemplateLoadsAsIs(t *testing.T) {
+	data, err := os.ReadFile("../../deploy/kunveno/config.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := parse(data, func(string) string { return "" }, func() (string, error) { return "10.9.0.1", nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.HTTP.Listen != DefaultListen || cfg.Media.AdvertiseIP != "10.9.0.1" || len(cfg.Rooms) == 0 {
+		t.Fatalf("cfg=%+v", cfg)
 	}
 }

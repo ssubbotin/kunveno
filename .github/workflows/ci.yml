@@ -5,6 +5,21 @@ on:
   pull_request:
 
 jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck -s sh deploy/docker/web-cert.sh deploy/docker/check-image.sh
+      # The released archive must run with nothing but the two values filled in.
+      - name: the stack archive is complete
+        run: |
+          make deploy-bundle VERSION=9.9.9
+          mkdir /tmp/stack && tar -xzf dist/kunveno.tgz -C /tmp/stack && cd /tmp/stack/kunveno
+          test -f docker-compose.yml && test -f config.yaml && test -d data && test -d certs && test -d media
+          sed -i -e 's/^PUBLIC_HOST=$/PUBLIC_HOST=10.0.0.5/' -e 's/^GRAFANA_ADMIN_PASSWORD=$/GRAFANA_ADMIN_PASSWORD=x/' .env
+          docker compose config --quiet
+          docker compose config --images | grep -qx 'ghcr.io/ssubbotin/kunveno-server:9.9.9'
+
   go:
     runs-on: ubuntu-latest
     steps:

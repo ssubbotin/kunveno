@@ -1,11 +1,14 @@
-# kunveno-server configuration. Install as /etc/kunveno/config.yaml (mode 0640, group kunveno).
+# kunveno-server configuration: config.yaml next to docker-compose.yml (or /etc/kunveno/config.yaml
+# for the Debian package). Works as is; adjust the rooms, PINs and title. After a change:
+#   docker compose restart server player
 http:
-  listen: 127.0.0.1:8080        # nginx proxies /ws and /api/ here
+  # listen: 127.0.0.1:8080      # nginx proxies /ws and /api/ here; default KUNVENO_UPSTREAM from .env
   # allowed_origins: ["https://meet.example.internal"]   # default: same host as the request
 media:
   udp_port: 7000                # one UDP port for all media; open it on the VPN interface only
   tcp_port: 7000                # ICE-TCP fallback for clients whose UDP path fails; -1 disables
-  advertise_ip: 10.8.0.1        # the VPN address browsers will send media to
+  # advertise_ip: 10.8.0.1      # the address browsers send media to; default KUNVENO_ADVERTISE_IP
+                                # from .env, else the host's primary IPv4 address
   share_max_kbps: 2500
 ui:
   title: kunveno                # shown in the lobby and the browser tab, e.g. your company's name
