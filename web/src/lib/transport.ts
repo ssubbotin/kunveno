@@ -3,7 +3,7 @@
 type Store = Pick<Storage, 'getItem' | 'setItem'>;
 
 const KEY = 'kunveno.tcpUntil';
-const REMEMBER_MS = 24 * 3600_000;
+const REMEMBER_MS = 7 * 24 * 3600_000;
 
 // prefersTcp reports whether this browser saw its UDP media path fail within the last day.
 export function prefersTcp(store: Store, now = Date.now()): boolean {
@@ -11,21 +11,29 @@ export function prefersTcp(store: Store, now = Date.now()): boolean {
   return Number.isFinite(until) && until > now;
 }
 
-// rememberTcp makes the next joins from this browser go over TCP for a day; after that UDP is
-// tried again, in case the person moved to a network where it works.
+// rememberTcp makes the next joins from this browser go over TCP for a week; after that UDP is
+// tried again, in case the person moved to a network where it works. A day was too short: the
+// first join of every morning lost ~40 s on the broken UDP path.
 export function rememberTcp(store: Store, now = Date.now()): void {
   store.setItem(KEY, String(now + REMEMBER_MS));
 }
 
 // watchConnection turns peer connection states into a single failure report: at once on
-// "failed", or after "disconnected" lasts the grace period. Browsers take ~30 s to reach
-// "failed" on their own, which is a long silence for a call.
-export function watchConnection(onFailed: () => void, graceMs = 5000): (state: RTCPeerConnectionState) => void {
+// "failed", after "disconnected" lasts graceMs, or when the connection does not come up within
+// connectMs of starting (a UDP path that never opens leaves it "connecting" until the server
+// gives up, ~40 s). Browsers take ~30 s to reach "failed" on their own, a long silence for a call.
+export function watchConnection(onFailed: () => void, graceMs = 5000, connectMs = 8000): (state: RTCPeerConnectionState) => void {
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let connectTimer: ReturnType<typeof setTimeout> | null = null;
+  let everConnected = false;
   let reported = false;
-  const report = () => {
+  const stop = () => {
     if (timer) clearTimeout(timer);
-    timer = null;
+    if (connectTimer) clearTimeout(connectTimer);
+    timer = connectTimer = null;
+  };
+  const report = () => {
+    stop();
     if (!reported) {
       reported = true;
       onFailed();
@@ -34,11 +42,13 @@ export function watchConnection(onFailed: () => void, graceMs = 5000): (state: R
   return (state) => {
     if (state === 'failed') {
       report();
+    } else if (state === 'connected') {
+      everConnected = true;
+      stop();
     } else if (state === 'disconnected') {
       timer ??= setTimeout(report, graceMs);
-    } else if (timer) {
-      clearTimeout(timer);
-      timer = null;
+    } else if ((state === 'new' || state === 'connecting') && !everConnected) {
+      connectTimer ??= setTimeout(report, connectMs);
     }
   };
 }

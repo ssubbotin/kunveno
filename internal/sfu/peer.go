@@ -321,11 +321,17 @@ func (p *Peer) HandleAnswer(sdp string) error {
 func (p *Peer) AddICECandidate(c webrtc.ICECandidateInit) error { return p.pc.AddICECandidate(c) }
 
 func (p *Peer) fail(err error) {
-	p.log.Error("negotiation failed", "err", err)
-	metrics.NegotiationErrors.Inc()
 	p.mu.Lock()
 	p.negotiating = false
 	p.mu.Unlock()
+	if p.pc.ConnectionState() == webrtc.PeerConnectionStateClosed {
+		// The participant is leaving and closed its connection while others were leaving too;
+		// the session ends through its socket. Not a failure.
+		p.log.Debug("negotiation on a closed connection skipped", "err", err)
+		return
+	}
+	p.log.Error("negotiation failed", "err", err)
+	metrics.NegotiationErrors.Inc()
 	if p.h.OnFailed != nil {
 		p.h.OnFailed(p)
 	}

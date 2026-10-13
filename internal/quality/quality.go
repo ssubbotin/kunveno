@@ -1,7 +1,10 @@
 // Package quality turns media statistics into a coarse connection grade for the participant list.
 package quality
 
-import "time"
+import (
+	"sort"
+	"time"
+)
 
 const (
 	Good = "good"
@@ -35,40 +38,41 @@ func Grade(s Sample) string {
 	return Good
 }
 
-func rank(g string) int {
-	switch g {
-	case Good:
-		return 2
-	case Fair:
-		return 1
-	}
-	return 0
-}
-
-// Tracker smooths grades for display: a worse grade shows at once, a better one only after two
-// samples in a row agree, so a single lucky sample does not make the indicator flicker.
+// Tracker smooths grades for display: it grades the median of the last three samples, taken per
+// measure. A problem shows once it holds for two samples of three (~6 s at the server's 3 s
+// sampling); a single spike in one window, common on a VPN, does not move the indicator. With two
+// samples so far the better one counts, so a bad first moment does not flash.
 type Tracker struct {
-	shown   string
-	pending string
+	last  []Sample // up to three, oldest first
+	shown string
 }
 
-// Update returns the grade to show and whether it differs from the previous one.
+// Update adds a sample and returns the grade to show and whether it differs from the previous one.
 func (t *Tracker) Update(s Sample) (string, bool) {
-	g := Grade(s)
-	switch {
-	case t.shown == "" || rank(g) < rank(t.shown):
-		t.pending = ""
-	case rank(g) > rank(t.shown):
-		if t.pending != g {
-			t.pending = g
-			return t.shown, false
-		}
-		t.pending = ""
-	default:
-		t.pending = ""
-		return t.shown, false
+	t.last = append(t.last, s)
+	if len(t.last) > 3 {
+		t.last = t.last[1:]
 	}
+	g := Grade(median(t.last))
 	changed := g != t.shown
 	t.shown = g
 	return g, changed
+}
+
+// median takes each measure's middle value; of two, the smaller (better) one.
+func median(ss []Sample) Sample {
+	pick := func(get func(Sample) float64) float64 {
+		v := make([]float64, len(ss))
+		for i, s := range ss {
+			v[i] = get(s)
+		}
+		sort.Float64s(v)
+		return v[(len(v)-1)/2]
+	}
+	return Sample{
+		UpLoss:   pick(func(s Sample) float64 { return s.UpLoss }),
+		DownLoss: pick(func(s Sample) float64 { return s.DownLoss }),
+		RTT:      time.Duration(pick(func(s Sample) float64 { return float64(s.RTT) })),
+		Jitter:   time.Duration(pick(func(s Sample) float64 { return float64(s.Jitter) })),
+	}
 }

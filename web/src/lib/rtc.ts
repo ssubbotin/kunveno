@@ -29,6 +29,7 @@ export class Rtc {
       this.onTrack(stream ? stream.id : '', ev.track);
     };
     const watch = watchConnection(() => this.onFailed());
+    watch(this.pc.connectionState); // "new": starts the window for the connection to come up
     this.pc.onconnectionstatechange = () => {
       watch(this.pc.connectionState);
       if (this.pc.connectionState === 'connected') {
