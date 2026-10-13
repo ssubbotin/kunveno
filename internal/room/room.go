@@ -21,7 +21,7 @@ type Participant struct {
 	Name  string
 	Muted bool
 	Bot   bool // a server-side helper such as the echo, not a person
-	// BotKind says which helper: BotEcho or BotPlayer.
+	// BotKind says which helper: BotEcho, BotPlayer or BotCamera.
 	BotKind string
 	// Quality is the connection grade ("good", "fair", "poor"), empty until measured.
 	Quality string
@@ -89,6 +89,7 @@ func (r *Room) Join(id, name, pin string) error {
 const (
 	BotEcho   = "echo"
 	BotPlayer = "player"
+	BotCamera = "camera"
 )
 
 // JoinBot admits a trusted server-side helper without a PIN; capacity still applies.

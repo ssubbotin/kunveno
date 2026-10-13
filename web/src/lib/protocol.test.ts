@@ -35,9 +35,9 @@ describe('parseServerMessage', () => {
       .toEqual({ type: 'error', code: 'bad_pin', message: 'x' });
   });
   it('reads which helper a bot is', () => {
-    const m = parseServerMessage('{"type":"participants","participants":[{"id":"p","name":"Intro","muted":false,"bot":true,"bot_kind":"player"},{"id":"e","name":"x","muted":false,"bot":true,"bot_kind":"echo"},{"id":"b","name":"y","muted":false,"bot":true,"bot_kind":"other"}],"sharer":""}');
+    const m = parseServerMessage('{"type":"participants","participants":[{"id":"p","name":"Intro","muted":false,"bot":true,"bot_kind":"player"},{"id":"e","name":"x","muted":false,"bot":true,"bot_kind":"echo"},{"id":"b","name":"y","muted":false,"bot":true,"bot_kind":"other"},{"id":"c","name":"Двор","muted":false,"bot":true,"bot_kind":"camera"}],"sharer":""}');
     if (m.type !== 'participants') throw new Error('type');
-    expect(m.participants.map((p) => p.botKind)).toEqual(['player', 'echo', undefined]);
+    expect(m.participants.map((p) => p.botKind)).toEqual(['player', 'echo', undefined, 'camera']);
   });
   it('reads a reaction and refuses a malformed one', () => {
     expect(parseServerMessage('{"type":"reaction","from":"a","emoji":"🎉"}')).toEqual({ type: 'reaction', from: 'a', emoji: '🎉' });

@@ -743,3 +743,29 @@ func TestReactionsOutsideTheConfiguredSetAreIgnored(t *testing.T) {
 		t.Fatalf("reaction = %q, want 🚀 only", m.Emoji)
 	}
 }
+
+// A live camera joins with its own role, so the client can label it apart from a looped file;
+// it needs a room with a player configured, like the player.
+func TestCameraRoleNeedsAPlayerRoom(t *testing.T) {
+	e := newEnv(t, 15)
+	c := dial(t, e)
+	send(t, c, `{"type":"join","room":"ops","name":"Двор","role":"camera"}`)
+	if m := expect(t, c, "error"); m.Code != CodeBadRoom {
+		t.Fatalf("camera in a room without a player: %q", m.Code)
+	}
+	r, _ := e.h.reg.Get("ops")
+	r.SetPlayer(true)
+	cam := dial(t, e)
+	send(t, cam, `{"type":"join","room":"ops","name":"Двор","role":"camera"}`)
+	expect(t, cam, "joined")
+	ca, _ := join(t, e, "Ann")
+	for {
+		m := expect(t, ca, "participants")
+		if len(m.Participants) == 2 {
+			if m.Participants[0].BotKind != "camera" {
+				t.Fatalf("camera participant = %+v", m.Participants[0])
+			}
+			break
+		}
+	}
+}

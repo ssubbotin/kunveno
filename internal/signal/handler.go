@@ -276,7 +276,7 @@ func (h *Handler) join(conn *websocket.Conn, cancel context.CancelFunc, m Client
 	switch {
 	case m.Role == RoleEcho && !lr.room.Echo():
 		return nil, CodeBadRoom, "echo not requested in this room"
-	case m.Role == RolePlayer && !lr.room.HasPlayer():
+	case (m.Role == RolePlayer || m.Role == RoleCamera) && !lr.room.HasPlayer():
 		return nil, CodeBadRoom, "no player configured for this room"
 	}
 	h.replaceClient(lr, m.Client)

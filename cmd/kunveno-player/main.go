@@ -92,7 +92,7 @@ func serveRoom(ctx context.Context, log *slog.Logger, url, room, name, file, cac
 			}
 		})
 	}
-	stayInRoom(ctx, log, url, room, name, loop)
+	stayInRoom(ctx, log, url, room, name, "player", loop)
 }
 
 // serveFeed keeps a live RTSP feed in the room. While the camera is unreachable the player stays
@@ -112,7 +112,7 @@ func serveFeed(ctx context.Context, log *slog.Logger, url, room, name, feed stri
 		}
 		return ctx.Err()
 	}
-	stayInRoom(ctx, log, url, room, name, run)
+	stayInRoom(ctx, log, url, room, name, "camera", run)
 }
 
 func playFeed(ctx context.Context, log *slog.Logger, input []string, writeVideo, writeAudio func(player.Sample) error) error {
@@ -135,9 +135,9 @@ func playFeed(ctx context.Context, log *slog.Logger, input []string, writeVideo,
 }
 
 // stayInRoom keeps the player joined, rejoining after drops, and runs the media while connected.
-func stayInRoom(ctx context.Context, log *slog.Logger, url, room, name string, run mediaFunc) {
+func stayInRoom(ctx context.Context, log *slog.Logger, url, room, name, role string, run mediaFunc) {
 	for {
-		err := play(ctx, log, url, room, name, run)
+		err := play(ctx, log, url, room, name, role, run)
 		if ctx.Err() != nil {
 			return
 		}
@@ -153,7 +153,7 @@ func stayInRoom(ctx context.Context, log *slog.Logger, url, room, name string, r
 // mediaFunc sends video and audio samples until ctx ends or the media fails.
 type mediaFunc func(ctx context.Context, writeVideo, writeAudio func(player.Sample) error) error
 
-func play(ctx context.Context, log *slog.Logger, url, room, name string, run mediaFunc) error {
+func play(ctx context.Context, log *slog.Logger, url, room, name, role string, run mediaFunc) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	conn, err := botclient.Dial(ctx, url, false)
@@ -209,7 +209,7 @@ func play(ctx context.Context, log *slog.Logger, url, room, name string, run med
 			cancel()
 		}
 	}()
-	return botclient.Serve(ctx, conn, pc, room, name, "player", func(send func(any) error) {
+	return botclient.Serve(ctx, conn, pc, room, name, role, func(send func(any) error) {
 		log.Info("joined")
 		_ = send(map[string]any{"type": "camera", "on": true}) // the video shows on our tile
 	})
