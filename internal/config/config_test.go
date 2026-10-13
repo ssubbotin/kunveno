@@ -116,8 +116,8 @@ func TestPlayerRoom(t *testing.T) {
 		"empty file": "media: {advertise_ip: 10.8.0.1}\nrooms: [{slug: tv, name: TV, pin: \"123456\", player: {file: \"\"}}]\n",
 		"escape":     "media: {advertise_ip: 10.8.0.1}\nrooms: [{slug: tv, name: TV, pin: \"123456\", player: {file: ../etc/passwd}}]\n",
 	} {
-		if _, err := Parse([]byte(yaml)); err == nil || !strings.Contains(err.Error(), "player.file") {
-			t.Errorf("%s: err = %v, want player.file", name, err)
+		if _, err := Parse([]byte(yaml)); err == nil || !strings.Contains(err.Error(), "player") {
+			t.Errorf("%s: err = %v, want a player error", name, err)
 		}
 	}
 }
@@ -146,6 +146,30 @@ func TestReactions(t *testing.T) {
 	} {
 		if _, err := Parse([]byte("ui: {reactions: " + list + "}\n" + base)); err == nil || !strings.Contains(err.Error(), "ui.reactions") {
 			t.Errorf("%s: err = %v, want ui.reactions", name, err)
+		}
+	}
+}
+
+func TestPlayerFromRTSP(t *testing.T) {
+	room := func(player string) string {
+		return "media: {advertise_ip: 10.8.0.1}\nrooms: [{slug: yard, name: Yard, pin: \"123456\", player: " + player + "}]\n"
+	}
+	cfg, err := Parse([]byte(room(`{url: "rtsp://user:secret@10.10.10.50:554/stream1"}`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := cfg.Rooms[0].Player; p.URL != "rtsp://user:secret@10.10.10.50:554/stream1" || p.File != "" || p.Name != "10.10.10.50" {
+		t.Fatalf("player = %+v", p)
+	}
+	for name, player := range map[string]string{
+		"both":      `{file: a.mp4, url: "rtsp://h/s"}`,
+		"neither":   `{name: X}`,
+		"http":      `{url: "http://h/s"}`,
+		"no host":   `{url: "rtsp:///s"}`,
+		"not a url": `{url: "::nope"}`,
+	} {
+		if _, err := Parse([]byte(room(player))); err == nil || !strings.Contains(err.Error(), "player") {
+			t.Errorf("%s: err = %v, want a player error", name, err)
 		}
 	}
 }

@@ -134,7 +134,12 @@ func (s *ivfSource) Next() (Sample, error) {
 	return Sample{Data: frame, Duration: s.tick}, nil
 }
 
-func (s *ivfSource) Close() error { return s.f.Close() }
+func (s *ivfSource) Close() error {
+	if s.f == nil { // a live source reads ffmpeg's pipe; Live closes it
+		return nil
+	}
+	return s.f.Close()
+}
 
 // oggSource reads Opus packets, one per page (ffmpeg writes them so with -page_duration 20000);
 // a page lasts as long as its granule position advanced, in 48 kHz samples.

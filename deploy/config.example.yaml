@@ -26,6 +26,13 @@ rooms:
   #   player:
   #     file: intro.mp4       # any format ffmpeg reads; transcoded once to VP8/Opus 640x360
   #     name: Intro           # tile label; defaults to the file name
+  # A room with a live camera: the player encodes the RTSP feed as it arrives, always on.
+  # - slug: yard
+  #   name: Yard camera
+  #   pin: "123456"
+  #   player:
+  #     url: rtsp://user:password@10.10.10.50:554/stream1   # rtsp:// or rtsps://; over TCP
+  #     name: Yard            # defaults to the camera's host
   - slug: all-hands
     name: All hands
     pin: "9999"

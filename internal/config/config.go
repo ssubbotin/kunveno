@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -26,10 +27,13 @@ type Room struct {
 	Player *Player `yaml:"player"`
 }
 
-// Player names the media file a room plays in a loop.
+// Player is what a room plays: a media file in a loop, or a live RTSP feed. Exactly one of File
+// and URL is set.
 type Player struct {
 	// File is relative to the player's media directory (~/kunveno/media on the host).
 	File string `yaml:"file"`
+	// URL is an rtsp:// or rtsps:// feed, credentials included if the camera needs them.
+	URL string `yaml:"url"`
 	// Name labels the player's tile; defaults to the file name without its extension.
 	Name string `yaml:"name"`
 }
@@ -120,8 +124,14 @@ func (c *Config) applyDefaults() {
 	}
 	for i := range c.Rooms {
 		if p := c.Rooms[i].Player; p != nil && strings.TrimSpace(p.Name) == "" {
-			base := filepath.Base(p.File)
-			p.Name = strings.TrimSuffix(base, filepath.Ext(base))
+			if p.URL != "" {
+				if u, err := url.Parse(p.URL); err == nil {
+					p.Name = u.Hostname()
+				}
+			} else {
+				base := filepath.Base(p.File)
+				p.Name = strings.TrimSuffix(base, filepath.Ext(base))
+			}
 		}
 		if c.Rooms[i].MaxParticipants == 0 {
 			c.Rooms[i].MaxParticipants = DefaultMaxParticipants
@@ -168,10 +178,16 @@ func (c *Config) Validate() error {
 		if n := len(r.PIN); n < 4 || n > 16 {
 			errs = append(errs, fmt.Errorf("rooms[%d].pin must be 4..16 characters", i))
 		}
-		if r.Player != nil {
-			f := r.Player.File
-			if f == "" || filepath.IsAbs(f) || !filepath.IsLocal(f) {
-				errs = append(errs, fmt.Errorf("rooms[%d].player.file %q must be a file name inside the media directory", i, f))
+		if p := r.Player; p != nil {
+			switch {
+			case (p.File == "") == (p.URL == ""):
+				errs = append(errs, fmt.Errorf("rooms[%d].player needs exactly one of file and url", i))
+			case p.File != "" && (filepath.IsAbs(p.File) || !filepath.IsLocal(p.File)):
+				errs = append(errs, fmt.Errorf("rooms[%d].player.file %q must be a file name inside the media directory", i, p.File))
+			case p.URL != "":
+				if u, err := url.Parse(p.URL); err != nil || (u.Scheme != "rtsp" && u.Scheme != "rtsps") || u.Hostname() == "" {
+					errs = append(errs, fmt.Errorf("rooms[%d].player.url must be rtsp:// or rtsps:// with a host", i))
+				}
 			}
 		}
 		if r.MaxParticipants < 2 || r.MaxParticipants > MaxParticipantsLimit {
