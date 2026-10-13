@@ -50,12 +50,12 @@ func Transcode(ctx context.Context, src, cacheDir string) (Media, error) {
 		return Media{}, err
 	}
 	m := Media{Video: filepath.Join(cacheDir, key+".ivf")}
-	if err := encode(ctx, src, m.Video, videoArgs); err != nil {
+	if err := encode(ctx, []string{"-i", src}, m.Video, videoArgs); err != nil {
 		return Media{}, fmt.Errorf("video: %w", err)
 	}
 	m.OpenVideo = func() (Source, error) { return openIVF(m.Video) }
 	audio := filepath.Join(cacheDir, key+".ogg")
-	switch err := encode(ctx, src, audio, audioArgs); {
+	switch err := encode(ctx, []string{"-i", src}, audio, audioArgs); {
 	case errors.Is(err, errNoStream):
 		// a file without sound plays silently
 	case err != nil:
@@ -67,10 +67,29 @@ func Transcode(ctx context.Context, src, cacheDir string) (Media, error) {
 	return m, nil
 }
 
+// TranscodeStill turns a picture into a silent 2-second clip (VP8 in IVF, cached like Transcode)
+// that loops as a still camera image; the synthetic participants of tools/loadgen use it.
+func TranscodeStill(ctx context.Context, src, cacheDir string) (Media, error) {
+	st, err := os.Stat(src)
+	if err != nil {
+		return Media{}, err
+	}
+	sum := sha256.Sum256([]byte(fmt.Sprintf("still|%s|%d|%d|%s", src, st.Size(), st.ModTime().UnixNano(), settingsVersion)))
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
+		return Media{}, err
+	}
+	m := Media{Video: filepath.Join(cacheDir, hex.EncodeToString(sum[:8])+".ivf")}
+	if err := encode(ctx, []string{"-loop", "1", "-t", "2", "-i", src}, m.Video, videoArgs); err != nil {
+		return Media{}, fmt.Errorf("video: %w", err)
+	}
+	m.OpenVideo = func() (Source, error) { return openIVF(m.Video) }
+	return m, nil
+}
+
 var errNoStream = errors.New("no such stream in the file")
 
 // encode runs ffmpeg into a temporary file and renames it, so a half-written file is never cached.
-func encode(ctx context.Context, src, dst string, args []string) error {
+func encode(ctx context.Context, input []string, dst string, args []string) error {
 	if _, err := os.Stat(dst); err == nil {
 		return nil
 	}
@@ -78,7 +97,7 @@ func encode(ctx context.Context, src, dst string, args []string) error {
 		return errNoStream // known to have no such stream
 	}
 	tmp := dst + ".part"
-	full := append([]string{"-nostdin", "-y", "-loglevel", "error", "-i", src}, args...)
+	full := append(append([]string{"-nostdin", "-y", "-loglevel", "error"}, input...), args...)
 	full = append(full, tmp)
 	out, err := exec.CommandContext(ctx, "ffmpeg", full...).CombinedOutput()
 	if err != nil {

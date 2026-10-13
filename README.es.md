@@ -208,7 +208,8 @@ Ejecución local: copia `deploy/kunveno/config.yaml`, pon en `media.advertise_ip
 máquina en la red local (los navegadores no recogen candidatos de loopback, así que con `127.0.0.1`
 no hay audio ni vídeo), arranca `bin/kunveno-server -config <archivo>` y luego
 `cd web && npm run dev` (Vite redirige `/ws` y `/api/` a `127.0.0.1:8080`).
-`go run ./tools/loadgen -n 14 -duration 30s` añade participantes sintéticos. Antes de una versión,
+`go run ./tools/loadgen -n 14 -duration 30s` añade participantes sintéticos (`-camera <imagen o
+directorio>` les da cámaras con una imagen fija, `-names a,b,c` les pone nombre; requiere ffmpeg). Antes de una versión,
 repasa las comprobaciones manuales de [docs/test-matrix.md](docs/test-matrix.md).
 
 ## Configuración

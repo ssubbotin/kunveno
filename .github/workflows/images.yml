@@ -145,6 +145,10 @@ jobs:
         run: grep -q "kunveno-server:\${KUNVENO_VERSION:-${GITHUB_REF_NAME#v}}" dist/kunveno/docker-compose.yml
       - env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
-          dist/kunveno.tgz
+        # A re-run (for example after re-pushing a tag) refreshes the archive of an existing release.
+        run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/kunveno.tgz --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes --verify-tag dist/kunveno.tgz
+          fi
