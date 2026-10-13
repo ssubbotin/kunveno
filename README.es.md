@@ -13,7 +13,7 @@ todo corre en un solo equipo detrás de nginx.
 Licencia GNU Affero General Public License v3.0 only; hay disponible una licencia comercial
 (ver [Licencia](#licencia)).
 
-![La página de inicio: salas y comprobación antes de entrar](docs/images/lobby.png)
+![Una sala con seis participantes](docs/images/room.png)
 
 ## Funciones
 
@@ -36,7 +36,7 @@ Licencia GNU Affero General Public License v3.0 only; hay disponible una licenci
 - Protección contra la adivinación del PIN, métricas de Prometheus con un panel de Grafana,
   registros en el diario del sistema.
 
-![Una sala con seis participantes](docs/images/room.png)
+![La página de inicio: salas y comprobación antes de entrar](docs/images/lobby.png)
 
 ## Instalación
 
