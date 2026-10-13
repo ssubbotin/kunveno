@@ -121,3 +121,31 @@ func TestPlayerRoom(t *testing.T) {
 		}
 	}
 }
+
+func TestReactions(t *testing.T) {
+	base := "media: {advertise_ip: 10.8.0.1}\nrooms: [{slug: a, name: A, pin: \"1234\"}]\n"
+	cfg, err := Parse([]byte(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"👍", "👎", "👏", "😂", "❤️", "🎉", "😮", "🤔", "☕", "👋"}
+	if strings.Join(cfg.UI.Reactions, " ") != strings.Join(want, " ") {
+		t.Fatalf("default reactions = %v", cfg.UI.Reactions)
+	}
+	cfg, err = Parse([]byte("ui: {reactions: [\"🚀\", \"✅\"]}\n" + base))
+	if err != nil || strings.Join(cfg.UI.Reactions, " ") != "🚀 ✅" {
+		t.Fatalf("custom reactions = %v, %v", cfg.UI.Reactions, err)
+	}
+	for name, list := range map[string]string{
+		"text":      `["ok"]`,
+		"spaces":    `["👍 👍"]`,
+		"empty":     `[""]`,
+		"duplicate": `["👍", "👍"]`,
+		"too many":  `["😀","😁","😂","😃","😄","😅","😆","😇","😈","😉","😊","😋","😌","😍","😎","😏","😐"]`,
+		"too long":  `["👍👍👍👍👍"]`,
+	} {
+		if _, err := Parse([]byte("ui: {reactions: " + list + "}\n" + base)); err == nil || !strings.Contains(err.Error(), "ui.reactions") {
+			t.Errorf("%s: err = %v, want ui.reactions", name, err)
+		}
+	}
+}

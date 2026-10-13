@@ -39,4 +39,8 @@ describe('parseServerMessage', () => {
     if (m.type !== 'participants') throw new Error('type');
     expect(m.participants.map((p) => p.botKind)).toEqual(['player', 'echo', undefined]);
   });
+  it('reads a reaction and refuses a malformed one', () => {
+    expect(parseServerMessage('{"type":"reaction","from":"a","emoji":"🎉"}')).toEqual({ type: 'reaction', from: 'a', emoji: '🎉' });
+    expect(() => parseServerMessage('{"type":"reaction","from":"a"}')).toThrow();
+  });
 });

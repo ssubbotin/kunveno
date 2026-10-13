@@ -192,6 +192,8 @@ type anyMsg struct {
 	Self         ParticipantInfo   `json:"self"`
 	Echo         bool              `json:"echo"`
 	RetryAfter   int               `json:"retry_after"`
+	From         string            `json:"from"`
+	Emoji        string            `json:"emoji"`
 }
 
 // expect reads frames until one of the wanted type arrives.
@@ -701,4 +703,43 @@ func TestSameClientReplacesItsEarlierSession(t *testing.T) {
 	send(t, other, `{"type":"join","room":"ops","pin":"1234","name":"Вероника","client":"page-zzz999"}`)
 	expect(t, other, "joined")
 	waitFor(t, func() bool { return e.h.count("ops") == 2 })
+}
+
+func TestReactionReachesEveryoneAndIsRateLimited(t *testing.T) {
+	e := newEnv(t, 15)
+	ca, ida := join(t, e, "Ann")
+	cb, _ := join(t, e, "Bob")
+	send(t, ca, `{"type":"react","emoji":"❤️"}`)
+	for _, c := range []*websocket.Conn{ca, cb} {
+		if m := expect(t, c, "reaction"); m.From != ida || m.Emoji != "❤️" {
+			t.Fatalf("reaction = %+v", m)
+		}
+	}
+	// A burst after the limit has passed: only its first gets through, then one more later.
+	time.Sleep(800 * time.Millisecond)
+	send(t, ca, `{"type":"react","emoji":"👍"}`)
+	send(t, ca, `{"type":"react","emoji":"🎉"}`)
+	if m := expect(t, cb, "reaction"); m.Emoji != "👍" {
+		t.Fatalf("first of the burst = %q", m.Emoji)
+	}
+	time.Sleep(800 * time.Millisecond)
+	send(t, ca, `{"type":"react","emoji":"👏"}`)
+	if m := expect(t, cb, "reaction"); m.Emoji != "👏" {
+		t.Fatalf("after the limit = %q, want 👏 (🎉 must have been dropped)", m.Emoji)
+	}
+}
+
+// The reaction set comes from the configuration; anything outside it (say, from a page opened
+// before the set changed) is ignored without dropping the connection.
+func TestReactionsOutsideTheConfiguredSetAreIgnored(t *testing.T) {
+	e := newEnv(t, 15)
+	e.h.SetReactions([]string{"🚀"})
+	ca, _ := join(t, e, "Ann")
+	cb, _ := join(t, e, "Bob")
+	send(t, ca, `{"type":"react","emoji":"👍"}`)
+	time.Sleep(800 * time.Millisecond)
+	send(t, ca, `{"type":"react","emoji":"🚀"}`)
+	if m := expect(t, cb, "reaction"); m.Emoji != "🚀" {
+		t.Fatalf("reaction = %q, want 🚀 only", m.Emoji)
+	}
 }

@@ -94,6 +94,7 @@ const ru = {
   'control.noVideoActive': 'Видео других выключено',
   'control.noVideoHint': 'Не получать видео с камер других участников: звук и показ экрана останутся. Помогает на слабой связи.',
   'control.leave': 'Выйти',
+  'control.react': 'Реакция',
 
   'people.label': 'Участники',
   'people.you': 'вы',
@@ -103,6 +104,7 @@ const ru = {
   'people.sharing': 'показывает экран',
   'people.muted': 'микрофон выключен',
   'people.speaking': 'говорит',
+  'people.reacted': 'реакция {emoji}',
   'quality.good': 'Связь хорошая',
   'quality.fair': 'Связь средняя: возможны задержки и пропуски',
   'quality.poor': 'Связь плохая: звук может прерываться',
@@ -200,6 +202,7 @@ const en: Messages = {
   'control.noVideoActive': "Others' video off",
   'control.noVideoHint': "Stop receiving other participants' cameras; audio and screen sharing stay. Helps on a weak connection.",
   'control.leave': 'Leave',
+  'control.react': 'React',
 
   'people.label': 'Participants',
   'people.you': 'you',
@@ -209,6 +212,7 @@ const en: Messages = {
   'people.sharing': 'sharing screen',
   'people.muted': 'microphone off',
   'people.speaking': 'speaking',
+  'people.reacted': 'reacted {emoji}',
   'quality.good': 'Good connection',
   'quality.fair': 'Fair connection: some delay or dropouts',
   'quality.poor': 'Poor connection: audio may break up',
@@ -303,6 +307,7 @@ const es: Messages = {
   'control.noVideoActive': 'Vídeo de otros apagado',
   'control.noVideoHint': 'No recibir las cámaras de los demás; el audio y la pantalla compartida siguen. Ayuda con una conexión débil.',
   'control.leave': 'Salir',
+  'control.react': 'Reaccionar',
 
   'people.label': 'Participantes',
   'people.you': 'tú',
@@ -312,6 +317,7 @@ const es: Messages = {
   'people.sharing': 'compartiendo pantalla',
   'people.muted': 'micrófono apagado',
   'people.speaking': 'hablando',
+  'people.reacted': 'reacción {emoji}',
   'quality.good': 'Conexión buena',
   'quality.fair': 'Conexión regular: puede haber retrasos o cortes',
   'quality.poor': 'Conexión mala: el audio puede cortarse',

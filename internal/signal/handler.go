@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"github.com/ssubbotin/kunveno/internal/config"
 	"github.com/ssubbotin/kunveno/internal/metrics"
 	"github.com/ssubbotin/kunveno/internal/quality"
 	"github.com/ssubbotin/kunveno/internal/ratelimit"
@@ -54,6 +55,7 @@ type Handler struct {
 
 	qualityEvery time.Duration      // how often connection quality is sampled
 	pins         *ratelimit.Limiter // wrong-PIN limit per client address
+	reactions    map[string]bool    // emoji participants may send (ui.reactions)
 
 	mu   sync.Mutex
 	live map[string]*liveRoom // slug -> members
@@ -66,10 +68,11 @@ type liveRoom struct {
 
 type session struct {
 	id, name, slug string
-	bot            bool   // a helper: the echo or a player
-	botKind        string // RoleEcho or RolePlayer
-	noVideo        bool   // declined other participants' cameras; guarded by Handler.mu
-	client         string // the page's id from join, if it sent one
+	bot            bool      // a helper: the echo or a player
+	botKind        string    // RoleEcho or RolePlayer
+	noVideo        bool      // declined other participants' cameras; guarded by Handler.mu
+	client         string    // the page's id from join, if it sent one
+	lastReaction   time.Time // for the reaction rate limit; only the session's read loop uses it
 	joined         time.Time
 	conn           *websocket.Conn
 	peer           MediaPeer
@@ -79,7 +82,7 @@ type session struct {
 
 func New(reg *room.Registry, media Media, origins []string, log *slog.Logger) *Handler {
 	return &Handler{reg: reg, media: media, origins: origins, log: log, live: map[string]*liveRoom{}, qualityEvery: 3 * time.Second,
-		pins: ratelimit.New(5, 10*time.Minute, time.Minute)}
+		pins: ratelimit.New(5, 10*time.Minute, time.Minute), reactions: set(config.DefaultReactions)}
 }
 
 // lookup returns the live state of a registered room, creating it on first use. Rooms can be
@@ -234,6 +237,8 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 			if lr.room.SetCamera(s.id, *m.On) {
 				h.broadcast(lr)
 			}
+		case "react":
+			h.react(s, m.Emoji)
 		case "video":
 			h.setReceiveVideo(s, *m.Receive)
 		case "echo":
@@ -587,4 +592,37 @@ func (h *Handler) replaceClient(lr *liveRoom, client string) {
 	// Close waits for the other side's answer; the new join must not wait for it.
 	go func() { _ = old.conn.Close(websocket.StatusNormalClosure, "replaced") }()
 	old.cancel()
+}
+
+// reactionGap is the least time between two reactions of one participant; faster ones are dropped.
+const reactionGap = 700 * time.Millisecond
+
+// react shows a participant's emoji to everyone in the room, the sender included.
+func (h *Handler) react(s *session, emoji string) {
+	if s.bot || !h.reactions[emoji] || time.Since(s.lastReaction) < reactionGap {
+		return // a helper, an emoji outside the configured set, or too fast
+	}
+	s.lastReaction = time.Now()
+	metrics.Reactions.WithLabelValues(emoji).Inc()
+	lr, _ := h.lookup(s.slug)
+	h.mu.Lock()
+	members := lr.membersExcept("")
+	h.mu.Unlock()
+	msg := Reaction(s.id, emoji)
+	for _, o := range members {
+		if err := o.write(msg); err != nil {
+			o.log.Warn("reaction write", "err", err)
+		}
+	}
+}
+
+// SetReactions sets the emoji participants may send, from ui.reactions. Call before serving.
+func (h *Handler) SetReactions(list []string) { h.reactions = set(list) }
+
+func set(list []string) map[string]bool {
+	m := make(map[string]bool, len(list))
+	for _, e := range list {
+		m[e] = true
+	}
+	return m
 }

@@ -116,6 +116,7 @@ Upgrading is `KUNVENO_VERSION=<release>` in `.env` followed by
 | `media.udp_port`, `media.tcp_port` | media ports (7000 by default; `tcp_port: -1` turns the TCP fallback off) |
 | `media.share_max_kbps` | bitrate cap for screen sharing |
 | `ui.title` | title shown in the lobby and the browser tab |
+| `ui.reactions` | emoji participants can send as reactions (1..16; ten by default) |
 | `rooms[]` | `slug`, `name`, `pin`, `max_participants`, and optionally `player: {file, name}` for a video loop from the media directory |
 | `rooms_file` | where rooms created in the lobby are saved (`/var/lib/kunveno/rooms.json`) |
 

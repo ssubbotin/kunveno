@@ -4,6 +4,7 @@
   import type { Session } from './session';
   import { i18n, t } from './i18n/i18n.svelte';
   import { errorText } from './i18n/errors';
+  import { site } from './site.svelte';
 
   let { session }: { session: Session } = $props();
   // The session object lives for the whole page; Room never receives another one.
@@ -15,6 +16,7 @@
 
   const sharerName = $derived(rs.participants.find((p) => p.id === rs.sharer)?.name ?? '');
   const shareBusy = $derived(rs.sharer !== '' && !rs.isSharing);
+  let picking = $state(false);
   const echoPresent = $derived(rs.participants.some((p) => p.botKind === 'echo'));
   const statusText = $derived(
     rs.status === 'connected' ? (rs.transport === 'tcp' ? t('status.backup') : t('status.connected'))
@@ -44,7 +46,7 @@
     {#if screenTrack}
       <ScreenView track={screenTrack} label={rs.isSharing ? t('screen.yours') : t('screen.theirs', { name: sharerName })} />
     {/if}
-    <ParticipantList participants={rs.participants} selfId={rs.selfId} sharer={rs.sharer} speaking={rs.speaking} videos={rs.videos} compact={screenTrack !== null} />
+    <ParticipantList participants={rs.participants} selfId={rs.selfId} sharer={rs.sharer} speaking={rs.speaking} videos={rs.videos} reactions={rs.reactions} compact={screenTrack !== null} />
   </div>
 
   <footer class="controls">
@@ -93,6 +95,20 @@
       {rs.receiveVideo ? t('control.noVideo') : t('control.noVideoActive')}
     </button>
 
+    <div class="react">
+      {#if picking}
+        <div class="picker" role="group" aria-label={t('control.react')}>
+          {#each site.reactions as e (e)}
+            <button type="button" onclick={() => { session.react(e); picking = false; }} aria-label={e}>{e}</button>
+          {/each}
+        </div>
+      {/if}
+      <button class="btn" class:active={picking} aria-expanded={picking} disabled={rs.status !== 'connected'} onclick={() => (picking = !picking)}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01" /></svg>
+        {t('control.react')}
+      </button>
+    </div>
+
     <button class="btn danger leave" onclick={() => session.leave()}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10" /></svg>
       {t('control.leave')}
@@ -129,6 +145,15 @@
   .level { width: .55rem; height: .55rem; border-radius: 50%; background: var(--line); transition: background .1s, box-shadow .1s; }
   .level.on { background: var(--live); box-shadow: 0 0 0 4px var(--live-soft); }
   .leave { margin-left: auto; }
+  .react { position: relative; }
+  .picker {
+    position: absolute; bottom: calc(100% + .5rem); left: 50%; transform: translateX(-50%); z-index: 5;
+    display: flex; flex-wrap: wrap; justify-content: center; gap: .15rem; padding: .35rem; width: max-content; max-width: min(92vw, 30rem);
+    border-radius: 1.5rem; background: var(--panel-2); border: 1px solid var(--line);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
+  }
+  .picker button { font-size: 1.5rem; line-height: 1; padding: .3rem; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
+  .picker button:hover, .picker button:focus-visible { background: var(--panel); }
 
   @media (max-width: 720px) {
     .sharing .stage { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }

@@ -8,7 +8,8 @@ export type ServerMessage =
   | { type: 'joined'; self: Participant; room: { slug: string; name: string } }
   | { type: 'error'; code: string; message: string; retryAfter?: number }
   | { type: 'offer'; sdp: string }
-  | { type: 'participants'; participants: Participant[]; sharer: string; echo: boolean };
+  | { type: 'participants'; participants: Participant[]; sharer: string; echo: boolean }
+  | { type: 'reaction'; from: string; emoji: string };
 
 export type ClientMessage =
   | { type: 'join'; room: string; pin: string; name: string; media?: 'tcp'; client?: string }
@@ -19,6 +20,7 @@ export type ClientMessage =
   | { type: 'echo'; on: boolean }
   | { type: 'camera'; on: boolean }
   | { type: 'video'; receive: boolean }
+  | { type: 'react'; emoji: string }
   | { type: 'leave' };
 
 function bad(what: string): never {
@@ -65,6 +67,9 @@ export function parseServerMessage(raw: string): ServerMessage {
         sharer: v.sharer,
         echo: v.echo === true,
       };
+    case 'reaction':
+      if (typeof v.from !== 'string' || typeof v.emoji !== 'string') bad('reaction');
+      return { type: 'reaction', from: v.from, emoji: v.emoji };
     default:
       return bad(`type ${v.type}`);
   }

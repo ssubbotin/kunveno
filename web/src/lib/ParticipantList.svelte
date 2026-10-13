@@ -3,9 +3,9 @@
   import { t } from './i18n/i18n.svelte';
   import Video from './Video.svelte';
   import type { Participant } from './protocol';
-  let { participants, selfId, sharer, speaking, videos = {}, compact = false }: {
+  let { participants, selfId, sharer, speaking, videos = {}, reactions = {}, compact = false }: {
     participants: Participant[]; selfId: string; sharer: string; speaking: Record<string, boolean>;
-    videos?: Record<string, MediaStreamTrack>; compact?: boolean;
+    videos?: Record<string, MediaStreamTrack>; reactions?: Record<string, { emoji: string; seq: number }>; compact?: boolean;
   } = $props();
 
 
@@ -54,6 +54,11 @@
         </span>
       {/if}
       {#if speaking[p.id]}<span class="sr">{t('people.speaking')}</span>{/if}
+      {#if reactions[p.id]}
+        {#key reactions[p.id].seq}
+          <span class="reaction" role="status" aria-label={t('people.reacted', { emoji: reactions[p.id].emoji })}>{reactions[p.id].emoji}</span>
+        {/key}
+      {/if}
     </li>
   {/each}
 </ul>
@@ -108,6 +113,13 @@
   .signal.fair rect.on { fill: var(--caution); }
   .signal.poor rect.on { fill: var(--danger); }
   .compact .signal { top: 50%; left: auto; right: 2.9rem; transform: translateY(-50%); }
+  /* A reaction: large on the tile, popping in once. */
+  .reaction {
+    position: absolute; right: .75rem; bottom: .6rem; z-index: 2; font-size: 2.6rem; line-height: 1;
+    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .45)); animation: pop .35s ease-out;
+  }
+  .compact .reaction { font-size: 1.6rem; right: 3rem; bottom: auto; top: 50%; transform: translateY(-50%); animation: none; }
+  @keyframes pop { from { transform: scale(.4) translateY(.5rem); opacity: 0; } to { transform: none; opacity: 1; } }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
   .compact { grid-template-columns: 1fr; gap: .4rem; max-width: none; }

@@ -43,4 +43,15 @@ describe('RoomState', () => {
     s.reset();
     expect(s.echo).toBe(false);
   });
+  it('shows the latest reaction per participant and lets only its own timer clear it', () => {
+    const s = new RoomState();
+    s.apply({ type: 'reaction', from: 'a', emoji: '👍' });
+    const first = s.reactions.a.seq;
+    s.apply({ type: 'reaction', from: 'a', emoji: '🎉' });
+    expect(s.reactions.a.emoji).toBe('🎉');
+    s.clearReaction('a', first); // the first one's timer fires late
+    expect(s.reactions.a?.emoji).toBe('🎉');
+    s.clearReaction('a', s.reactions.a.seq);
+    expect(s.reactions.a).toBeUndefined();
+  });
 });
