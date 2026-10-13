@@ -16,8 +16,10 @@
   // The PIN field follows the chosen room: the PIN this browser last entered it with, if any.
   let pin = $state('');
   let saved = $state<string[]>(knownRooms(localStorage));
+  let showPin = $state(false);
   $effect(() => {
     pin = pinFor(localStorage, room);
+    showPin = false; // a newly chosen room starts hidden
   });
   let name = $state(localStorage.getItem('kunveno.name') ?? '');
   let loadError = $state('');
@@ -151,7 +153,13 @@
       <label class="field"><span>{t('enter.name')}</span><input bind:value={name} maxlength="32" autocomplete="name" required /></label>
       <label class="field"><span class="pin-label">{t('enter.pin')}
         {#if saved.includes(room)}<button type="button" class="link" onclick={forgetThisPin}>{t('enter.forgetPin')}</button>{/if}</span>
-        <input bind:value={pin} type="password" maxlength="16" autocomplete="new-password" required /></label>
+        <span class="pin-box">
+          <input bind:value={pin} type={showPin ? 'text' : 'password'} maxlength="16" autocomplete="new-password" spellcheck="false" required />
+          <button type="button" class="eye" aria-pressed={showPin} aria-label={showPin ? t('enter.hidePin') : t('enter.showPin')}
+            title={showPin ? t('enter.hidePin') : t('enter.showPin')} onclick={() => (showPin = !showPin)}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="2.5" />{#if showPin}<path d="M3 3l18 18" />{/if}</svg>
+          </button>
+        </span></label>
     </div>
     <button class="btn primary wide" type="submit" disabled={!selected}>
       {selected ? t('enter.join', { room: selected.name }) : t('enter.chooseRoom')}
@@ -199,6 +207,14 @@
   .room-name { font-weight: 500; }
   .count { color: var(--muted); font-variant-numeric: tabular-nums; font-size: .9rem; display: inline-flex; align-items: center; gap: .4rem; }
   .key { width: .95rem; height: .95rem; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; }
+  .pin-box { position: relative; display: block; }
+  .pin-box input { padding-right: 2.6rem; }
+  .eye {
+    position: absolute; right: .35rem; top: 50%; transform: translateY(-50%); width: 2rem; height: 2rem;
+    display: grid; place-items: center; border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--muted); cursor: pointer;
+  }
+  .eye:hover { color: var(--text); }
+  .eye svg { width: 1.15rem; height: 1.15rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   .pin-label { display: flex; justify-content: space-between; align-items: baseline; }
   .link { background: none; border: 0; padding: 0; color: var(--muted); font: inherit; font-size: .85rem; text-decoration: underline; cursor: pointer; }
   .link:hover { color: var(--text); }
