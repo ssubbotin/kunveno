@@ -117,6 +117,11 @@
   <header class="brand">
     <svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="17" /><circle cx="20" cy="20" r="9" /><path d="M20 3v8M20 29v8M3 20h8M29 20h8" /><circle class="dot" cx="20" cy="20" r="2.5" /></svg>
     <h1>{site.title}</h1>
+    <label class="lang"><span class="sr">{t('footer.language')}</span>
+      <select value={i18n.lang} onchange={(e) => setLang((e.currentTarget as HTMLSelectElement).value as Lang)}>
+        {#each LANGS as l (l)}<option value={l}>{LANG_NAMES[l]}</option>{/each}
+      </select>
+    </label>
   </header>
 
   <section class="rooms" aria-labelledby="rooms-title">
@@ -151,10 +156,21 @@
       {/if}
     </div>
     {#if actionError}<p class="error">{actionError}</p>{/if}
+    <!-- What to do with the chosen room: share it, or delete one created in the lobby. -->
+    <div class="room-actions">
+      <CopyLink link={roomLink(location.origin, room, pin)} label={t('enter.copyLink')} disabled={!selected || pin === ''} />
+      <p class="hint">{t('enter.linkHint')}</p>
+      {#if selected?.created}
+        <button class="btn danger" type="button" disabled={selected.participants > 0} onclick={deleteRoom}>
+          {selected.participants > 0 ? t('rooms.deleteOnlyEmpty') : t('rooms.delete')}
+        </button>
+      {/if}
+    </div>
   </section>
 
+  <section class="join" aria-labelledby="join-title">
+  <h2 id="join-title">{t('enter.title')}</h2>
   <form class="enter" onsubmit={submit}>
-    <h2>{t('enter.title')}</h2>
     {#if error}<p class="error">{error}</p>{/if}
     <MicCheck {name} />
     <div class="pair">
@@ -172,39 +188,26 @@
     <button class="btn primary wide" type="submit" disabled={!selected}>
       {selected ? t('enter.join', { room: selected.name }) : t('enter.chooseRoom')}
     </button>
-    <div class="share">
-      <CopyLink link={roomLink(location.origin, room, pin)} label={t('enter.copyLink')} disabled={!selected || pin === ''} />
-      <p class="hint">{t('enter.linkHint')}</p>
-    </div>
-    {#if selected?.created}
-      <button class="btn danger wide" type="button" disabled={selected.participants > 0} onclick={deleteRoom}>
-        {selected.participants > 0 ? t('rooms.deleteOnlyEmpty') : t('rooms.delete')}
-      </button>
-    {/if}
   </form>
+  </section>
 </div>
 
 <footer class="about">
   <a href={repoUrl} target="_blank" rel="noopener noreferrer">kunveno</a>
   <span>{t('footer.version', { version: build.version })}</span>
   {#if build.iso}<span>{t('footer.built', { date: formatDate(build.iso) })}</span>{/if}
-  <label class="lang"><span class="sr">{t('footer.language')}</span>
-    <select value={i18n.lang} onchange={(e) => setLang((e.currentTarget as HTMLSelectElement).value as Lang)}>
-      {#each LANGS as l (l)}<option value={l}>{LANG_NAMES[l]}</option>{/each}
-    </select>
-  </label>
 </footer>
 </div>
 
 <style>
   .lobby {
-    max-width: 66rem; margin: 0 auto; padding: clamp(1.5rem, 5vh, 3.5rem) 1.5rem;
-    display: grid; grid-template-columns: 19rem minmax(0, 1fr); gap: 2rem 2.5rem; align-items: start;
+    max-width: 66rem; margin: 0 auto; padding: clamp(1rem, 3vh, 3.5rem) 1.5rem;
+    display: grid; grid-template-columns: 19rem minmax(0, 1fr); gap: 1.5rem 2.5rem; align-items: start;
   }
   .brand { grid-column: 1 / -1; display: flex; align-items: center; gap: 1rem; }
-  .brand svg { width: 2.75rem; height: 2.75rem; fill: none; stroke: var(--muted); stroke-width: 1.5; flex: none; }
+  .brand svg { width: 2.25rem; height: 2.25rem; fill: none; stroke: var(--muted); stroke-width: 1.5; flex: none; }
   .brand .dot { fill: var(--live); stroke: none; }
-  h1 { font-size: clamp(1.5rem, 3vw, 2rem); font-weight: 600; line-height: 1.15; margin: 0; letter-spacing: -0.01em; }
+  h1 { flex: 1; font-size: clamp(1.35rem, 2.4vw, 1.6rem); font-weight: 600; line-height: 1.15; margin: 0; letter-spacing: -0.01em; }
   h2 { font-size: 1rem; font-weight: 500; color: var(--muted); margin: 0 0 .75rem; }
 
   .list { display: grid; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--panel); }
@@ -243,9 +246,8 @@
     background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
   }
   .pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 12rem); gap: 1rem; }
-  .enter h2 { margin: 0 0 -.25rem; }
+  .room-actions { display: grid; gap: .6rem; justify-items: start; margin-top: .9rem; }
   .wide { justify-content: center; width: 100%; }
-  .share { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
   .hint { margin: 0; color: var(--muted); font-size: .85rem; }
 
   /* The footer sits at the bottom of the viewport on short pages and spans its full width. */
@@ -253,11 +255,12 @@
   .lobby { flex: 1 0 auto; width: 100%; align-content: start; }
   .about {
     display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; padding: .7rem 1.5rem;
-    border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem; opacity: .8;
+    border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem;
   }
   .about a { color: inherit; text-decoration: none; }
-  .lang { margin-left: auto; }
-  .lang select { background: transparent; color: inherit; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: .1rem .3rem; font: inherit; }
+  .lang { flex: none; }
+  .lang select { background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: .35rem .5rem; font: inherit; font-size: .9rem; cursor: pointer; }
+  .lang select:hover { color: var(--text); border-color: var(--muted); }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
   .about a:hover { color: var(--text); text-decoration: underline; }
   .about span { font-variant-numeric: tabular-nums; }

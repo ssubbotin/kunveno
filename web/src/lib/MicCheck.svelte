@@ -222,7 +222,7 @@
 <style>
   .check { display: grid; gap: .9rem; min-width: 0; }
   .preview {
-    position: relative; height: clamp(10rem, 30vh, 17rem); display: grid; place-items: center; gap: 1rem;
+    position: relative; height: clamp(9rem, 26vh, 17rem); display: grid; place-items: center; gap: 1rem;
     background: radial-gradient(circle at 50% 45%, var(--panel-2), var(--ink) 70%);
     border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
   }
@@ -236,6 +236,9 @@
   .devices:empty { display: none; }
   .center { display: grid; justify-items: center; gap: .9rem; }
   .cam { position: absolute; inset: 0; }
+  /* The preview is wider than the camera's 16:9: show the whole picture, as others will see it,
+     rather than a crop. */
+  .cam :global(video) { object-fit: contain; background: transparent; }
   .toggles { position: absolute; right: .75rem; bottom: .75rem; display: flex; gap: .5rem; }
   .round {
     width: 2.6rem; height: 2.6rem; border-radius: 50%; display: grid; place-items: center; cursor: pointer;

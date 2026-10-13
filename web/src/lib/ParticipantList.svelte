@@ -85,9 +85,19 @@
     position: absolute; left: .5rem; bottom: .5rem; right: .5rem; justify-items: start; text-align: left;
     padding: .25rem .5rem; border-radius: var(--radius-sm); background: rgba(22, 32, 43, .72); width: fit-content; max-width: calc(100% - 1rem);
   }
-  .has-video .tags { justify-content: start; }
-  .has-video.speaking { box-shadow: inset 0 0 0 3px var(--live); }
-  .has-video .muted, .has-video .signal { z-index: 1; }
+  /* One line on a picture: "Alex · you". */
+  .has-video .who { display: flex; align-items: baseline; gap: .35rem; }
+  .has-video .tags { justify-content: start; flex-wrap: nowrap; white-space: nowrap; }
+  .has-video .tags span::before { content: '· '; }
+  .has-video .tags .live-tag::before { content: ''; }
+  .has-video .signal { padding: .25rem .3rem; border-radius: var(--radius-sm); background: rgba(22, 32, 43, .72); top: .5rem; left: .5rem; }
+  /* The video covers the tile's own inset shadow, so the speaking outline is a layer above it. */
+  .has-video::after {
+    content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; border-radius: inherit;
+    box-shadow: inset 0 0 0 3px transparent; transition: box-shadow .12s;
+  }
+  .has-video.speaking::after { box-shadow: inset 0 0 0 3px var(--live), inset 0 0 18px 2px rgba(200, 69, 143, .55); }
+  .has-video .muted, .has-video .signal, .has-video .who { z-index: 2; }
   .avatar {
     width: 4.5rem; height: 4.5rem; border-radius: 50%; display: grid; place-items: center;
     background: var(--panel-2); font-size: 1.4rem; font-weight: 600; letter-spacing: .02em;
@@ -97,7 +107,9 @@
   .speaking { border-color: var(--live); }
   .speaking .avatar { box-shadow: 0 0 0 3px var(--live), 0 0 0 9px var(--live-soft); }
   .speaking .avatar svg { stroke: var(--live); }
-  .bot { border-style: dashed; }
+  /* Helpers without a picture (the echo) are marked by a dashed frame; on a picture the frame
+     would read as a glitch, and those tiles carry their own tag. */
+  .bot:not(.has-video) { border-style: dashed; }
   .who { display: grid; gap: .15rem; min-width: 0; max-width: 100%; }
   .name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tags { display: flex; flex-wrap: wrap; justify-content: center; gap: .25rem .5rem; color: var(--muted); font-size: .8rem; }

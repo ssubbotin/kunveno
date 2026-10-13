@@ -101,6 +101,7 @@ const ru = {
   'control.leave': 'Выйти',
   'control.react': 'Реакция',
   'control.invite': 'Пригласить',
+  'control.more': 'Ещё',
 
   'people.label': 'Участники',
   'people.you': 'вы',
@@ -216,6 +217,7 @@ const en: Messages = {
   'control.leave': 'Leave',
   'control.react': 'React',
   'control.invite': 'Invite',
+  'control.more': 'More',
 
   'people.label': 'Participants',
   'people.you': 'you',
@@ -328,6 +330,7 @@ const es: Messages = {
   'control.leave': 'Salir',
   'control.react': 'Reaccionar',
   'control.invite': 'Invitar',
+  'control.more': 'Más',
 
   'people.label': 'Participantes',
   'people.you': 'tú',
