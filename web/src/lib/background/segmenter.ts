@@ -26,11 +26,13 @@ async function open(delegate: 'GPU' | 'CPU'): Promise<ImageSegmenter> {
   });
 }
 
-// createSegmenter tries the GPU first and falls back to the CPU.
-export async function createSegmenter(): Promise<Segmenter> {
+// createSegmenter tries the GPU first and falls back to the CPU; force 'CPU' skips the GPU attempt
+// (for when the GPU delegate was created but failed on a frame).
+export async function createSegmenter(force?: 'CPU'): Promise<Segmenter> {
   let delegate: 'GPU' | 'CPU' = 'GPU';
   let seg: ImageSegmenter;
   try {
+    if (force === 'CPU') throw new Error('cpu forced');
     seg = await open('GPU');
   } catch {
     delegate = 'CPU';
@@ -41,13 +43,16 @@ export async function createSegmenter(): Promise<Segmenter> {
     delegate,
     segment(frame, ts) {
       const r = seg.segmentForVideo(frame, ts);
-      const m = r.confidenceMasks?.[0];
-      if (!m) return null;
-      const f = m.getAsFloat32Array();
-      if (!out || out.length !== f.length) out = new Uint8Array(f.length);
-      for (let i = 0; i < f.length; i++) out[i] = f[i] * 255;
-      r.close();
-      return out;
+      try {
+        const m = r.confidenceMasks?.[0];
+        if (!m) return null;
+        const f = m.getAsFloat32Array();
+        if (!out || out.length !== f.length) out = new Uint8Array(f.length);
+        for (let i = 0; i < f.length; i++) out[i] = f[i] * 255;
+        return out;
+      } finally {
+        r.close();
+      }
     },
     close() {
       seg.close();
