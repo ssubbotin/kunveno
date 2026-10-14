@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // MergeGap: consecutive phrases of one speaker no further apart than this share a paragraph.
@@ -28,17 +29,29 @@ func Lang(s string) string {
 }
 
 // escaper keeps names and recognised text literal in Markdown.
-var escaper = strings.NewReplacer(`\`, `\\`, "*", `\*`, "_", `\_`, "`", "\\`", "[", `\[`, "]", `\]`, "<", `\<`)
+var escaper = strings.NewReplacer(`\`, `\\`, "*", `\*`, "_", `\_`, "`", "\\`", "[", `\[`, "]", `\]`, "<", `\<`,
+	"&", `\&`, "~", `\~`)
+
+// literal puts a name or text on one line (every run of whitespace or control characters becomes
+// one space, so a line break cannot start a heading or a list) and escapes it.
+func literal(s string) string {
+	words := strings.FieldsFunc(s, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) })
+	return escaper.Replace(strings.Join(words, " "))
+}
 
 // Markdown renders a transcript: a title with the room, the date and time span with everyone who
-// spoke, then one paragraph per run of one speaker and a line per pause or resumption.
+// spoke, then one paragraph per run of one speaker and a line per pause or resumption (a pause at
+// the very end is left out).
 func Markdown(t Transcript, lang string, loc *time.Location) []byte {
 	l := labels[Lang(lang)]
 	var b strings.Builder
-	fmt.Fprintf(&b, "# "+l.title+"\n\n", escaper.Replace(t.Room))
+	fmt.Fprintf(&b, "# "+l.title+"\n\n", literal(t.Room))
 	b.WriteString(t.Start.In(loc).Format("02.01.2006, 15:04") + "–" + t.End.In(loc).Format("15:04"))
 	if names := speakers(t.Phrases); len(names) > 0 {
-		b.WriteString(" · " + escaper.Replace(strings.Join(names, ", ")))
+		for i := range names {
+			names[i] = literal(names[i])
+		}
+		b.WriteString(" · " + strings.Join(names, ", "))
 	}
 	b.WriteString("\n")
 	for _, p := range paragraphs(t) {
@@ -50,7 +63,7 @@ func Markdown(t Transcript, lang string, loc *time.Location) []byte {
 		case KindResumed:
 			fmt.Fprintf(&b, "*%s %s*\n", clock, l.resumed)
 		default:
-			fmt.Fprintf(&b, "**%s %s:** %s\n", clock, escaper.Replace(p.name), escaper.Replace(strings.Join(p.texts, " ")))
+			fmt.Fprintf(&b, "**%s %s:** %s\n", clock, literal(p.name), literal(strings.Join(p.texts, " ")))
 		}
 	}
 	return []byte(b.String())
@@ -118,6 +131,11 @@ func paragraphs(t Transcript) []paragraph {
 			continue
 		}
 		out = append(out, paragraph{at: p.Start, name: p.Name, texts: []string{p.Text}, last: p.End})
+	}
+	// A pause with no speech and no resumption after it is the end of the meeting ("Stop notes"),
+	// not a break in it.
+	for len(out) > 0 && out[len(out)-1].event == KindPaused {
+		out = out[:len(out)-1]
 	}
 	return out
 }

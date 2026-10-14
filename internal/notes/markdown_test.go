@@ -59,10 +59,43 @@ func TestMarkdownEscapesNames(t *testing.T) {
 	tr := Transcript{Room: "R_&_D [old]", Start: mskAt(9, 0, 0), End: mskAt(9, 5, 0),
 		Phrases: []Phrase{{Name: "Ann *admin*", Start: mskAt(9, 1, 0), End: mskAt(9, 1, 2), Text: "use `make` and _then_ [x]"}}}
 	got := string(Markdown(tr, "en", msk))
-	for _, want := range []string{`# Meeting notes “R\_&\_D \[old\]”`, `· Ann \*admin\*`, "**09:01 Ann \\*admin\\*:** use \\`make\\` and \\_then\\_ \\[x\\]"} {
+	for _, want := range []string{`# Meeting notes “R\_\&\_D \[old\]”`, `· Ann \*admin\*`, "**09:01 Ann \\*admin\\*:** use \\`make\\` and \\_then\\_ \\[x\\]"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
+	}
+}
+
+// Line breaks and control characters in names, the room name and text cannot start a heading or a
+// list; & and ~ cannot form an entity or a strike-through.
+func TestMarkdownKeepsNamesOnOneLine(t *testing.T) {
+	tr := Transcript{Room: "A\r\n- b", Start: mskAt(9, 0, 0), End: mskAt(9, 5, 0),
+		Phrases: []Phrase{{Name: "Ann\n# Big", Start: mskAt(9, 1, 0), End: mskAt(9, 1, 2), Text: "one\n\n## two\t\x00 &lt; ~~x~~"}}}
+	got := string(Markdown(tr, "en", msk))
+	want := "# Meeting notes “A - b”\n\n14.10.2026, 09:00–09:05 · Ann # Big\n\n" +
+		"**09:01 Ann # Big:** one ## two \\&lt; \\~\\~x\\~\\~\n"
+	if got != want {
+		t.Fatalf("got:\n%q\nwant:\n%q", got, want)
+	}
+}
+
+// A transcript stopped from the menu ends with a pause and nothing after it: the mark is dropped.
+// A pause followed by speech or a resumption stays.
+func TestMarkdownDropsATrailingPause(t *testing.T) {
+	tr := meeting()
+	tr.Events = append(tr.Events, Event{Kind: KindPaused, At: mskAt(10, 1, 0)})
+	got := string(Markdown(tr, "en", msk))
+	if strings.Contains(got, "10:01") {
+		t.Fatalf("trailing pause rendered:\n%s", got)
+	}
+	if !strings.Contains(got, "*09:51 recording paused*") || !strings.Contains(got, "*09:51 recording resumed*") {
+		t.Fatalf("inner pause or resumption lost:\n%s", got)
+	}
+	// Two pauses at the end (off, on with no speech, off again): the resumption keeps the first.
+	tr.Events = append(tr.Events, Event{Kind: KindResumed, At: mskAt(10, 1, 30)}, Event{Kind: KindPaused, At: mskAt(10, 1, 40)})
+	got = string(Markdown(tr, "en", msk))
+	if !strings.HasSuffix(got, "*10:01 recording paused*\n\n*10:01 recording resumed*\n") {
+		t.Fatalf("pause before a resumption dropped or trailing pause kept:\n%s", got)
 	}
 }
 
