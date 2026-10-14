@@ -139,7 +139,7 @@ meeting of the same size needs under 10 Mbit/s.
 | TCP 7000 | the fallback media channel for a participant whose UDP does not get through (typically a NAT or a firewall on a gateway that drops long UDP flows); the browser switches to it on its own |
 
 No STUN, TURN or other external service is involved. The server's own ports (API, metrics,
-Prometheus, Grafana) listen on 127.0.0.1 only; Grafana is reached through 443 at `/grafana/`.
+Prometheus, Grafana, node-exporter) listen on 127.0.0.1 only; Grafana is reached through 443 at `/grafana/`.
 
 **Firewall rule.** Allow from your users' networks to the host: TCP 443 (and 80), UDP 7000 and
 TCP 7000. If a network segment can only use TCP 7000, letting its UDP 7000 through gives those
@@ -226,7 +226,7 @@ for Grafana and its admin password.
 ## Operations
 
 - Logs: `journalctl -t kunveno-server --since "7 days ago" -o cat` (also `kunveno-web`,
-  `kunveno-echo`, `kunveno-player`, `kunveno-prometheus`, `kunveno-grafana`). Each connection logs
+  `kunveno-echo`, `kunveno-player`, `kunveno-prometheus`, `kunveno-grafana`, `kunveno-node-exporter`). Each connection logs
   its media path (UDP or TCP), quality changes and wrong PINs.
 - Metrics: `/metrics` on the server (loopback only); Grafana at `https://<host>/grafana/` with the
   provisioned "kunveno" dashboard.
