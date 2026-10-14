@@ -56,3 +56,6 @@ pull request.
 28. With the background unavailable (no WebGL2, or the model blocked in devtools), turning the
     camera on opens the dialog; "Turn on the camera without a background" shows the camera,
     "Cancel" leaves it off.
+29. Glass blocks from the picker (microphone check and More → Background): the person stays sharp,
+    the background is a wall of blocks with seams; the blocks do not flicker as you move; switching
+    blur ↔ glass blocks ↔ an image does not drop the camera for others.

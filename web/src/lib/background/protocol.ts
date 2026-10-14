@@ -1,5 +1,5 @@
 // Messages between the page and the background worker.
-export type EffectMode = { kind: 'blur' } | { kind: 'image'; image: ImageBitmap };
+export type EffectMode = { kind: 'blur' } | { kind: 'glass' } | { kind: 'image'; image: ImageBitmap };
 
 export type ToWorker =
   | { type: 'init'; width: number; height: number; delegate: 'GPU' | 'CPU'; debug: boolean; frames?: ReadableStream<VideoFrame> }

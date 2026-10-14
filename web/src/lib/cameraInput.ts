@@ -19,10 +19,11 @@ async function capture(deviceId: string): Promise<MediaStreamTrack> {
   }
 }
 
-// modeFor turns a choice into what the worker needs: blur, or an image as a bitmap.
+// modeFor turns a choice into what the worker needs: blur, glass blocks, or an image as a bitmap.
 export async function modeFor(choice: BackgroundChoice): Promise<EffectMode | null> {
   if (choice.kind === 'none') return null;
   if (choice.kind === 'blur') return { kind: 'blur' };
+  if (choice.kind === 'glass') return { kind: 'glass' };
   try {
     const blob = choice.source === 'own' ? await loadOwn() : await (await fetch(presetUrl(choice.name))).blob();
     if (!blob) throw new Error('no image');

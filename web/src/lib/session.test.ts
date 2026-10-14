@@ -303,6 +303,20 @@ describe('Session', () => {
     expect(s.state.background).toBe('image');
   });
 
+  it('switches blur, glass blocks and an image inside the effect, without reopening the camera', async () => {
+    vi.spyOn(Rtc.prototype, 'startCamera').mockResolvedValue();
+    const replace = vi.spyOn(Rtc.prototype, 'replaceCamera').mockResolvedValue();
+    const s = await joined();
+    await s.setBackground({ kind: 'blur' });
+    await s.setCamera(true);
+    await s.setBackground({ kind: 'glass' });
+    expect(s.state.background).toBe('glass');
+    await s.setBackground({ kind: 'image', source: 'own' });
+    expect(cam.opened).toHaveLength(1);
+    expect(replace).not.toHaveBeenCalled();
+    expect(s.state.background).toBe('image');
+  });
+
   it('reopens the camera once when switching between none and a background', async () => {
     vi.spyOn(Rtc.prototype, 'startCamera').mockResolvedValue();
     const replace = vi.spyOn(Rtc.prototype, 'replaceCamera').mockResolvedValue();

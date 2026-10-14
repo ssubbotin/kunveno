@@ -140,11 +140,16 @@
   let unavailableDialog: HTMLDialogElement;
   let storedBg = $state<BackgroundChoice>(loadPrefs(localStorage).background ?? NONE);
   const currentChoice = $derived<BackgroundChoice>(
-    storedBg.kind === rs.background ? storedBg : rs.background === 'blur' ? { kind: 'blur' } : rs.background === 'none' ? NONE : storedBg,
+    storedBg.kind === rs.background ? storedBg
+      : rs.background === 'blur' ? { kind: 'blur' }
+      : rs.background === 'glass' ? { kind: 'glass' }
+      : rs.background === 'none' ? NONE
+      : storedBg,
   );
   function bgLabel(c: BackgroundChoice): string {
     if (c.kind === 'none') return t('bg.none');
     if (c.kind === 'blur') return t('bg.blur');
+    if (c.kind === 'glass') return t('bg.glass');
     return c.source === 'own' ? t('bg.ownLabel') : presetLabel(c.name);
   }
   // The picker is mounted while the dialog is open, so each opening lists the server's current
