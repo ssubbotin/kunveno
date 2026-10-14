@@ -37,9 +37,11 @@ the images only. When a release changes `docker-compose.yml` or `grafana/` (its 
 them from the archive first, in the stack directory; `.env`, `config.yaml` and the data stay:
 
 ```bash
-curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz --strip-components=1 kunveno/docker-compose.yml kunveno/grafana
+curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz --strip-components=1 kunveno/docker-compose.yml kunveno/grafana kunveno/backgrounds
 docker compose pull && docker compose up -d
 ```
+
+This also restores the built-in background images if you deleted them.
 
 **Logs** go to the host's systemd journal (Docker `journald` driver), so they survive container
 recreation and reboots; retention follows the journal. Last week of server logs:
@@ -139,6 +141,17 @@ participants lose packets at the same moment, these panels tell load from other 
 host apart from losses in the network: no drops on the host and no CPU pressure point at the
 network between the participants and the host.
 
+## Virtual backgrounds
+
+Participants can replace their camera background with an image. The images are the files in
+`backgrounds/` next to `docker-compose.yml` (mounted read-only at `/var/lib/kunveno/backgrounds`;
+`backgrounds_dir` in `config.yaml` changes the path). Four built-in images ship in the archive.
+Add your own by copying files there: JPEG, PNG or WebP, up to 5 MB and 3840x2160 pixels each, at
+most 50 files; the file name without its extension is the label. The server lists the folder on
+every request and builds small previews on demand, so no restart is needed. A file that is too
+large, too big in pixels or not an image is skipped and logged (`journalctl -t kunveno-server`).
+The built-in images are drawn by `go run ./tools/backgrounds`.
+
 ## Appendix: Debian packages with the host's own nginx
 
 An alternative to Docker for an Ubuntu host (24.04 or 26.04) that already runs nginx. The packages
@@ -165,3 +178,8 @@ nginx site). CI does not build or test them; the Docker stack is the maintained 
 
 The echo, the player, Prometheus and Grafana have no packages; without them the rooms work, and
 the echo button, player rooms and the dashboard are simply absent.
+
+The server package does not create `/var/lib/kunveno` or ship the background images (systemd's
+state directory handling owns that path). To offer virtual backgrounds, create
+`/var/lib/kunveno/backgrounds` and copy the images from the archive's `backgrounds/` there, or
+point `backgrounds_dir` at another directory; without it the list is empty.

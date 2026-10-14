@@ -15,6 +15,7 @@ ui:
   # reactions: ["👍", "👎", "👏", "😂", "❤️", "🎉", "😮", "🤔", "☕", "👋"]   # 1..16 emoji; default shown
   # noise_suppression: false     # true: the noise filter starts on for participants who have not chosen
 # rooms_file: /var/lib/kunveno/rooms.json   # rooms created in the lobby; default shown
+# backgrounds_dir: /var/lib/kunveno/backgrounds   # virtual background presets; the stack mounts ./backgrounds here
 rooms:
   - slug: ops
     name: Operations

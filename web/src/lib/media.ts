@@ -1,5 +1,7 @@
 // Camera and pre-join preferences.
 
+import { type BackgroundChoice, NONE, parseChoice } from './background/choice';
+
 type Store = Pick<Storage, 'getItem' | 'setItem'>;
 
 // splitStream reads the stream id the server gives forwarded tracks: the participant id, with a
@@ -19,14 +21,14 @@ export function cameraConstraints(deviceId: string): MediaTrackConstraints {
 export const CAMERA_MAX_KBPS = 350;
 
 // noiseFilter stays undefined until the person chooses; the installation's default applies then.
-export type Prefs = { micOn: boolean; cameraOn: boolean; receiveVideo: boolean; cameraId: string; noiseFilter?: boolean };
+export type Prefs = { micOn: boolean; cameraOn: boolean; receiveVideo: boolean; cameraId: string; noiseFilter?: boolean; background?: BackgroundChoice };
 
 const KEY = 'kunveno.prefs';
 
 // loadPrefs returns what the person chose before entering: microphone on, camera off and
 // other cameras received unless they said otherwise.
 export function loadPrefs(store: Store): Prefs {
-  const d: Prefs = { micOn: true, cameraOn: false, receiveVideo: true, cameraId: '' };
+  const d: Prefs = { micOn: true, cameraOn: false, receiveVideo: true, cameraId: '', background: NONE };
   try {
     const v = JSON.parse(store.getItem(KEY) ?? '{}');
     return {
@@ -35,6 +37,7 @@ export function loadPrefs(store: Store): Prefs {
       receiveVideo: typeof v.receiveVideo === 'boolean' ? v.receiveVideo : d.receiveVideo,
       cameraId: typeof v.cameraId === 'string' ? v.cameraId : d.cameraId,
       noiseFilter: typeof v.noiseFilter === 'boolean' ? v.noiseFilter : undefined,
+      background: parseChoice(v.background),
     };
   } catch {
     return d;

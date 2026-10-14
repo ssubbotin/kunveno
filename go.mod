@@ -10,6 +10,7 @@ require (
 	github.com/pion/webrtc/v4 v4.2.23
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3
+	golang.org/x/image v0.47.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -36,7 +37,7 @@ require (
 	github.com/wlynxg/anet v0.0.5 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/net v0.59.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 )
