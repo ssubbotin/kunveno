@@ -174,8 +174,8 @@ the date and time, who spoke, and the phrases in order, with pauses of the recor
   end (a switch-off or the end of the meeting); the first phrase of the next meeting replaces it.
   Deleting a room deletes its notes. Downloading needs the room PIN, and wrong PINs count toward
   the same block as joins.
-- `notes.live: true` shows the phrases in the room as they are recognised (a side panel), for
-  checking the recognition.
+- `notes.live: true` shows the phrases in the room as they are recognised, in the tile of the
+  "Notes" participant, for checking the recognition.
 
 ## How it works
 

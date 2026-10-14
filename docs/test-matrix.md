@@ -68,9 +68,10 @@ without it):
 31. More → "Take notes": within 10 s the "Notes" participant appears with "writes down the meeting",
     the header shows "● Taking notes" for everyone, a screen reader announces the change, and the
     "Take notes" switch is on.
-32. Two people speak in turn (Russian with some English terms): with `notes.live: true` the side
-    panel shows each phrase within about 2 s of its end, with the right name and time; "Hide text"
-    hides the panel while phrases keep arriving.
+32. Two people speak in turn (Russian with some English terms): with `notes.live: true` the tile of
+    the "Notes" participant shows each phrase within about 2 s of its end, with the right name and
+    time, and follows new phrases unless scrolled up; during a screen share the tile in the side
+    column shows the latest phrase under "Notes".
 33. Switching "Take notes" off: the Notes participant leaves within 10 s and everyone in the room
     gets "Notes are ready" with "Download"; the file is named `<room>-YYYY-MM-DD-HHMM.md` and shows
     the room, the date, the time span, who spoke and the phrases in order. Switching notes off and

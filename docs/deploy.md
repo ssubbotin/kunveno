@@ -144,7 +144,8 @@ switch, refuses the notes bot, lists no rooms at `/internal/notes`, leaves `note
   `{"pin":"…","lang":"ru|en|es"}`), and wrong PINs count toward the same block as joins.
   `/api/rooms` shows only until when a room's notes are kept.
 - **Debugging the recognition.** `notes.live: true` sends each phrase to the room as it arrives; the
-  client shows it in a side panel.
+  client shows the phrases in the tile of the "Notes" participant (during a screen share, the
+  latest phrase under its name).
 
 **The notes bot contract.** The add-on depends on this interface of the server; it changes only
 together with the add-on (the same text is the package comment of `internal/signal/protocol.go`):

@@ -1,6 +1,6 @@
 <script lang="ts">
-  // notes.live: the phrases of the meeting as they are recognised, newest at the bottom. It follows
-  // new phrases unless the reader scrolled up.
+  // notes.live: the phrases of the meeting as they are recognised, shown in the notes bot's tile in
+  // place of a picture, newest at the bottom. It follows new phrases unless the reader scrolled up.
   import { tick } from 'svelte';
   import { i18n, t } from './i18n/i18n.svelte';
   import { LANG_TAGS } from './i18n/messages';
@@ -21,25 +21,23 @@
   }
 </script>
 
-<aside class="notes-panel" id="notes-live" aria-labelledby="notes-live-title">
-  <h2 id="notes-live-title">{t('notes.live')}</h2>
+<div class="feed">
   {#if phrases.length === 0}<p class="empty">{t('notes.liveEmpty')}</p>{/if}
   <ol bind:this={list} onscroll={onScroll}>
     {#each phrases as p (p.seq)}
       <li><time>{clock(p.start)}</time> <b>{p.name}</b> {p.text}</li>
     {/each}
   </ol>
-</aside>
+</div>
 
 <style>
-  .notes-panel {
-    position: fixed; right: 0; top: 3.75rem; bottom: 4.75rem; z-index: 4; width: min(24rem, 90vw);
-    display: grid; grid-template-rows: auto auto 1fr; padding: .75rem 1rem;
-    background: var(--panel-2); border-left: 1px solid var(--line);
+  /* Fills the tile like a camera picture; the bottom is left to the name over it. */
+  .feed {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    padding: .75rem .9rem 2.75rem; text-align: left;
   }
-  h2 { font-size: 1rem; margin: 0 0 .5rem; }
-  .empty { color: var(--muted); font-size: .9rem; margin: 0; }
-  ol { list-style: none; margin: 0; padding: 0; overflow: auto; display: grid; gap: .45rem; align-content: start; }
-  li { font-size: .9rem; line-height: 1.35; }
+  .empty { color: var(--muted); font-size: .85rem; margin: auto 0; text-align: center; }
+  ol { list-style: none; margin: 0; padding: 0; overflow: auto; display: grid; gap: .35rem; align-content: start; flex: 1; min-height: 0; }
+  li { font-size: .85rem; line-height: 1.35; overflow-wrap: anywhere; }
   time { color: var(--muted); font-variant-numeric: tabular-nums; }
 </style>

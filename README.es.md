@@ -178,8 +178,8 @@ las frases en orden, con las pausas de la grabación marcadas.
   notas terminan (una desactivación o el final de la reunión; un día por defecto); la primera frase
   de la reunión siguiente las sustituye. Eliminar una sala elimina sus notas. Descargarlas exige el
   PIN de la sala, y los PIN erróneos cuentan para el mismo bloqueo que al entrar.
-- `notes.live: true` muestra las frases en la sala a medida que se reconocen (un panel lateral),
-  para comprobar el reconocimiento.
+- `notes.live: true` muestra las frases en la sala a medida que se reconocen, en el recuadro del
+  participante «Notas», para comprobar el reconocimiento.
 
 ## Cómo funciona
 
