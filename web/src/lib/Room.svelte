@@ -45,13 +45,26 @@
     session.setMuted(muted);
     announce(muted ? t('control.micOff') : t('control.micOn'));
   }
+  // Opening a camera takes a moment; a second switch meanwhile would open another track and leave
+  // it running, so it is ignored.
+  let cameraBusy = false;
+  async function switchCamera(on: boolean): Promise<boolean> {
+    if (cameraBusy) return false;
+    cameraBusy = true;
+    try {
+      await session.setCamera(on);
+    } finally {
+      cameraBusy = false;
+    }
+    return true;
+  }
   async function toggleCamera() {
     if (cameraReason) {
       announce(cameraReason);
       return;
     }
     const on = !rs.cameraOn;
-    await session.setCamera(on);
+    if (!(await switchCamera(on))) return;
     // Read the result: opening the camera can fail (another app holds it).
     announce(on && !rs.cameraOn ? t('camera.unavailable') : rs.cameraOn ? t('camera.on') : t('camera.off'));
   }
@@ -62,10 +75,7 @@
       ev.preventDefault(); // Ctrl+D would bookmark the page, Ctrl+E open the search
       if (action === 'mic') toggleMic();
       else if (action === 'camera') void toggleCamera();
-      else {
-        closePopovers();
-        shortcuts.open();
-      }
+      else openShortcuts();
       return;
     }
     if (ev.key === 'Escape') {
@@ -105,6 +115,14 @@
     if (n === null) return;
     ev.preventDefault();
     list[n].focus();
+  }
+  // The dialog returns focus to the element focused before it opened; a menu item disappears with
+  // its menu, so focus goes to the menu's button first.
+  function openShortcuts() {
+    const back = picking ? reactBtn : more ? moreBtn : null;
+    closePopovers();
+    back?.focus();
+    shortcuts.open();
   }
   function onPointer(ev: PointerEvent) {
     if ((ev.target as Element).closest('.popover-anchor')) return;
@@ -165,7 +183,7 @@
       <button class="btn" class:off={rs.hasCamera && !rs.cameraOn} aria-pressed={rs.cameraOn} aria-disabled={cameraReason !== ''}
         aria-describedby={cameraReason ? 'camera-reason' : undefined}
         title={cameraReason || (rs.cameraError ? t('camera.unavailable') : withKeys(t('control.camera'), 'camera'))} aria-keyshortcuts={ariaShortcut('camera', mac)}
-        onclick={() => { if (!cameraReason) void session.setCamera(!rs.cameraOn); }}>
+        onclick={() => { if (!cameraReason) void switchCamera(!rs.cameraOn); }}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2" /><path d="m16 10 5-3v10l-5-3" />{#if !rs.cameraOn}<path d="M3 3l18 18" />{/if}</svg>
         <span class="label">{t('control.camera')}</span>
       </button>
@@ -216,7 +234,7 @@
               <span class="text">{t('control.noVideo')}<small id="novideo-hint">{t('control.noVideoHint')}</small></span>
               <span class="switch" aria-hidden="true"></span>
             </button>
-            <button type="button" class="row" aria-keyshortcuts={ariaShortcut('help', mac)} onclick={() => { more = false; shortcuts.open(); }}>
+            <button type="button" class="row" aria-keyshortcuts={ariaShortcut('help', mac)} onclick={openShortcuts}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2" /><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" /></svg>
               <span class="text">{t('control.shortcuts')}</span>
               <kbd class="keys" aria-hidden="true">{shortcutLabel('help', mac)}</kbd>

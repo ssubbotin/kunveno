@@ -29,7 +29,8 @@ pull request.
     bookmark again.
 16. While sharing the screen, Ctrl+D still mutes; typing text with spaces in another window does not.
 17. Ctrl+/ opens the shortcut list, Escape closes it and focus returns where it was; the list also
-    opens from More → Keyboard shortcuts.
+    opens from More → Keyboard shortcuts, and closing it then puts focus on More.
+    Pressing Ctrl+E twice quickly opens the camera once (its light goes off when it is turned off).
 18. Keyboard only: Tab reaches every control, including an unavailable camera or share button, whose
     reason is read; Reaction and More open with Enter, focus lands on the first item, arrows move,
     Escape closes and returns to the button.
