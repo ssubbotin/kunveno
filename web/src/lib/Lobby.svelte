@@ -6,7 +6,7 @@
   import CopyLink from './CopyLink.svelte';
   import { formatDate, i18n, setLang, t } from './i18n/i18n.svelte';
   import { LANGS, LANG_NAMES, LANG_TAGS, type Lang } from './i18n/messages';
-  import { fetchNotes, notesErrorText, notesUntil, saveFile } from './notes';
+  import { deleteNotes, fetchNotes, notesErrorText, notesUntil, saveFile } from './notes';
   import { loadInfo, site } from './site.svelte';
   import MicCheck from './MicCheck.svelte';
 
@@ -35,8 +35,11 @@
 
   const selected = $derived(rooms.find((r) => r.slug === room));
   const selectedNotes = $derived(site.notesEnabled && selected ? notesUntil(selected.notes_until) : null);
-  // The notes download: a PIN dialog for the chosen room, filled in from the PINs this browser knows.
+  // The notes download and deletion: a PIN dialog for the chosen room, filled in from the PINs this
+  // browser knows. Deleting asks for a confirmation inside the dialog first.
   let notesDialog: HTMLDialogElement;
+  let notesForm: HTMLFormElement;
+  let notesConfirm = $state(false);
   let notesSlug = $state('');
   let notesRoomName = $state('');
   let notesPin = $state('');
@@ -48,11 +51,12 @@
     notesRoomName = selected.name;
     notesPin = pinFor(localStorage, selected.slug) || pin;
     notesError = '';
+    notesConfirm = false;
     notesDialog.showModal();
   }
   async function downloadNotes(ev: Event) {
     ev.preventDefault();
-    if (notesBusy) return;
+    if (notesBusy || notesConfirm) return;
     notesBusy = true;
     notesError = '';
     try {
@@ -62,6 +66,29 @@
         notesDialog.close();
       } else {
         notesError = notesErrorText(r, t);
+        if (r.error === 'gone') void loadRooms(room);
+      }
+    } finally {
+      notesBusy = false;
+    }
+  }
+  function askDeleteNotes() {
+    if (!notesForm.reportValidity()) return;
+    notesError = '';
+    notesConfirm = true;
+  }
+  async function removeNotes() {
+    if (notesBusy) return;
+    notesBusy = true;
+    notesError = '';
+    try {
+      const r = await deleteNotes(fetch, notesSlug, notesPin);
+      if (r.ok) {
+        notesDialog.close();
+        void loadRooms(room);
+      } else {
+        notesConfirm = false;
+        notesError = notesErrorText(r, t, 'notes.deleteFailed');
         if (r.error === 'gone') void loadRooms(room);
       }
     } finally {
@@ -234,16 +261,25 @@
   </form>
   </section>
 
-  <dialog class="notes-dialog" bind:this={notesDialog} aria-labelledby="notes-title">
-    <form onsubmit={downloadNotes}>
+  <dialog class="notes-dialog" bind:this={notesDialog} aria-labelledby="notes-title" onclose={() => (notesConfirm = false)}>
+    <form bind:this={notesForm} onsubmit={downloadNotes}>
       <h2 id="notes-title">{t('notes.pinTitle', { room: notesRoomName })}</h2>
       <label class="field"><span>{t('notes.pin')}</span>
         <input bind:value={notesPin} type="password" maxlength="16" autocomplete="off" spellcheck="false" required /></label>
       {#if notesError}<p class="error" role="alert">{notesError}</p>{/if}
-      <div class="row">
-        <button class="btn primary" type="submit" disabled={notesBusy}>{t('notes.download')}</button>
-        <button class="btn quiet" type="button" onclick={() => notesDialog.close()}>{t('notes.cancel')}</button>
-      </div>
+      {#if notesConfirm}
+        <p class="confirm" role="alert">{t('notes.deleteConfirm')}</p>
+        <div class="row">
+          <button class="btn danger" type="button" disabled={notesBusy} onclick={removeNotes}>{t('notes.deleteYes')}</button>
+          <button class="btn quiet" type="button" disabled={notesBusy} onclick={() => (notesConfirm = false)}>{t('notes.cancel')}</button>
+        </div>
+      {:else}
+        <div class="row">
+          <button class="btn primary" type="submit" disabled={notesBusy}>{t('notes.download')}</button>
+          <button class="btn danger" type="button" disabled={notesBusy} onclick={askDeleteNotes}>{t('notes.delete')}</button>
+          <button class="btn quiet" type="button" onclick={() => notesDialog.close()}>{t('notes.cancel')}</button>
+        </div>
+      {/if}
     </form>
   </dialog>
 </div>
@@ -332,4 +368,5 @@
   .notes-dialog::backdrop { background: rgba(0, 0, 0, .55); }
   .notes-dialog form { display: grid; gap: .9rem; }
   .notes-dialog h2 { color: var(--text); margin: 0; }
+  .notes-dialog .confirm { color: var(--text); margin: 0; }
 </style>
