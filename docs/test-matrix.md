@@ -43,3 +43,16 @@ pull request.
 22. Turn the filter off and on twice in a row, and reload with it on: it still works each time.
 23. In a browser without AudioWorklet (or with the WebAssembly blocked in devtools), the switch
     reads "Not available in this browser" and the microphone still works.
+24. Background blur from the microphone check and from More → Background in a call: the person
+    stays sharp, the room is blurred, others see the same; the status shows about 15 fps.
+25. A preset and your own image (JPEG/PNG/WebP, not over 10 MB) as backgrounds; switching between
+    blur and images during a call does not drop the camera for others; your own image survives a
+    reload and never appears in the server's logs.
+26. Copy an image into `backgrounds/` on a running server: it appears in the picker with a preview
+    without a restart; remove the chosen one: on the next join the camera shows no background and
+    the picker says why.
+27. With devtools CPU throttling (6x) the rate drops and the status says the computer cannot keep
+    up, but the background stays; with the meeting tab hidden the others still see moving video.
+28. With the background unavailable (no WebGL2, or the model blocked in devtools), turning the
+    camera on opens the dialog; "Turn on the camera without a background" shows the camera,
+    "Cancel" leaves it off.

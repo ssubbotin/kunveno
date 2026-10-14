@@ -12,6 +12,10 @@
   import Announcer from './Announcer.svelte';
   import ShortcutsDialog from './ShortcutsDialog.svelte';
   import { ariaShortcut, isMac, matchShortcut, shortcutLabel, type ShortcutAction } from './shortcuts';
+  import BackgroundPicker from './BackgroundPicker.svelte';
+  import { NONE, type BackgroundChoice } from './background/choice';
+  import { presetLabel } from './background/presets';
+  import { loadPrefs } from './media';
 
   let { session }: { session: Session } = $props();
   // The session object lives for the whole page; Room never receives another one.
@@ -129,6 +133,68 @@
     back?.focus();
     shortcuts.open();
   }
+
+  // The background picker. The stored choice is shown while it matches what runs; after a failed
+  // switch the stored choice and the running kind can differ, and the running kind wins.
+  let bgDialog: HTMLDialogElement;
+  let unavailableDialog: HTMLDialogElement;
+  let storedBg = $state<BackgroundChoice>(loadPrefs(localStorage).background ?? NONE);
+  const currentChoice = $derived<BackgroundChoice>(
+    storedBg.kind === rs.background ? storedBg : rs.background === 'blur' ? { kind: 'blur' } : rs.background === 'none' ? NONE : storedBg,
+  );
+  function bgLabel(c: BackgroundChoice): string {
+    if (c.kind === 'none') return t('bg.none');
+    if (c.kind === 'blur') return t('bg.blur');
+    return c.source === 'own' ? t('bg.ownLabel') : presetLabel(c.name);
+  }
+  // The picker is mounted while the dialog is open, so each opening lists the server's current
+  // presets; focus starts on the current choice.
+  let bgOpen = $state(false);
+  async function openBackground() {
+    const back = more ? moreBtn : null;
+    closePopovers();
+    back?.focus();
+    storedBg = loadPrefs(localStorage).background ?? NONE;
+    bgOpen = true;
+    await tick();
+    if (!bgDialog.open) bgDialog.showModal();
+    // The presets and the own image load after the picker mounts; focus waits for the current
+    // choice for up to a second, unless it was moved meanwhile.
+    const first = document.activeElement;
+    for (let i = 0; i < 20 && bgDialog.open && document.activeElement === first; i++) {
+      const cur = bgDialog.querySelector<HTMLElement>('[role=radio][aria-checked=true]');
+      if (cur) {
+        cur.focus();
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  }
+  function closedBackground() {
+    bgOpen = false;
+    rs.backgroundLost = false;
+  }
+  async function chooseBg(c: BackgroundChoice) {
+    try {
+      await session.setBackground(c);
+    } catch (e) {
+      console.warn('background', e); // the running camera stays as it was
+    }
+    storedBg = loadPrefs(localStorage).background ?? NONE;
+    announce(t('bg.set', { name: bgLabel(currentChoice) }));
+  }
+  $effect(() => {
+    if (rs.backgroundError && !unavailableDialog.open) unavailableDialog.showModal();
+  });
+  function withoutBackground() {
+    unavailableDialog.close();
+    void session.cameraWithoutBackground().finally(() => (storedBg = loadPrefs(localStorage).background ?? NONE));
+  }
+  function cancelBackground() {
+    rs.backgroundError = false;
+    if (unavailableDialog.open) unavailableDialog.close();
+  }
+
   function onPointer(ev: PointerEvent) {
     if ((ev.target as Element).closest('.popover-anchor')) return;
     closePopovers();
@@ -154,6 +220,20 @@
 <main class="room" class:sharing={screenTrack !== null}>
   <Announcer message={announcement} seq={announceSeq} />
   <ShortcutsDialog bind:this={shortcuts} {mac} />
+  <dialog class="bg-dialog" id="bg-dialog" bind:this={bgDialog} aria-labelledby="bg-title" onclose={closedBackground}>
+    <h2 id="bg-title">{t('bg.title')}</h2>
+    {#if bgOpen}
+      <BackgroundPicker current={currentChoice} fps={rs.cameraOn ? rs.backgroundFps : null} lost={rs.backgroundLost} onchoose={chooseBg} />
+    {/if}
+    <form method="dialog"><button class="btn">{t('bg.close')}</button></form>
+  </dialog>
+  <dialog class="bg-dialog" bind:this={unavailableDialog} aria-labelledby="bg-unavailable" oncancel={cancelBackground}>
+    <p id="bg-unavailable">{t('bg.unavailable')}</p>
+    <div class="actions">
+      <button type="button" class="btn" onclick={withoutBackground}>{t('bg.withoutBg')}</button>
+      <button type="button" class="btn quiet" onclick={cancelBackground}>{t('bg.cancel')}</button>
+    </div>
+  </dialog>
   <header class="bar">
     <h1>{rs.roomName || rs.roomSlug}</h1>
     <span class="status {rs.status}" class:backup={rs.transport === 'tcp'}
@@ -248,6 +328,12 @@
               <span class="text">{t('noise.label')}<small id="noise-room-hint">{rs.noiseFilter === 'unavailable' ? t('noise.unavailable') : t('noise.roomHint')}</small></span>
               <span class="switch" aria-hidden="true"></span>
             </button>
+            {#if rs.hasCamera}
+              <button type="button" class="row" aria-haspopup="dialog" aria-label={t('bg.title')} aria-describedby="bg-current" onclick={openBackground}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" /><circle cx="12" cy="11" r="3" /><path d="M6.5 20a5.5 5.5 0 0 1 11 0" /></svg>
+                <span class="text">{t('bg.title')}<small id="bg-current">{bgLabel(currentChoice)}</small></span>
+              </button>
+            {/if}
             <button type="button" class="row" aria-keyshortcuts={ariaShortcut('help', mac)} onclick={openShortcuts}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2" /><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" /></svg>
               <span class="text">{t('control.shortcuts')}</span>
@@ -327,6 +413,14 @@
   .row svg { width: 1.15rem; height: 1.15rem; }
   .text { display: grid; gap: .1rem; }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .bg-dialog {
+    width: min(40rem, 92vw); padding: 1.25rem 1.5rem; border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--panel-2); color: var(--text);
+  }
+  .bg-dialog::backdrop { background: rgba(0, 0, 0, .55); }
+  .bg-dialog h2 { font-size: 1.1rem; margin: 0 0 .75rem; }
+  .bg-dialog p { margin: 0 0 1rem; }
+  .bg-dialog form, .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; margin-top: 1rem; }
   .keys { font: inherit; font-size: .8rem; color: var(--muted); }
   .text small { color: var(--muted); font-size: .8rem; line-height: 1.3; }
   .switch { width: 2rem; height: 1.15rem; border-radius: 999px; background: var(--line); position: relative; transition: background .15s; }

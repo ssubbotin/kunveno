@@ -90,6 +90,7 @@ const ru = {
   'bg.cancel': 'Отмена',
   'bg.set': 'Фон: {name}',
   'bg.privacy': 'Изображение хранится только в этом браузере',
+  'bg.close': 'Закрыть',
 
   'camera.label': 'Камера',
   'camera.notFound': 'Камера не найдена',
@@ -245,6 +246,7 @@ const en: Messages = {
   'bg.cancel': 'Cancel',
   'bg.set': 'Background: {name}',
   'bg.privacy': 'The image stays in this browser',
+  'bg.close': 'Close',
 
   'camera.label': 'Camera',
   'camera.notFound': 'No camera found',
@@ -397,6 +399,7 @@ const es: Messages = {
   'bg.cancel': 'Cancelar',
   'bg.set': 'Fondo: {name}',
   'bg.privacy': 'La imagen se queda en este navegador',
+  'bg.close': 'Cerrar',
 
   'camera.label': 'Cámara',
   'camera.notFound': 'No se ha encontrado ninguna cámara',
