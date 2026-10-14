@@ -1,5 +1,6 @@
 // Person segmentation with MediaPipe's selfie model, inside the background worker. Every file it
 // needs ships with the client; nothing is fetched from elsewhere.
+import type { Timings } from './timings';
 import { ImageSegmenter } from '@mediapipe/tasks-vision';
 import loaderUrl from '@mediapipe/tasks-vision/vision_wasm_module_internal.js?url';
 import wasmUrl from '@mediapipe/tasks-vision/vision_wasm_module_internal.wasm?url';
@@ -31,7 +32,8 @@ async function open(delegate: 'GPU' | 'CPU'): Promise<ImageSegmenter> {
 
 // createSegmenter tries the GPU first and falls back to the CPU; force 'CPU' skips the GPU attempt
 // (for when the GPU delegate was created but failed on a frame).
-export async function createSegmenter(force?: 'CPU'): Promise<Segmenter> {
+// probe, in debug mode, receives the time inside MediaPipe and the mask readback separately.
+export async function createSegmenter(force?: 'CPU', probe?: Timings): Promise<Segmenter> {
   let delegate: 'GPU' | 'CPU' = 'GPU';
   let seg: ImageSegmenter;
   try {
@@ -45,13 +47,17 @@ export async function createSegmenter(force?: 'CPU'): Promise<Segmenter> {
   return {
     delegate,
     segment(frame, ts) {
+      const t0 = performance.now();
       const r = seg.segmentForVideo(frame, ts);
+      probe?.add('infer', performance.now() - t0);
       try {
         const m = r.confidenceMasks?.[0];
         if (!m) return null;
+        const t1 = performance.now();
         const f = m.getAsFloat32Array();
         if (!out || out.length !== f.length) out = new Uint8Array(f.length);
         for (let i = 0; i < f.length; i++) out[i] = f[i] * 255;
+        probe?.add('readback', performance.now() - t1);
         return { data: out, width: m.width, height: m.height };
       } finally {
         r.close();

@@ -2,6 +2,7 @@
 // the processed track. Chrome passes the frame stream to the worker; Firefox, which cannot, sends
 // a bitmap of a hidden video element whenever the worker asks.
 import type { EffectMode, FromWorker, ToWorker } from './protocol';
+import { debug, debugOn } from './debug';
 
 export class BackgroundUnavailable extends Error {}
 
@@ -22,6 +23,12 @@ type Processor = new (init: { track: MediaStreamTrack }) => { readable: Readable
 
 export async function startEffect(raw: MediaStreamTrack, mode: EffectMode, onStats?: (fps: number) => void): Promise<Effect> {
   const { width = 640, height = 360 } = raw.getSettings();
+  const dbg = debugOn();
+  const started = performance.now();
+  if (dbg) {
+    debug.start();
+    debug.event('effect start', { width, height, mode: mode.kind, path: 'MediaStreamTrackProcessor' in globalThis ? 'stream' : 'bitmap' });
+  }
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
@@ -39,14 +46,14 @@ export async function startEffect(raw: MediaStreamTrack, mode: EffectMode, onSta
     const MSTP = (globalThis as { MediaStreamTrackProcessor?: Processor }).MediaStreamTrackProcessor;
     if (MSTP) {
       const frames = new MSTP({ track: raw }).readable;
-      send({ type: 'init', canvas: offscreen, width, height, delegate: delegate(), frames }, [offscreen, frames]);
+      send({ type: 'init', canvas: offscreen, width, height, delegate: delegate(), debug: dbg, frames }, [offscreen, frames]);
     } else {
       video = document.createElement('video');
       video.muted = true;
       video.playsInline = true;
       video.srcObject = new MediaStream([raw]);
       await video.play();
-      send({ type: 'init', canvas: offscreen, width, height, delegate: delegate() }, [offscreen]);
+      send({ type: 'init', canvas: offscreen, width, height, delegate: delegate(), debug: dbg }, [offscreen]);
     }
 
     await new Promise<void>((resolve, reject) => {
@@ -57,8 +64,10 @@ export async function startEffect(raw: MediaStreamTrack, mode: EffectMode, onSta
           clearTimeout(timer);
           ready = true;
           console.info('background effect ready, recognition on', m.delegate);
+          if (dbg) debug.event('effect ready', { delegate: m.delegate, ms: Math.round(performance.now() - started), init: m.initMs });
           resolve();
         } else if (m.type === 'error') {
+          if (dbg) debug.event('worker error', m.message);
           if (ready) {
             console.warn('background effect:', m.message);
             return;
@@ -66,8 +75,12 @@ export async function startEffect(raw: MediaStreamTrack, mode: EffectMode, onSta
           clearTimeout(timer);
           reject(new BackgroundUnavailable(m.message));
         } else if (m.type === 'want' && video && video.readyState >= 2) {
+          const t = performance.now();
           const frame = await createImageBitmap(video);
+          if (dbg) debug.page.add('bitmap', performance.now() - t);
           send({ type: 'frame', frame }, [frame]);
+        } else if (m.type === 'debug') {
+          debug.workerSample(m.sample);
         } else if (m.type === 'stats') {
           onStats?.(m.fps);
         }
@@ -87,13 +100,17 @@ export async function startEffect(raw: MediaStreamTrack, mode: EffectMode, onSta
     throw e instanceof BackgroundUnavailable ? e : new BackgroundUnavailable(String(e));
   }
 
-  const setMode = (m: EffectMode) => send({ type: 'mode', mode: m }, m.kind === 'image' ? [m.image] : []);
+  const setMode = (m: EffectMode) => {
+    if (dbg) debug.event('mode', m.kind);
+    send({ type: 'mode', mode: m }, m.kind === 'image' ? [m.image] : []);
+  };
   setMode(mode);
   const track = canvas.captureStream(15).getVideoTracks()[0];
   return {
     track,
     setMode,
     stop() {
+      if (dbg) debug.event('effect stop');
       send({ type: 'stop' });
       setTimeout(() => worker.terminate(), 1000); // let it release the GPU first
       track.stop();
