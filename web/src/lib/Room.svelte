@@ -7,6 +7,8 @@
   import { site } from './site.svelte';
   import CopyLink from './CopyLink.svelte';
   import { roomLink } from './link';
+  import { nextIndex } from './roving';
+  import { tick } from 'svelte';
   import Announcer from './Announcer.svelte';
   import ShortcutsDialog from './ShortcutsDialog.svelte';
   import { ariaShortcut, isMac, matchShortcut, shortcutLabel, type ShortcutAction } from './shortcuts';
@@ -66,17 +68,49 @@
       }
       return;
     }
-    if (ev.key === 'Escape') closePopovers();
+    if (ev.key === 'Escape') {
+      const back = picking ? reactBtn : more ? moreBtn : null;
+      closePopovers();
+      back?.focus();
+    }
   }
   // Popovers close on Escape and on a click anywhere outside them.
   function closePopovers() {
     picking = false;
     more = false;
   }
+  let reactBtn: HTMLButtonElement;
+  let moreBtn: HTMLButtonElement;
+  let pickerEl = $state<HTMLElement | null>(null);
+  let menuEl = $state<HTMLElement | null>(null);
+  function items(el: HTMLElement): HTMLElement[] {
+    return [...el.querySelectorAll<HTMLElement>('button:not(:disabled)')];
+  }
+  // Opening a menu moves focus to its first item, as the disclosure pattern expects.
+  async function openPicker() {
+    picking = !picking;
+    more = false;
+    await tick();
+    if (picking && pickerEl) items(pickerEl)[0]?.focus();
+  }
+  async function openMore() {
+    more = !more;
+    picking = false;
+    await tick();
+    if (more && menuEl) items(menuEl)[0]?.focus();
+  }
+  function onMenuKey(ev: KeyboardEvent) {
+    const list = items(ev.currentTarget as HTMLElement);
+    const n = nextIndex(list.indexOf(document.activeElement as HTMLElement), list.length, ev.key);
+    if (n === null) return;
+    ev.preventDefault();
+    list[n].focus();
+  }
   function onPointer(ev: PointerEvent) {
     if ((ev.target as Element).closest('.popover-anchor')) return;
     closePopovers();
   }
+  const shareReason = $derived(rs.isSharing ? '' : shareBusy ? t('control.shareBusy', { name: sharerName }) : rs.status !== 'connected' ? t('control.shareWait') : '');
   const echoPresent = $derived(rs.participants.some((p) => p.botKind === 'echo'));
   const statusText = $derived(
     rs.status === 'connected' ? (rs.transport === 'tcp' ? t('status.backup') : t('status.connected'))
@@ -128,46 +162,58 @@
         {#if !rs.muted}<span class="level" class:on={rs.selfSpeaking} aria-hidden="true"></span>{/if}
       </button>
 
-      <button class="btn" class:off={rs.hasCamera && !rs.cameraOn} aria-pressed={rs.cameraOn} disabled={rs.status !== 'connected' || !rs.hasCamera}
+      <button class="btn" class:off={rs.hasCamera && !rs.cameraOn} aria-pressed={rs.cameraOn} aria-disabled={cameraReason !== ''}
+        aria-describedby={cameraReason ? 'camera-reason' : undefined}
         title={cameraReason || (rs.cameraError ? t('camera.unavailable') : withKeys(t('control.camera'), 'camera'))} aria-keyshortcuts={ariaShortcut('camera', mac)}
-        onclick={() => void session.setCamera(!rs.cameraOn)}>
+        onclick={() => { if (!cameraReason) void session.setCamera(!rs.cameraOn); }}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2" /><path d="m16 10 5-3v10l-5-3" />{#if !rs.cameraOn}<path d="M3 3l18 18" />{/if}</svg>
         <span class="label">{t('control.camera')}</span>
       </button>
 
-      <button class="btn" class:active={rs.isSharing} aria-pressed={rs.isSharing} disabled={!rs.isSharing && (shareBusy || rs.status !== 'connected')}
-        title={shareBusy ? t('control.shareBusy', { name: sharerName }) : rs.isSharing ? t('control.stopShare') : t('control.share')}
-        onclick={() => (rs.isSharing ? session.stopShare() : session.startShare())}>
+      <button class="btn" class:active={rs.isSharing} aria-pressed={rs.isSharing} aria-disabled={shareReason !== ''}
+        aria-describedby={shareReason ? 'share-reason' : undefined}
+        title={shareReason || (rs.isSharing ? t('control.stopShare') : t('control.share'))}
+        onclick={() => { if (shareReason) return; void (rs.isSharing ? session.stopShare() : session.startShare()); }}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="1.5" />{#if rs.isSharing}<path d="M8 20h8M9 8l6 4M15 8l-6 4" />{:else}<path d="M8 20h8M12 13V7M9.5 9.5 12 7l2.5 2.5" />{/if}</svg>
         <span class="label">{t('control.share')}</span>
       </button>
 
       <div class="popover-anchor">
-        {#if picking}
-          <div class="picker" role="group" aria-label={t('control.react')}>
-            {#each site.reactions as e (e)}
-              <button type="button" onclick={() => { session.react(e); picking = false; }} aria-label={e}>{e}</button>
-            {/each}
-          </div>
-        {/if}
-        <button class="btn" class:active={picking} aria-expanded={picking} disabled={rs.status !== 'connected'} title={t('control.react')}
-          onclick={() => { picking = !picking; more = false; }}>
+        <button class="btn" class:active={picking} aria-expanded={picking} aria-controls="react-menu" disabled={rs.status !== 'connected'} title={t('control.react')}
+          bind:this={reactBtn} onclick={openPicker}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01" /></svg>
           <span class="label">{t('control.react')}</span>
         </button>
+        {#if picking}
+          <!-- The group only moves focus between its buttons with the arrow keys. -->
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <div class="picker" id="react-menu" role="group" aria-label={t('control.react')} bind:this={pickerEl} onkeydown={onMenuKey}>
+            {#each site.reactions as e (e)}
+              <button type="button" onclick={() => { session.react(e); picking = false; reactBtn.focus(); }} aria-label={e}>{e}</button>
+            {/each}
+          </div>
+        {/if}
       </div>
 
       <div class="popover-anchor">
+        <button class="btn" class:active={more} class:flag={!more && (rs.echo || !rs.receiveVideo)} aria-expanded={more} aria-controls="more-menu" title={t('control.more')}
+          bind:this={moreBtn} onclick={openMore}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="19" cy="12" r="1.3" /></svg>
+          <span class="label">{t('control.more')}</span>
+        </button>
         {#if more}
-          <div class="menu" role="group" aria-label={t('control.more')}>
-            <button type="button" class="row" aria-pressed={rs.echo} disabled={rs.status !== 'connected'} onclick={() => session.setEcho(!rs.echo)}>
+          <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+          <div class="menu" id="more-menu" role="group" aria-label={t('control.more')} bind:this={menuEl} onkeydown={onMenuKey}>
+            <button type="button" class="row" role="switch" aria-checked={rs.echo} aria-label={t('control.echo')} aria-describedby="echo-hint"
+              disabled={rs.status !== 'connected'} onclick={() => session.setEcho(!rs.echo)}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h2l2-5 3 10 3-8 2 3h4" /></svg>
-              <span class="text">{t('control.echo')}<small>{rs.echo && !echoPresent ? t('control.echoStarting') : t('control.echoHint')}</small></span>
+              <span class="text">{t('control.echo')}<small id="echo-hint">{rs.echo && !echoPresent ? t('control.echoStarting') : t('control.echoHint')}</small></span>
               <span class="switch" aria-hidden="true"></span>
             </button>
-            <button type="button" class="row" aria-pressed={!rs.receiveVideo} onclick={() => session.setReceiveVideo(!rs.receiveVideo)}>
+            <button type="button" class="row" role="switch" aria-checked={!rs.receiveVideo} aria-label={t('control.noVideo')} aria-describedby="novideo-hint"
+              onclick={() => session.setReceiveVideo(!rs.receiveVideo)}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="2.5" /><path d="M3 3l18 18" /></svg>
-              <span class="text">{t('control.noVideo')}<small>{t('control.noVideoHint')}</small></span>
+              <span class="text">{t('control.noVideo')}<small id="novideo-hint">{t('control.noVideoHint')}</small></span>
               <span class="switch" aria-hidden="true"></span>
             </button>
             <button type="button" class="row" aria-keyshortcuts={ariaShortcut('help', mac)} onclick={() => { more = false; shortcuts.open(); }}>
@@ -177,13 +223,10 @@
             </button>
           </div>
         {/if}
-        <button class="btn" class:active={more} class:flag={!more && (rs.echo || !rs.receiveVideo)} aria-expanded={more} title={t('control.more')}
-          onclick={() => { more = !more; picking = false; }}>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="19" cy="12" r="1.3" /></svg>
-          <span class="label">{t('control.more')}</span>
-        </button>
       </div>
     </div>
+    <span id="camera-reason" class="sr">{cameraReason}</span>
+    <span id="share-reason" class="sr">{shareReason}</span>
 
     <button class="btn danger leave" title={t('control.leave')} onclick={() => session.leave()}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10" /></svg>
@@ -248,12 +291,13 @@
   .row:disabled { opacity: .45; cursor: default; }
   .row svg { width: 1.15rem; height: 1.15rem; }
   .text { display: grid; gap: .1rem; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .keys { font: inherit; font-size: .8rem; color: var(--muted); }
   .text small { color: var(--muted); font-size: .8rem; line-height: 1.3; }
   .switch { width: 2rem; height: 1.15rem; border-radius: 999px; background: var(--line); position: relative; transition: background .15s; }
   .switch::after { content: ''; position: absolute; top: .15rem; left: .15rem; width: .85rem; height: .85rem; border-radius: 50%; background: var(--text); transition: transform .15s; }
-  .row[aria-pressed='true'] .switch { background: var(--live); }
-  .row[aria-pressed='true'] .switch::after { transform: translateX(.85rem); }
+  .row[aria-checked='true'] .switch { background: var(--live); }
+  .row[aria-checked='true'] .switch::after { transform: translateX(.85rem); }
 
   @media (max-width: 1024px) {
     .controls .label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
