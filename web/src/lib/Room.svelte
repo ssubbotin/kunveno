@@ -311,4 +311,10 @@
     .main { gap: .35rem; }
     .bar { padding: .75rem 1rem; }
   }
+  /* At 320 px the empty balancing column no longer fits: Leave takes its own row (WCAG 1.4.10). */
+  @media (max-width: 360px) {
+    .controls { grid-template-columns: 1fr; }
+    .main { grid-column: 1; justify-self: center; }
+    .leave { grid-column: 1; justify-self: end; }
+  }
 </style>
