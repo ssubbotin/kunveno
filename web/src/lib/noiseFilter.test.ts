@@ -1,9 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const lib = vi.hoisted(() => ({ binary: new ArrayBuffer(0) }));
+const lib = vi.hoisted(() => ({ binary: new ArrayBuffer(0), node: null as Record<string, unknown> | null }));
 vi.mock('@sapphi-red/web-noise-suppressor', () => ({
-  loadRnnoise: async () => lib.binary,
-  RnnoiseWorkletNode: class {
+  loadGtcrn: async () => lib.binary,
+  GtcrnWorkletNode: class {
+    channelCount = 2;
+    channelCountMode = 'max';
+    channelInterpretation = 'speakers';
+    constructor() {
+      lib.node = this as unknown as Record<string, unknown>;
+    }
     connect() {}
     disconnect() {}
     destroy() {}
@@ -29,9 +35,11 @@ class FakeContext {
   createMediaStreamSource() {
     return { connect() {}, disconnect() {} };
   }
+  dest: Record<string, unknown> | null = null;
   createMediaStreamDestination() {
     const track = { stop() {} };
-    return { stream: { getAudioTracks: () => [track] } };
+    this.dest = { channelCount: 2, channelCountMode: 'explicit', stream: { getAudioTracks: () => [track] } };
+    return this.dest;
   }
   async resume() {
     this.resumed += 1;
@@ -70,5 +78,12 @@ describe('filterTrack', () => {
     f.stop();
     FakeContext.last.become('closed');
     expect(FakeContext.last.resumed).toBe(before + 1);
+  });
+
+  it('keeps the path mono, so the voice is not on one side only', async () => {
+    lib.binary = EMPTY_MODULE;
+    await filterTrack({} as MediaStreamTrack);
+    expect(lib.node).toMatchObject({ channelCount: 1, channelCountMode: 'explicit' });
+    expect(FakeContext.last.dest).toMatchObject({ channelCount: 1, channelCountMode: 'explicit' });
   });
 });
