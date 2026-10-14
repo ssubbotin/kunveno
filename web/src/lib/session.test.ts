@@ -21,6 +21,31 @@ vi.mock('./micInput', () => ({
   },
 }));
 
+// Camera inputs the session opened, in order; the background can be made to fail.
+type FakeCam = { track: { id: string; stop(): void }; deviceId: string; effect: { mode: unknown; setMode(m: unknown): void; stop(): void } | null; stopped: boolean; stop(): void };
+const cam = vi.hoisted(() => ({ opened: [] as FakeCam[], unavailable: false }));
+vi.mock('./cameraInput', () => {
+  class BackgroundUnavailable extends Error {}
+  return {
+    BackgroundUnavailable,
+    modeFor: async (c: { kind: string }) => (c.kind === 'none' ? null : { kind: c.kind }),
+    openCamera: async (_id: string, choice: { kind: string }) => {
+      if (choice.kind !== 'none' && cam.unavailable) throw new BackgroundUnavailable('no');
+      const c: FakeCam = {
+        track: { id: `cam${cam.opened.length}`, stop() {} },
+        deviceId: 'cam',
+        effect: choice.kind === 'none' ? null : { mode: { kind: choice.kind }, setMode(m) { this.mode = m; }, stop() {} },
+        stopped: false,
+        stop() {
+          c.stopped = true;
+        },
+      };
+      cam.opened.push(c);
+      return c;
+    },
+  };
+});
+
 import { Session } from './session';
 import { Rtc } from './rtc';
 import { site } from './site.svelte';
@@ -64,6 +89,16 @@ class FakePeerConnection {
     if (networkDown) throw new DOMException("Can't create RTCPeerConnections when the network is down", 'UnknownError');
   }
   close() {}
+  // Enough of an offer/answer for the send slots to bind, so rtc.ready resolves.
+  async setRemoteDescription() {}
+  async createAnswer() {
+    return { type: 'answer', sdp: 'v=0' };
+  }
+  async setLocalDescription() {}
+  private transceivers = ['0', '1', '2'].map((mid) => ({ mid, direction: 'recvonly', sender: { replaceTrack: async () => {} } }));
+  getTransceivers() {
+    return this.transceivers;
+  }
 }
 
 function memoryStorage(): Storage {
@@ -89,6 +124,8 @@ describe('Session', () => {
     networkDown = false;
     mic.inputs.length = 0;
     mic.filterWorks = true;
+    cam.opened.length = 0;
+    cam.unavailable = false;
     const track = { enabled: true, stop() {} };
     vi.stubGlobal('WebSocket', FakeSocket);
     vi.stubGlobal('RTCPeerConnection', FakePeerConnection);
@@ -96,7 +133,7 @@ describe('Session', () => {
     vi.stubGlobal('location', { protocol: 'https:', host: 'meet.test' });
     vi.stubGlobal('navigator', {
       mediaDevices: {
-        enumerateDevices: async () => [],
+        enumerateDevices: async () => [{ kind: 'videoinput', deviceId: 'cam' }],
         getUserMedia: async () => ({ getAudioTracks: () => [track] }),
       },
     });
@@ -114,6 +151,9 @@ describe('Session', () => {
     await flush();
     FakeSocket.all[0].open();
     await p;
+    // The server's first offer binds the send slots.
+    FakeSocket.all[0].onmessage?.({ data: JSON.stringify({ type: 'offer', sdp: 'v=0' }) });
+    await flush();
     return s;
   }
 
@@ -235,5 +275,86 @@ describe('Session', () => {
     expect(mic.inputs[0].stopped).toBe(false);
     expect(s.state.status).not.toBe('idle');
   });
-});
 
+  it('switches blur to an image inside the effect, without reopening the camera', async () => {
+    vi.spyOn(Rtc.prototype, 'startCamera').mockResolvedValue();
+    const replace = vi.spyOn(Rtc.prototype, 'replaceCamera').mockResolvedValue();
+    const s = await joined();
+    await s.setBackground({ kind: 'blur' });
+    await s.setCamera(true);
+    await s.setBackground({ kind: 'image', source: 'own' });
+    expect(cam.opened).toHaveLength(1);
+    expect(replace).not.toHaveBeenCalled();
+    expect(s.state.background).toBe('image');
+  });
+
+  it('reopens the camera once when switching between none and a background', async () => {
+    vi.spyOn(Rtc.prototype, 'startCamera').mockResolvedValue();
+    const replace = vi.spyOn(Rtc.prototype, 'replaceCamera').mockResolvedValue();
+    const s = await joined();
+    await s.setCamera(true);
+    await s.setBackground({ kind: 'blur' });
+    expect(cam.opened).toHaveLength(2);
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(cam.opened[0].stopped).toBe(true);
+    await s.setBackground({ kind: 'none' });
+    expect(cam.opened).toHaveLength(3);
+    expect(cam.opened[1].stopped).toBe(true);
+  });
+
+  it('keeps the camera off when the background cannot start', async () => {
+    const start = vi.spyOn(Rtc.prototype, 'startCamera').mockResolvedValue();
+    const s = await joined();
+    cam.unavailable = true;
+    await s.setBackground({ kind: 'blur' });
+    await s.setCamera(true);
+    expect(start).not.toHaveBeenCalled();
+    expect(s.state.cameraOn).toBe(false);
+    expect(s.state.backgroundError).toBe(true);
+    await s.cameraWithoutBackground();
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(s.state.background).toBe('none');
+    expect(s.state.backgroundError).toBe(false);
+  });
+
+  it('only remembers the choice while the camera is off', async () => {
+    const s = await joined();
+    await s.setBackground({ kind: 'blur' });
+    expect(cam.opened).toHaveLength(0);
+    expect(JSON.parse(localStorage.getItem('kunveno.prefs') ?? '{}').background).toEqual({ kind: 'blur' });
+  });
+
+  it('stops the new camera input when leaving during a switch', async () => {
+    vi.spyOn(Rtc.prototype, 'startCamera').mockResolvedValue();
+    let release = () => {};
+    vi.spyOn(Rtc.prototype, 'replaceCamera').mockImplementation(() => new Promise<void>((r) => (release = r)));
+    const s = await joined();
+    await s.setCamera(true);
+    const switching = s.setBackground({ kind: 'blur' });
+    await flush();
+    s.leave();
+    release();
+    await switching;
+    expect(cam.opened[1].stopped).toBe(true);
+    expect(cam.opened[0].stopped).toBe(true);
+  });
+
+  it('keeps a stored blur at join, where only images can be lost', async () => {
+    localStorage.setItem('kunveno.prefs', JSON.stringify({ cameraOn: true, background: { kind: 'blur' } }));
+    const s = await joined();
+    expect(s.state.background).toBe('blur');
+    expect(s.state.backgroundLost).toBe(false);
+    expect(cam.opened).toHaveLength(1);
+    expect(cam.opened[0].effect).not.toBeNull();
+  });
+
+  it('drops a stored server image that is gone and says so', async () => {
+    localStorage.setItem('kunveno.prefs', JSON.stringify({ cameraOn: true, background: { kind: 'image', source: 'server', name: 'gone.jpg' } }));
+    vi.stubGlobal('fetch', async () => ({ json: async () => [{ name: 'beach.jpg', width: 1920, height: 1080 }] }));
+    const s = await joined();
+    expect(s.state.backgroundLost).toBe(true);
+    expect(s.state.background).toBe('none');
+    expect(cam.opened[0].effect).toBeNull();
+    expect(JSON.parse(localStorage.getItem('kunveno.prefs') ?? '{}').background).toEqual({ kind: 'none' });
+  });
+});

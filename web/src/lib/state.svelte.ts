@@ -22,6 +22,12 @@ export class RoomState {
   cameraOn = $state(false);
   hasCamera = $state(true); // false on computers without any camera
   cameraError = $state('');
+  // The camera background: what is chosen, the effect's frame rate, whether it failed to start,
+  // and whether a stored image was gone at join (for the picker's notice). Not cleared by reset().
+  background = $state<'none' | 'blur' | 'image'>('none');
+  backgroundFps = $state(0);
+  backgroundError = $state(false);
+  backgroundLost = $state(false);
   receiveVideo = $state(true);
   echo = $state(false);
   // The emoji each participant sent last, shown on their tile for a few seconds.

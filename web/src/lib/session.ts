@@ -9,7 +9,11 @@ import { site } from './site.svelte';
 import { prefersTcp, rememberTcp } from './transport';
 import { Reconnector, newClientId } from './reconnect';
 import { forgetPin, rememberPin } from './pins';
-import { cameraConstraints, loadPrefs, savePrefs, splitStream } from './media';
+import { loadPrefs, savePrefs, splitStream } from './media';
+import { BackgroundUnavailable, modeFor, openCamera, type CameraInput } from './cameraInput';
+import { NONE, resolveChoice, sameEffect, type BackgroundChoice } from './background/choice';
+import { fetchPresets } from './background/presets';
+import { hasOwn } from './background/ownImage';
 
 // How long a reaction stays on the sender's tile.
 const REACTION_MS = 4000;
@@ -41,11 +45,23 @@ export class Session {
   private screenTrack: MediaStreamTrack | null = null;
   private screenAttached = false;
   private stopSelfLevel: (() => void) | null = null;
-  private camera: MediaStreamTrack | null = null;
+  private cam: CameraInput | null = null;
+  private switchingCam = false;
+  // The chosen camera background, from the preferences.
+  private background: BackgroundChoice = NONE;
   // Set after our media connection failed, and remembered for a day; joins then ask the server
   // for ICE over TCP only, since a UDP path that broke once tends to break again (NAT or
   // firewall on a gateway).
   private preferTcp = prefersTcp(localStorage);
+
+  constructor() {
+    this.useBackground(loadPrefs(localStorage).background ?? NONE);
+  }
+
+  private useBackground(choice: BackgroundChoice): void {
+    this.background = choice;
+    this.state.background = choice.kind;
+  }
 
   async join(room: string, pin: string, name: string): Promise<void> {
     this.wanted = { room, pin, name };
@@ -58,9 +74,10 @@ export class Session {
     this.state.receiveVideo = prefs.receiveVideo;
     if (this.micIn) this.micIn.track.enabled = prefs.micOn;
     this.state.hasCamera = await hasCamera();
-    if (prefs.cameraOn && this.state.hasCamera && !this.camera) {
+    await this.loadBackground();
+    if (prefs.cameraOn && this.state.hasCamera && !this.cam) {
       try {
-        this.camera = await openCamera(prefs.cameraId);
+        this.cam = await this.openCam();
       } catch (e) {
         console.warn('camera', e); // join without it; the button stays available
       }
@@ -73,6 +90,115 @@ export class Session {
       this.watchSelf();
     }
     await this.connect();
+  }
+
+  // loadBackground takes the stored choice; an image that is gone (removed from the server, or the
+  // own image deleted) falls back to none, and the picker is told. Blur and none are never lost.
+  private async loadBackground(): Promise<void> {
+    const stored = loadPrefs(localStorage).background ?? NONE;
+    if (stored.kind !== 'image') {
+      this.useBackground(stored);
+      return;
+    }
+    const presets = stored.source === 'server' ? (await fetchPresets()).map((p) => p.name) : [];
+    const { choice, lost } = resolveChoice(stored, presets, stored.source === 'own' && (await hasOwn()));
+    if (lost) {
+      savePrefs(localStorage, { ...loadPrefs(localStorage), background: NONE });
+      this.state.backgroundLost = true;
+    }
+    this.useBackground(choice);
+  }
+
+  private onFps = (fps: number) => (this.state.backgroundFps = fps);
+
+  // openCam opens the camera with the current background; when the background cannot start it
+  // reports so and leaves the camera off. Other camera errors are thrown.
+  private async openCam(): Promise<CameraInput | null> {
+    try {
+      const c = await openCamera(loadPrefs(localStorage).cameraId, this.background, this.onFps);
+      this.state.backgroundError = false;
+      return c;
+    } catch (e) {
+      if (e instanceof BackgroundUnavailable) {
+        console.warn('background', e);
+        this.state.backgroundError = true;
+        return null;
+      }
+      throw e;
+    }
+  }
+
+  // setBackground remembers the choice; with the camera open it switches inside the effect, or
+  // reopens the camera when the effect starts or stops. A call during a switch is ignored, the
+  // stored choice included, so the choice and the camera agree.
+  async setBackground(choice: BackgroundChoice): Promise<void> {
+    if (this.switchingCam) return;
+    savePrefs(localStorage, { ...loadPrefs(localStorage), background: choice });
+    const before = this.background;
+    this.useBackground(choice);
+    if (!this.cam) return;
+    this.switchingCam = true;
+    try {
+      if (this.cam.effect && sameEffect(before, choice)) {
+        let mode;
+        try {
+          mode = await modeFor(choice);
+        } catch (e) {
+          if (!(e instanceof BackgroundUnavailable)) throw e;
+          console.warn('background', e);
+          this.state.backgroundError = true;
+          this.useBackground(before); // the running effect stays as it was
+          return;
+        }
+        if (mode && this.cam?.effect) this.cam.effect.setMode(mode);
+        this.state.backgroundError = false;
+        return;
+      }
+      const next = await this.openCam();
+      if (!next) {
+        this.useBackground(before); // keep what is running
+        return;
+      }
+      if (!this.cam) {
+        next.stop(); // switched off or left meanwhile
+        return;
+      }
+      // The new input is ours from here on, so switching off and leave act on it while the track
+      // is replaced.
+      const old = this.cam;
+      const rtc = this.rtc;
+      const sending = this.state.cameraOn;
+      this.cam = next;
+      this.showOwnCamera();
+      try {
+        if (sending) await rtc?.replaceCamera(next.track);
+      } catch (e) {
+        // A reconnect or leave closes the connection under us; on the same connection the old
+        // camera stays.
+        if (this.cam === next && this.rtc === rtc && rtc) {
+          this.cam = old;
+          this.useBackground(before);
+          this.showOwnCamera();
+          next.stop();
+          throw e;
+        }
+      }
+      old.stop();
+      if (this.cam !== next) next.stop(); // left meanwhile
+    } finally {
+      this.switchingCam = false;
+    }
+  }
+
+  // cameraWithoutBackground answers the "background unavailable" notice: camera on, no background.
+  async cameraWithoutBackground(): Promise<void> {
+    this.state.backgroundError = false;
+    await this.setBackground(NONE);
+    await this.setCamera(true);
+  }
+
+  private showOwnCamera(): void {
+    if (this.cam && this.state.cameraOn) this.state.videos = { ...this.state.videos, [this.state.selfId]: this.cam.track };
   }
 
   // Own level drives the speaking highlight of our row; a muted (disabled) track reads as silence.
@@ -187,7 +313,7 @@ export class Session {
         this.state.status = 'connected';
         if (this.state.muted) this.sig?.send({ type: 'mute', muted: true });
         if (!this.state.receiveVideo) this.sig?.send({ type: 'video', receive: false });
-        if (this.camera) void this.attachCamera();
+        if (this.cam) void this.attachCamera();
         break;
       case 'reaction': {
         const r = this.state.reactions[m.from];
@@ -252,8 +378,9 @@ export class Session {
     this.micIn?.stop();
     this.micIn = null;
     this.state.noiseFilter = 'off';
-    this.camera?.stop();
-    this.camera = null;
+    this.cam?.stop();
+    this.cam = null;
+    this.state.backgroundFps = 0;
     this.state.reset();
     this.state.status = 'idle';
   }
@@ -278,15 +405,21 @@ export class Session {
       this.sig?.send({ type: 'camera', on: false });
       return;
     }
-    if (!this.camera) {
+    if (!this.cam) {
+      let opened: CameraInput | null;
       try {
-        this.camera = await openCamera(prefs.cameraId);
+        opened = await this.openCam();
       } catch (e) {
         console.warn('camera', e);
         this.state.cameraError = 'camera.unavailable'; // a message key; the room translates it
+        opened = null;
+      }
+      if (!opened) {
+        // No camera, or its background cannot start (state.backgroundError): it stays off.
         savePrefs(localStorage, { ...loadPrefs(localStorage), cameraOn: false });
         return;
       }
+      this.cam = opened;
     }
     this.state.cameraError = '';
     await this.attachCamera();
@@ -306,18 +439,19 @@ export class Session {
 
   private async attachCamera(): Promise<void> {
     const rtc = this.rtc;
-    if (!this.camera || !rtc) return;
+    if (!this.cam || !rtc) return;
     await rtc.ready;
-    if (rtc !== this.rtc || !this.camera) return; // reconnected or switched off meanwhile
-    await rtc.startCamera(this.camera);
+    if (rtc !== this.rtc || !this.cam) return; // reconnected or switched off meanwhile
+    await rtc.startCamera(this.cam.track);
     this.state.cameraOn = true;
-    this.state.videos = { ...this.state.videos, [this.state.selfId]: this.camera };
+    this.showOwnCamera();
     this.sig?.send({ type: 'camera', on: true });
   }
 
   private dropCamera(): void {
-    this.camera?.stop();
-    this.camera = null;
+    this.cam?.stop();
+    this.cam = null;
+    this.state.backgroundFps = 0;
     void this.rtc?.stopCamera();
     this.state.cameraOn = false;
     const { [this.state.selfId]: _, ...rest } = this.state.videos;
@@ -415,16 +549,6 @@ export class Session {
 // filterState is what the switch shows: off, on, or asked for but not running in this browser.
 function filterState(asked: boolean, input: MicInput): 'off' | 'on' | 'unavailable' {
   return !asked ? 'off' : input.filtered ? 'on' : 'unavailable';
-}
-
-// openCamera opens the camera chosen in the lobby, or the default one if it is gone.
-async function openCamera(deviceId: string): Promise<MediaStreamTrack> {
-  try {
-    return (await navigator.mediaDevices.getUserMedia({ video: cameraConstraints(deviceId) })).getVideoTracks()[0];
-  } catch (e) {
-    if (!deviceId || (e as Error).name !== 'OverconstrainedError') throw e;
-    return (await navigator.mediaDevices.getUserMedia({ video: cameraConstraints('') })).getVideoTracks()[0];
-  }
 }
 
 async function hasCamera(): Promise<boolean> {

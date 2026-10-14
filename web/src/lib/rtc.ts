@@ -101,6 +101,11 @@ export class Rtc {
     }
   }
 
+  // replaceCamera sends another camera track (a background turned on or off) on the camera slot.
+  async replaceCamera(track: MediaStreamTrack): Promise<void> {
+    await this.cameraSender?.replaceTrack(track);
+  }
+
   async stopCamera(): Promise<void> {
     await this.cameraSender?.replaceTrack(null);
   }
