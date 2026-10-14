@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { build, repoUrl } from './build';
   import { forgetPin, knownRooms, pinFor } from './pins';
   import { parseJoinLink, roomLink } from './link';
   import CopyLink from './CopyLink.svelte';
   import { formatDate, i18n, setLang, t } from './i18n/i18n.svelte';
   import { LANGS, LANG_NAMES, LANG_TAGS, type Lang } from './i18n/messages';
-  import { fetchNotes, notesErrorText, notesUntil, saveFile } from './notes';
+  import { deleteNotes, fetchNotes, notesErrorText, notesUntil, saveFile } from './notes';
   import { loadInfo, site } from './site.svelte';
   import MicCheck from './MicCheck.svelte';
 
@@ -35,10 +35,17 @@
 
   const selected = $derived(rooms.find((r) => r.slug === room));
   const selectedNotes = $derived(site.notesEnabled && selected ? notesUntil(selected.notes_until) : null);
-  // The notes download: a PIN dialog for the chosen room, filled in from the PINs this browser knows.
+  // The notes download and deletion: a PIN dialog for the chosen room, filled in from the PINs this
+  // browser knows. Deleting asks for a confirmation inside the dialog first.
   let notesDialog: HTMLDialogElement;
+  let notesForm: HTMLFormElement;
+  // Focus targets: the confirmation replaces the buttons, so focus moves explicitly.
+  let notesPinInput: HTMLInputElement;
+  let notesDeleteButton = $state<HTMLButtonElement>();
+  let notesCancelButton = $state<HTMLButtonElement>();  let notesConfirm = $state(false);
   let notesSlug = $state('');
   let notesRoomName = $state('');
+  let notesKeptUntil = $state('');
   let notesPin = $state('');
   let notesError = $state('');
   let notesBusy = $state(false);
@@ -46,13 +53,15 @@
     if (!selected) return;
     notesSlug = selected.slug;
     notesRoomName = selected.name;
+    notesKeptUntil = selectedNotes ? t('notes.until', { time: untilText(selectedNotes) }) : '';
     notesPin = pinFor(localStorage, selected.slug) || pin;
     notesError = '';
+    notesConfirm = false;
     notesDialog.showModal();
   }
   async function downloadNotes(ev: Event) {
     ev.preventDefault();
-    if (notesBusy) return;
+    if (notesBusy || notesConfirm) return;
     notesBusy = true;
     notesError = '';
     try {
@@ -63,6 +72,40 @@
       } else {
         notesError = notesErrorText(r, t);
         if (r.error === 'gone') void loadRooms(room);
+      }
+    } finally {
+      notesBusy = false;
+    }
+  }
+  async function askDeleteNotes() {
+    if (!notesForm.reportValidity()) return;
+    notesError = '';
+    notesConfirm = true;
+    await tick();
+    notesCancelButton?.focus(); // the safe choice
+  }
+  async function cancelDeleteNotes() {
+    notesConfirm = false;
+    await tick();
+    notesDeleteButton?.focus();
+  }
+  async function removeNotes() {
+    if (notesBusy) return;
+    notesBusy = true;
+    notesError = '';
+    try {
+      const r = await deleteNotes(fetch, notesSlug, notesPin);
+      if (r.ok) {
+        notesDialog.close();
+        void loadRooms(room);
+      } else {
+        notesConfirm = false;
+        notesError = notesErrorText(r, t, 'notes.deleteFailed');
+        if (r.error === 'gone') void loadRooms(room);
+        notesBusy = false;
+        await tick();
+        if (r.error === 'bad_pin') notesPinInput.focus();
+        else notesDeleteButton?.focus();
       }
     } finally {
       notesBusy = false;
@@ -234,16 +277,32 @@
   </form>
   </section>
 
-  <dialog class="notes-dialog" bind:this={notesDialog} aria-labelledby="notes-title">
-    <form onsubmit={downloadNotes}>
-      <h2 id="notes-title">{t('notes.pinTitle', { room: notesRoomName })}</h2>
-      <label class="field"><span>{t('notes.pin')}</span>
-        <input bind:value={notesPin} type="password" maxlength="16" autocomplete="off" spellcheck="false" required /></label>
-      {#if notesError}<p class="error" role="alert">{notesError}</p>{/if}
-      <div class="row">
-        <button class="btn primary" type="submit" disabled={notesBusy}>{t('notes.download')}</button>
-        <button class="btn quiet" type="button" onclick={() => notesDialog.close()}>{t('notes.cancel')}</button>
+  <dialog class="notes-dialog" bind:this={notesDialog} aria-labelledby="notes-title" onclose={() => (notesConfirm = false)}>
+    <form bind:this={notesForm} onsubmit={downloadNotes}>
+      <div class="head">
+        <h2 id="notes-title">{t('notes.pinTitle', { room: notesRoomName })}</h2>
+        {#if notesConfirm}
+          <p class="confirm" role="alert">{t('notes.deleteConfirm')}</p>
+        {:else if notesKeptUntil}
+          <p class="kept">{notesKeptUntil}</p>
+        {/if}
       </div>
+      <label class="field"><span>{t('notes.pin')}</span>
+        <input bind:this={notesPinInput} bind:value={notesPin} type="password" maxlength="16" autocomplete="off" spellcheck="false" required /></label>
+      {#if notesError}<p class="error" role="alert">{notesError}</p>{/if}
+      <!-- One row: the irreversible delete keeps to the far edge, away from the main action. -->
+      {#if notesConfirm}
+        <div class="actions">
+          <button class="btn quiet" type="button" disabled={notesBusy} bind:this={notesCancelButton} onclick={cancelDeleteNotes}>{t('notes.cancel')}</button>
+          <button class="btn danger solid" type="button" disabled={notesBusy} onclick={removeNotes}>{t('notes.deleteYes')}</button>
+        </div>
+      {:else}
+        <div class="actions">
+          <button class="btn quiet remove" type="button" disabled={notesBusy} bind:this={notesDeleteButton} onclick={askDeleteNotes}>{t('notes.deleteYes')}</button>
+          <button class="btn quiet" type="button" onclick={() => notesDialog.close()}>{t('notes.cancel')}</button>
+          <button class="btn primary" type="submit" disabled={notesBusy}>{t('notes.download')}</button>
+        </div>
+      {/if}
     </form>
   </dialog>
 </div>
@@ -330,6 +389,17 @@
     background: var(--panel-2); color: var(--text);
   }
   .notes-dialog::backdrop { background: rgba(0, 0, 0, .55); }
-  .notes-dialog form { display: grid; gap: .9rem; }
-  .notes-dialog h2 { color: var(--text); margin: 0; }
+  .notes-dialog form { display: grid; gap: 1rem; }
+  .notes-dialog .head { display: grid; gap: .3rem; }
+  .notes-dialog h2 { color: var(--text); font-size: 1.1rem; margin: 0; }
+  .notes-dialog .kept { color: var(--muted); font-size: .85rem; margin: 0; }
+  .notes-dialog .confirm { color: var(--text); margin: 0; }
+  .notes-dialog .actions {
+    display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .5rem;
+    padding-top: 1rem; border-top: 1px solid var(--line);
+  }
+  /* Delete reads as a quiet red word at the far edge; its confirmation is the filled red button. */
+  .notes-dialog .remove { margin-right: auto; border-color: transparent; color: #f1b5b3; padding-inline: .5rem; }
+  .notes-dialog .remove:hover:not(:disabled) { border-color: var(--danger); }
+  .notes-dialog .danger.solid { background: var(--danger); color: #fff; }
 </style>

@@ -1,8 +1,9 @@
-// Downloading the notes of a room's last meeting: POST /api/rooms/<slug>/notes with the room PIN and
-// the interface language (the file's fixed labels follow it), saved through a temporary link.
+// The notes of a room's last meeting: downloading them (POST /api/rooms/<slug>/notes with the room
+// PIN and the interface language, which the file's fixed labels follow, saved through a temporary
+// link) and deleting them (DELETE on the same path with the room PIN).
 import type { Key } from './i18n/messages';
 
-export type NotesError = 'bad_pin' | 'gone' | 'too_many' | 'failed';
+export type NotesError = 'bad_pin' | 'gone' | 'recording' | 'too_many' | 'failed';
 export type NotesResult = { ok: true; blob: Blob; filename: string } | { ok: false; error: NotesError; retryAfter?: number };
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 type Translate = (key: Key, vars?: Record<string, string | number>) => string;
@@ -25,8 +26,31 @@ export async function fetchNotes(fetchFn: Fetch, slug: string, pin: string, lang
       return { ok: false, error: 'failed' };
     }
   }
+  return failure(res);
+}
+
+export type DeleteResult = { ok: true } | { ok: false; error: NotesError; retryAfter?: number };
+
+// deleteNotes deletes the room's last meeting notes; 'recording' while they are still being taken.
+export async function deleteNotes(fetchFn: Fetch, slug: string, pin: string): Promise<DeleteResult> {
+  let res: Response;
+  try {
+    res = await fetchFn(`/api/rooms/${encodeURIComponent(slug)}/notes`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin }),
+    });
+  } catch {
+    return { ok: false, error: 'failed' };
+  }
+  if (res.status === 204) return { ok: true };
+  return failure(res);
+}
+
+function failure(res: Response): { ok: false; error: NotesError; retryAfter?: number } {
   if (res.status === 403) return { ok: false, error: 'bad_pin' };
   if (res.status === 404) return { ok: false, error: 'gone' };
+  if (res.status === 409) return { ok: false, error: 'recording' };
   if (res.status === 429) return { ok: false, error: 'too_many', retryAfter: Number(res.headers.get('Retry-After')) || 60 };
   return { ok: false, error: 'failed' };
 }
@@ -44,16 +68,19 @@ export function notesUntil(v: unknown, now = Date.now()): Date | null {
   return Number.isNaN(d.getTime()) || d.getTime() <= now ? null : d;
 }
 
-export function notesErrorText(r: { error: NotesError; retryAfter?: number }, tr: Translate): string {
+// notesErrorText words a failure; failed is the text of a failure without a reason.
+export function notesErrorText(r: { error: NotesError; retryAfter?: number }, tr: Translate, failed: Key = 'notes.failed'): string {
   switch (r.error) {
     case 'bad_pin':
       return tr('notes.badPin');
     case 'gone':
       return tr('notes.gone');
+    case 'recording':
+      return tr('notes.deleteRecording');
     case 'too_many':
       return tr('pin.tooMany', { seconds: r.retryAfter ?? 60 });
     default:
-      return tr('notes.failed');
+      return tr(failed);
   }
 }
 

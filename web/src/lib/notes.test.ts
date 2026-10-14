@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fetchNotes, fileName, notesErrorText, notesUntil } from './notes';
+import { deleteNotes, fetchNotes, fileName, notesErrorText, notesUntil } from './notes';
 
 function fakeFetch(res: Response | Error) {
   const calls: { url: string; init: RequestInit }[] = [];
@@ -37,6 +37,27 @@ describe('fetchNotes', () => {
   });
 });
 
+describe('deleteNotes', () => {
+  it('sends DELETE with the PIN and succeeds on 204', async () => {
+    const f = fakeFetch(new Response(null, { status: 204 }));
+    expect(await deleteNotes(f.fn, 'ops team', '1234')).toEqual({ ok: true });
+    expect(f.calls[0].url).toBe('/api/rooms/ops%20team/notes');
+    expect(f.calls[0].init.method).toBe('DELETE');
+    expect(JSON.parse(String(f.calls[0].init.body))).toEqual({ pin: '1234' });
+  });
+  it('names each failure', async () => {
+    const del = (res: Response | Error) => deleteNotes(fakeFetch(res).fn, 'ops', 'x');
+    expect(await del(new Response('', { status: 403 }))).toEqual({ ok: false, error: 'bad_pin' });
+    expect(await del(new Response('', { status: 404 }))).toEqual({ ok: false, error: 'gone' });
+    expect(await del(new Response('', { status: 409 }))).toEqual({ ok: false, error: 'recording' });
+    expect(await del(new Response('', { status: 429, headers: { 'Retry-After': '42' } }))).toEqual({ ok: false, error: 'too_many', retryAfter: 42 });
+    expect(await del(new Response('', { status: 429 }))).toEqual({ ok: false, error: 'too_many', retryAfter: 60 });
+    expect(await del(new Response('', { status: 500 }))).toEqual({ ok: false, error: 'failed' });
+    expect(await del(new Response('', { status: 200 }))).toEqual({ ok: false, error: 'failed' });
+    expect(await del(new Error('offline'))).toEqual({ ok: false, error: 'failed' });
+  });
+});
+
 describe('fileName', () => {
   it('takes a plain name from the header and falls back otherwise', () => {
     expect(fileName('attachment; filename="ops-2026-10-14-0937.md"', 'ops')).toBe('ops-2026-10-14-0937.md');
@@ -61,6 +82,8 @@ describe('notesErrorText', () => {
     expect(notesErrorText({ error: 'bad_pin' }, tr)).toBe('notes.badPin');
     expect(notesErrorText({ error: 'gone' }, tr)).toBe('notes.gone');
     expect(notesErrorText({ error: 'too_many', retryAfter: 42 }, tr)).toBe('pin.tooMany{"seconds":42}');
+    expect(notesErrorText({ error: 'recording' }, tr)).toBe('notes.deleteRecording');
     expect(notesErrorText({ error: 'failed' }, tr)).toBe('notes.failed');
+    expect(notesErrorText({ error: 'failed' }, tr, 'notes.deleteFailed')).toBe('notes.deleteFailed');
   });
 });

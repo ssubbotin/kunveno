@@ -142,7 +142,11 @@ switch, refuses the notes bot, lists no rooms at `/internal/notes`, leaves `note
   `notes.enabled` is off; deleting a room deletes them, also while notes are disabled.
 - **Access.** Downloading needs the room PIN (`POST /api/rooms/<room>/notes` with
   `{"pin":"…","lang":"ru|en|es"}`), and wrong PINs count toward the same block as joins.
-  `/api/rooms` shows only until when a room's notes are kept.
+  Deleting them early needs the PIN too (`DELETE /api/rooms/<room>/notes` with `{"pin":"…"}`):
+  204 when deleted; 403 for a wrong PIN, which counts toward the same block as joins; 429 with
+  `Retry-After` while the address is blocked; 409 while the room's notes are still being taken or
+  finished (the bot has not left yet); 404 when there are none. `/api/rooms` shows only until when
+  a room's notes are kept.
 - **Debugging the recognition.** `notes.live: true` sends each phrase to the room as it arrives; the
   client shows the phrases in the tile of the "Notes" participant (during a screen share, the
   latest phrase under its name).

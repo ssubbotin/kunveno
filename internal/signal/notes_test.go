@@ -3,6 +3,7 @@ package signal
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -440,6 +441,40 @@ func TestNotesResumeAfterExpiryBeginsAgain(t *testing.T) {
 	expect(t, ca, "notes_ready")
 	tr := waitReady(t, store)
 	if len(tr.Phrases) != 1 || tr.Phrases[0].Text != "После истечения." || kinds(tr.Events) != notes.KindPaused {
+		t.Fatalf("phrases = %+v, events = %s", tr.Phrases, kinds(tr.Events))
+	}
+}
+
+// Notes deleted from the lobby during a meeting (DELETE /api/rooms/{slug}/notes): refused while
+// recording; once they have ended and are deleted, switching notes on again starts a new
+// transcript holding only what follows.
+func TestNotesDeletedFromTheLobbyBeginAgain(t *testing.T) {
+	e, store := newNotesEnv(t, false)
+	ca, ida := join(t, e, "Ann")
+	notesOn(t, ca, true)
+	bot, _ := joinNotesBot(t, e)
+	send(t, bot, phrase(ida, "До удаления.", 5*time.Second))
+	waitPhrases(t, e, 1)
+	if err := store.DeleteEnded("ops"); !errors.Is(err, notes.ErrRecording) {
+		t.Fatalf("DeleteEnded while recording = %v", err)
+	}
+	notesOn(t, ca, false)
+	expect(t, bot, "stop")
+	send(t, bot, `{"type":"leave"}`)
+	expect(t, ca, "notes_ready")
+	if err := store.DeleteEnded("ops"); err != nil {
+		t.Fatal(err)
+	}
+	notesOn(t, ca, true)
+	bot2, _ := joinNotesBot(t, e)
+	send(t, bot2, phrase(ida, "После удаления.", 0))
+	waitPhrases(t, e, 1)
+	notesOn(t, ca, false)
+	expect(t, bot2, "stop")
+	send(t, bot2, `{"type":"leave"}`)
+	expect(t, ca, "notes_ready")
+	tr := waitReady(t, store)
+	if len(tr.Phrases) != 1 || tr.Phrases[0].Text != "После удаления." || kinds(tr.Events) != notes.KindPaused {
 		t.Fatalf("phrases = %+v, events = %s", tr.Phrases, kinds(tr.Events))
 	}
 }
