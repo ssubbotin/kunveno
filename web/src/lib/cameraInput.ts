@@ -8,7 +8,9 @@ import { loadOwn } from './background/ownImage';
 
 export { BackgroundUnavailable };
 
-export type CameraInput = { track: MediaStreamTrack; deviceId: string; effect: Effect | null; stop(): void };
+// raw is the camera itself; release stops what runs on top of it (the effect) and leaves the camera
+// running, for the input that takes it over.
+export type CameraInput = { track: MediaStreamTrack; raw: MediaStreamTrack; deviceId: string; effect: Effect | null; stop(): void; release(): void };
 
 async function capture(deviceId: string): Promise<MediaStreamTrack> {
   try {
@@ -35,16 +37,24 @@ export async function modeFor(choice: BackgroundChoice): Promise<EffectMode | nu
 
 // openCamera opens the camera with the chosen background. If the background cannot start, the
 // camera is closed again and BackgroundUnavailable is thrown: the room is never shown by accident.
-export async function openCamera(deviceId: string, choice: BackgroundChoice, onStats?: (fps: number) => void): Promise<CameraInput> {
+// reuse puts the background on a camera that is already open (a switch between no background and
+// a background), so the device is not opened twice: a second open of a USB camera takes seconds.
+// A reused camera is left running if the background fails, since its current input still sends it.
+export async function openCamera(
+  deviceId: string,
+  choice: BackgroundChoice,
+  onStats?: (fps: number) => void,
+  reuse?: { raw: MediaStreamTrack; deviceId: string },
+): Promise<CameraInput> {
   const mode = await modeFor(choice);
-  const raw = await capture(deviceId);
-  const id = raw.getSettings().deviceId ?? deviceId;
-  if (!mode) return { track: raw, deviceId: id, effect: null, stop: () => raw.stop() };
+  const raw = reuse ? reuse.raw : await capture(deviceId);
+  const id = reuse ? reuse.deviceId : (raw.getSettings().deviceId ?? deviceId);
+  if (!mode) return { track: raw, raw, deviceId: id, effect: null, stop: () => raw.stop(), release: () => {} };
   try {
     const effect = await startEffect(raw, mode, onStats);
-    return { track: effect.track, deviceId: id, effect, stop: () => { effect.stop(); raw.stop(); } };
+    return { track: effect.track, raw, deviceId: id, effect, stop: () => { effect.stop(); raw.stop(); }, release: () => effect.stop() };
   } catch (e) {
-    raw.stop();
+    if (!reuse) raw.stop();
     if (mode.kind === 'image') mode.image.close();
     throw e instanceof BackgroundUnavailable ? e : new BackgroundUnavailable(String(e));
   }

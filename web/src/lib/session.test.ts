@@ -22,11 +22,12 @@ vi.mock('./micInput', () => ({
 }));
 
 // Camera inputs the session opened, in order; the background can be made to fail.
-type FakeCam = { track: { id: string; stop(): void }; deviceId: string; effect: { mode: unknown; setMode(m: unknown): void; stop(): void } | null; stopped: boolean; stop(): void };
+type FakeRaw = { id: string; stopped: boolean; stop(): void };
+type FakeCam = { track: { id: string; stop(): void }; raw: FakeRaw; deviceId: string; effect: { mode: unknown; setMode(m: unknown): void; stop(): void } | null; stopped: boolean; released: boolean; stop(): void; release(): void };
 // gate holds an open until released (worker start-up and model load take seconds); fail makes the
 // next open reject with a plain error (the device busy).
 // imageFails makes an image unloadable while blur still works.
-const cam = vi.hoisted(() => ({ opened: [] as FakeCam[], unavailable: false, imageFails: false, gate: null as Promise<void> | null, fail: null as Error | null }));
+const cam = vi.hoisted(() => ({ opened: [] as FakeCam[], captures: 0, unavailable: false, imageFails: false, gate: null as Promise<void> | null, fail: null as Error | null }));
 // Whether this browser holds an own image: null when its storage cannot be read.
 const own = vi.hoisted(() => ({ has: true as boolean | null }));
 vi.mock('./background/ownImage', () => ({ hasOwn: async () => own.has }));
@@ -38,17 +39,25 @@ vi.mock('./cameraInput', () => {
       if (c.kind === 'image' && cam.imageFails) throw new BackgroundUnavailable('image');
       return c.kind === 'none' ? null : { kind: c.kind };
     },
-    openCamera: async (_id: string, choice: { kind: string }) => {
+    openCamera: async (_id: string, choice: { kind: string }, _onStats?: unknown, reuse?: { raw: FakeRaw }) => {
       if (cam.gate) await cam.gate;
       if (cam.fail) throw cam.fail;
       if (choice.kind !== 'none' && cam.unavailable) throw new BackgroundUnavailable('no');
+      if (!reuse) cam.captures++;
+      const raw: FakeRaw = reuse?.raw ?? { id: `raw${cam.captures}`, stopped: false, stop() { raw.stopped = true; } };
       const c: FakeCam = {
         track: { id: `cam${cam.opened.length}`, stop() {} },
+        raw,
         deviceId: 'cam',
         effect: choice.kind === 'none' ? null : { mode: { kind: choice.kind }, setMode(m) { this.mode = m; }, stop() {} },
         stopped: false,
+        released: false,
         stop() {
           c.stopped = true;
+          raw.stop();
+        },
+        release() {
+          c.released = true;
         },
       };
       cam.opened.push(c);
@@ -136,6 +145,7 @@ describe('Session', () => {
     mic.inputs.length = 0;
     mic.filterWorks = true;
     cam.opened.length = 0;
+    cam.captures = 0;
     cam.unavailable = false;
     cam.imageFails = false;
     own.has = true;
@@ -317,18 +327,23 @@ describe('Session', () => {
     expect(s.state.background).toBe('image');
   });
 
-  it('reopens the camera once when switching between none and a background', async () => {
+  it('switches between none and a background on the camera already open, without opening it again', async () => {
     vi.spyOn(Rtc.prototype, 'startCamera').mockResolvedValue();
     const replace = vi.spyOn(Rtc.prototype, 'replaceCamera').mockResolvedValue();
     const s = await joined();
     await s.setCamera(true);
     await s.setBackground({ kind: 'blur' });
-    expect(cam.opened).toHaveLength(2);
+    expect(cam.captures).toBe(1); // the device is opened once; a second open of a USB camera takes seconds
+    expect(cam.opened[1].raw).toBe(cam.opened[0].raw);
     expect(replace).toHaveBeenCalledTimes(1);
-    expect(cam.opened[0].stopped).toBe(true);
+    expect(cam.opened[0].released).toBe(true);
+    expect(cam.opened[0].raw.stopped).toBe(false);
     await s.setBackground({ kind: 'none' });
-    expect(cam.opened).toHaveLength(3);
-    expect(cam.opened[1].stopped).toBe(true);
+    expect(cam.captures).toBe(1);
+    expect(cam.opened[1].released).toBe(true);
+    expect(cam.opened[2].raw.stopped).toBe(false);
+    s.leave();
+    expect(cam.opened[2].raw.stopped).toBe(true);
   });
 
   it('keeps the camera off when the background cannot start', async () => {
@@ -365,7 +380,9 @@ describe('Session', () => {
     release();
     await switching;
     expect(cam.opened[1].stopped).toBe(true);
-    expect(cam.opened[0].stopped).toBe(true);
+    // The old input gave the camera to the new one; nothing of it is left running.
+    expect(cam.opened[0].released).toBe(true);
+    expect(cam.opened[0].raw.stopped).toBe(true);
   });
 
   it('keeps a stored blur at join, where only images can be lost', async () => {
