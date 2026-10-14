@@ -174,7 +174,7 @@ the date and time, who spoke, and the phrases in order, with pauses of the recor
   end (a switch-off or the end of the meeting); the first phrase of the next meeting replaces it.
   Deleting a room deletes its notes. Downloading needs the room PIN, and wrong PINs count toward
   the same block as joins.
-- The notes can be deleted earlier from the lobby: "Notes of the last meeting" → "Delete notes"
+- The notes can be deleted earlier from the lobby: "Notes of the last meeting" → "Delete"
   with the room PIN, then a confirmation. Notes still being taken cannot be deleted: switch them
   off first.
 - `notes.live: true` shows the phrases in the room as they are recognised, in the tile of the

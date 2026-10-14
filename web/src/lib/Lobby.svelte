@@ -45,6 +45,7 @@
   let notesCancelButton = $state<HTMLButtonElement>();  let notesConfirm = $state(false);
   let notesSlug = $state('');
   let notesRoomName = $state('');
+  let notesKeptUntil = $state('');
   let notesPin = $state('');
   let notesError = $state('');
   let notesBusy = $state(false);
@@ -52,6 +53,7 @@
     if (!selected) return;
     notesSlug = selected.slug;
     notesRoomName = selected.name;
+    notesKeptUntil = selectedNotes ? t('notes.until', { time: untilText(selectedNotes) }) : '';
     notesPin = pinFor(localStorage, selected.slug) || pin;
     notesError = '';
     notesConfirm = false;
@@ -277,21 +279,28 @@
 
   <dialog class="notes-dialog" bind:this={notesDialog} aria-labelledby="notes-title" onclose={() => (notesConfirm = false)}>
     <form bind:this={notesForm} onsubmit={downloadNotes}>
-      <h2 id="notes-title">{t('notes.pinTitle', { room: notesRoomName })}</h2>
+      <div class="head">
+        <h2 id="notes-title">{t('notes.pinTitle', { room: notesRoomName })}</h2>
+        {#if notesConfirm}
+          <p class="confirm" role="alert">{t('notes.deleteConfirm')}</p>
+        {:else if notesKeptUntil}
+          <p class="kept">{notesKeptUntil}</p>
+        {/if}
+      </div>
       <label class="field"><span>{t('notes.pin')}</span>
         <input bind:this={notesPinInput} bind:value={notesPin} type="password" maxlength="16" autocomplete="off" spellcheck="false" required /></label>
       {#if notesError}<p class="error" role="alert">{notesError}</p>{/if}
+      <!-- One row: the irreversible delete keeps to the far edge, away from the main action. -->
       {#if notesConfirm}
-        <p class="confirm" role="alert">{t('notes.deleteConfirm')}</p>
-        <div class="row">
-          <button class="btn danger" type="button" disabled={notesBusy} onclick={removeNotes}>{t('notes.deleteYes')}</button>
+        <div class="actions">
           <button class="btn quiet" type="button" disabled={notesBusy} bind:this={notesCancelButton} onclick={cancelDeleteNotes}>{t('notes.cancel')}</button>
+          <button class="btn danger solid" type="button" disabled={notesBusy} onclick={removeNotes}>{t('notes.deleteYes')}</button>
         </div>
       {:else}
-        <div class="row">
-          <button class="btn primary" type="submit" disabled={notesBusy}>{t('notes.download')}</button>
-          <button class="btn danger" type="button" disabled={notesBusy} bind:this={notesDeleteButton} onclick={askDeleteNotes}>{t('notes.delete')}</button>
+        <div class="actions">
+          <button class="btn quiet remove" type="button" disabled={notesBusy} bind:this={notesDeleteButton} onclick={askDeleteNotes}>{t('notes.deleteYes')}</button>
           <button class="btn quiet" type="button" onclick={() => notesDialog.close()}>{t('notes.cancel')}</button>
+          <button class="btn primary" type="submit" disabled={notesBusy}>{t('notes.download')}</button>
         </div>
       {/if}
     </form>
@@ -380,7 +389,17 @@
     background: var(--panel-2); color: var(--text);
   }
   .notes-dialog::backdrop { background: rgba(0, 0, 0, .55); }
-  .notes-dialog form { display: grid; gap: .9rem; }
-  .notes-dialog h2 { color: var(--text); margin: 0; }
+  .notes-dialog form { display: grid; gap: 1rem; }
+  .notes-dialog .head { display: grid; gap: .3rem; }
+  .notes-dialog h2 { color: var(--text); font-size: 1.1rem; margin: 0; }
+  .notes-dialog .kept { color: var(--muted); font-size: .85rem; margin: 0; }
   .notes-dialog .confirm { color: var(--text); margin: 0; }
+  .notes-dialog .actions {
+    display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .5rem;
+    padding-top: 1rem; border-top: 1px solid var(--line);
+  }
+  /* Delete reads as a quiet red word at the far edge; its confirmation is the filled red button. */
+  .notes-dialog .remove { margin-right: auto; border-color: transparent; color: #f1b5b3; padding-inline: .5rem; }
+  .notes-dialog .remove:hover:not(:disabled) { border-color: var(--danger); }
+  .notes-dialog .danger.solid { background: var(--danger); color: #fff; }
 </style>

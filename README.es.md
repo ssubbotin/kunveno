@@ -179,7 +179,7 @@ las frases en orden, con las pausas de la grabación marcadas.
   de la reunión siguiente las sustituye. Eliminar una sala elimina sus notas. Descargarlas exige el
   PIN de la sala, y los PIN erróneos cuentan para el mismo bloqueo que al entrar.
 - Las notas se pueden eliminar antes desde la página de inicio: «Notas de la última reunión» →
-  «Eliminar notas» con el PIN de la sala y una confirmación. Mientras se toman notas no se pueden
+  «Eliminar» con el PIN de la sala y una confirmación. Mientras se toman notas no se pueden
   eliminar: primero hay que desactivarlas.
 - `notes.live: true` muestra las frases en la sala a medida que se reconocen, en el recuadro del
   participante «Notas», para comprobar el reconocimiento.
