@@ -517,6 +517,11 @@ export class Session {
     this.sig?.send({ type: 'echo', on });
   }
 
+  // Asks the server to take meeting notes in this room, or to stop.
+  setNotes(on: boolean): void {
+    this.sig?.send({ type: 'notes', on });
+  }
+
   async startShare(): Promise<void> {
     if (this.screenTrack) return;
     let stream: MediaStream;

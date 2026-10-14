@@ -1,5 +1,10 @@
 import type { Participant, ServerMessage } from './protocol';
 
+// A phrase shown in the live panel (notes.live); seq keys it in the list.
+export type LivePhrase = { seq: number; name: string; start: number; text: string };
+// The most phrases the live panel keeps.
+export const MAX_PHRASES = 500;
+
 export type Status = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'error';
 
 export class RoomState {
@@ -35,6 +40,11 @@ export class RoomState {
   backgroundImageError = $state(false);
   receiveVideo = $state(true);
   echo = $state(false);
+  // The room takes meeting notes; the notes of this meeting became ready; live phrases, newest last.
+  notes = $state(false);
+  notesReady = $state(false);
+  phrases = $state<LivePhrase[]>([]);
+  private phraseSeq = 0;
   // The emoji each participant sent last, shown on their tile for a few seconds.
   reactions = $state<Record<string, { emoji: string; seq: number }>>({});
   private reactionSeq = 0;
@@ -72,6 +82,9 @@ export class RoomState {
     this.reactions = {};
     this.cameraOn = false;
     this.echo = false;
+    this.notes = false;
+    this.notesReady = false;
+    this.phrases = [];
     this.transport = '';
   }
 
@@ -89,6 +102,8 @@ export class RoomState {
         this.participants = msg.participants;
         this.sharer = msg.sharer;
         this.echo = msg.echo;
+        if (msg.notes && !this.notes) this.notesReady = false; // a new recording; the old notice is stale
+        this.notes = msg.notes;
         break;
       case 'error':
         this.status = 'error';
@@ -98,6 +113,12 @@ export class RoomState {
         break;
       case 'reaction':
         this.reactions[msg.from] = { emoji: msg.emoji, seq: ++this.reactionSeq };
+        break;
+      case 'notes_ready':
+        this.notesReady = true;
+        break;
+      case 'phrase':
+        this.phrases = [...this.phrases.slice(-(MAX_PHRASES - 1)), { seq: ++this.phraseSeq, name: msg.name, start: msg.start, text: msg.text }];
         break;
       case 'offer':
         break;

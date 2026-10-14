@@ -9,7 +9,7 @@ describe('parseServerMessage', () => {
       .toEqual({ type: 'error', code: 'bad_pin', message: 'wrong pin' });
     expect(parseServerMessage('{"type":"offer","sdp":"v=0"}')).toEqual({ type: 'offer', sdp: 'v=0' });
     expect(parseServerMessage('{"type":"participants","participants":[{"id":"a","name":"Ann","muted":true}],"sharer":""}'))
-      .toEqual({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: true, bot: false }], sharer: '', echo: false });
+      .toEqual({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: true, bot: false }], sharer: '', echo: false, notes: false });
   });
 
   it('rejects junk', () => {
@@ -19,9 +19,9 @@ describe('parseServerMessage', () => {
   });
   it('reads the echo flag and bot participants, defaulting both to false', () => {
     const m = parseServerMessage('{"type":"participants","participants":[{"id":"a","name":"Ann","muted":false},{"id":"e","name":"Echo","muted":false,"bot":true}],"sharer":"","echo":true}');
-    expect(m).toEqual({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: false, bot: false }, { id: 'e', name: 'Echo', muted: false, bot: true }], sharer: '', echo: true });
+    expect(m).toEqual({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: false, bot: false }, { id: 'e', name: 'Echo', muted: false, bot: true }], sharer: '', echo: true, notes: false });
     const old = parseServerMessage('{"type":"participants","participants":[],"sharer":""}');
-    expect(old).toEqual({ type: 'participants', participants: [], sharer: '', echo: false });
+    expect(old).toEqual({ type: 'participants', participants: [], sharer: '', echo: false, notes: false });
   });
   it('keeps known quality grades and drops anything else', () => {
     const m = parseServerMessage('{"type":"participants","participants":[{"id":"a","name":"Ann","muted":false,"quality":"poor"},{"id":"b","name":"Bob","muted":false,"quality":"excellent"},{"id":"c","name":"Cid","muted":false}],"sharer":""}');
@@ -42,5 +42,18 @@ describe('parseServerMessage', () => {
   it('reads a reaction and refuses a malformed one', () => {
     expect(parseServerMessage('{"type":"reaction","from":"a","emoji":"🎉"}')).toEqual({ type: 'reaction', from: 'a', emoji: '🎉' });
     expect(() => parseServerMessage('{"type":"reaction","from":"a"}')).toThrow();
+  });
+
+  it('reads the notes flag, the notes bot, phrases and the ready notice', () => {
+    const m = parseServerMessage('{"type":"participants","participants":[{"id":"n","name":"Заметки","muted":false,"bot":true,"bot_kind":"notes"}],"sharer":"","notes":true}');
+    if (m.type !== 'participants') throw new Error('type');
+    expect(m.notes).toBe(true);
+    expect(m.participants[0].botKind).toBe('notes');
+    expect(parseServerMessage('{"type":"notes_ready"}')).toEqual({ type: 'notes_ready' });
+    expect(parseServerMessage('{"type":"phrase","name":"Анна","start":1760421420000,"text":"Начнём."}'))
+      .toEqual({ type: 'phrase', name: 'Анна', start: 1760421420000, text: 'Начнём.' });
+    for (const raw of ['{"type":"phrase","name":"Анна","start":1}', '{"type":"phrase","name":"Анна","start":"1","text":"x"}', '{"type":"phrase","start":1,"text":"x"}']) {
+      expect(() => parseServerMessage(raw)).toThrow(/bad message/);
+    }
   });
 });
