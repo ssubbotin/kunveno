@@ -18,7 +18,8 @@ export function cameraConstraints(deviceId: string): MediaTrackConstraints {
 
 export const CAMERA_MAX_KBPS = 350;
 
-export type Prefs = { micOn: boolean; cameraOn: boolean; receiveVideo: boolean; cameraId: string };
+// noiseFilter stays undefined until the person chooses; the installation's default applies then.
+export type Prefs = { micOn: boolean; cameraOn: boolean; receiveVideo: boolean; cameraId: string; noiseFilter?: boolean };
 
 const KEY = 'kunveno.prefs';
 
@@ -33,6 +34,7 @@ export function loadPrefs(store: Store): Prefs {
       cameraOn: typeof v.cameraOn === 'boolean' ? v.cameraOn : d.cameraOn,
       receiveVideo: typeof v.receiveVideo === 'boolean' ? v.receiveVideo : d.receiveVideo,
       cameraId: typeof v.cameraId === 'string' ? v.cameraId : d.cameraId,
+      noiseFilter: typeof v.noiseFilter === 'boolean' ? v.noiseFilter : undefined,
     };
   } catch {
     return d;
