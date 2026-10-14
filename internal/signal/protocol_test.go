@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseClientAccepts(t *testing.T) {
@@ -19,6 +20,8 @@ func TestParseClientAccepts(t *testing.T) {
 		"camera":    `{"type":"camera","on":true}`,
 		"react":     `{"type":"react","emoji":"👍"}`,
 		"video":     `{"type":"video","receive":false}`,
+		"notes":     `{"type":"notes","on":true}`,
+		"phrase":    `{"type":"phrase","speaker":"a1b2c3d4","start":1760421600000,"end":1760421602000,"text":"Начнём."}`,
 	}
 	for name, raw := range cases {
 		m, err := ParseClient([]byte(raw))
@@ -37,24 +40,27 @@ func TestParseClientAccepts(t *testing.T) {
 
 func TestParseClientRejects(t *testing.T) {
 	cases := map[string]string{
-		"not json":        `hello`,
-		"unknown type":    `{"type":"dance"}`,
-		"join no pin":     `{"type":"join","room":"ops","name":"Ann"}`,
-		"join bad slug":   `{"type":"join","room":"Ops Room","pin":"1234","name":"Ann"}`,
-		"join empty name": `{"type":"join","room":"ops","pin":"1234","name":"   "}`,
-		"join long name":  `{"type":"join","room":"ops","pin":"1234","name":"` + strings.Repeat("x", 33) + `"}`,
-		"answer no sdp":   `{"type":"answer"}`,
-		"candidate nil":   `{"type":"candidate"}`,
-		"mute no flag":    `{"type":"mute"}`,
-		"share bad":       `{"type":"share","action":"maybe"}`,
-		"echo no flag":    `{"type":"echo"}`,
-		"camera no flag":  `{"type":"camera"}`,
-		"react empty":     `{"type":"react","emoji":""}`,
-		"react long":      `{"type":"react","emoji":"👍👍👍👍👍"}`,
-		"video no flag":   `{"type":"video"}`,
-		"join bad media":  `{"type":"join","room":"ops","pin":"1234","name":"Ann","media":"carrier-pigeon"}`,
-		"join bad client": `{"type":"join","room":"ops","pin":"1234","name":"Ann","client":"no spaces allowed"}`,
-		"join bad role":   `{"type":"join","room":"ops","pin":"1234","name":"Ann","role":"admin"}`,
+		"not json":          `hello`,
+		"unknown type":      `{"type":"dance"}`,
+		"join no pin":       `{"type":"join","room":"ops","name":"Ann"}`,
+		"join bad slug":     `{"type":"join","room":"Ops Room","pin":"1234","name":"Ann"}`,
+		"join empty name":   `{"type":"join","room":"ops","pin":"1234","name":"   "}`,
+		"join long name":    `{"type":"join","room":"ops","pin":"1234","name":"` + strings.Repeat("x", 33) + `"}`,
+		"answer no sdp":     `{"type":"answer"}`,
+		"candidate nil":     `{"type":"candidate"}`,
+		"mute no flag":      `{"type":"mute"}`,
+		"share bad":         `{"type":"share","action":"maybe"}`,
+		"echo no flag":      `{"type":"echo"}`,
+		"notes no flag":     `{"type":"notes"}`,
+		"phrase no speaker": `{"type":"phrase","start":1,"end":2,"text":"x"}`,
+		"phrase no times":   `{"type":"phrase","speaker":"a","text":"x"}`,
+		"camera no flag":    `{"type":"camera"}`,
+		"react empty":       `{"type":"react","emoji":""}`,
+		"react long":        `{"type":"react","emoji":"👍👍👍👍👍"}`,
+		"video no flag":     `{"type":"video"}`,
+		"join bad media":    `{"type":"join","room":"ops","pin":"1234","name":"Ann","media":"carrier-pigeon"}`,
+		"join bad client":   `{"type":"join","room":"ops","pin":"1234","name":"Ann","client":"no spaces allowed"}`,
+		"join bad role":     `{"type":"join","room":"ops","pin":"1234","name":"Ann","role":"admin"}`,
 	}
 	for name, raw := range cases {
 		if _, err := ParseClient([]byte(raw)); !errors.Is(err, ErrBadMessage) {
@@ -71,8 +77,8 @@ func TestParseClientEchoRoleNeedsNoPIN(t *testing.T) {
 }
 
 func TestServerMessagesEncode(t *testing.T) {
-	b, _ := json.Marshal(Participants([]ParticipantInfo{{ID: "a", Name: "Ann", Muted: true}, {ID: "e", Name: "Echo", Bot: true}}, "", true))
-	want := `{"type":"participants","participants":[{"id":"a","name":"Ann","muted":true},{"id":"e","name":"Echo","muted":false,"bot":true}],"sharer":"","echo":true}`
+	b, _ := json.Marshal(Participants([]ParticipantInfo{{ID: "a", Name: "Ann", Muted: true}, {ID: "e", Name: "Echo", Bot: true}}, "", true, false))
+	want := `{"type":"participants","participants":[{"id":"a","name":"Ann","muted":true},{"id":"e","name":"Echo","muted":false,"bot":true}],"sharer":"","echo":true,"notes":false}`
 	if string(b) != want {
 		t.Errorf("participants:\n got %s\nwant %s", b, want)
 	}
@@ -94,5 +100,55 @@ func TestParseClientJoinMediaTCP(t *testing.T) {
 	m, err := ParseClient([]byte(`{"type":"join","room":"ops","pin":"1234","name":"Ann","media":"tcp"}`))
 	if err != nil || m.Media != "tcp" {
 		t.Fatalf("m = %+v, err = %v", m, err)
+	}
+}
+
+func TestParseClientNotesRoleNeedsNoPIN(t *testing.T) {
+	m, err := ParseClient([]byte(`{"type":"join","room":"ops","name":"Заметки","role":"notes"}`))
+	if err != nil || m.Role != RoleNotes {
+		t.Fatalf("m = %+v, err = %v", m, err)
+	}
+}
+
+func TestValidPhrase(t *testing.T) {
+	now := time.UnixMilli(1_760_421_600_000)
+	ms := func(d time.Duration) *int64 { v := now.Add(d).UnixMilli(); return &v }
+	zero := int64(0)
+	text, start, end, ok := validPhrase(ClientMessage{Speaker: "a", Start: ms(-3 * time.Second), End: ms(-time.Second), Text: "  Начнём.  "}, now)
+	if !ok || text != "Начнём." || !start.Equal(now.Add(-3*time.Second)) || !end.Equal(now.Add(-time.Second)) {
+		t.Fatalf("valid phrase: %q %v %v %v", text, start, end, ok)
+	}
+	if text, _, _, ok := validPhrase(ClientMessage{Speaker: "a", Start: ms(-2 * time.Second), End: ms(0), Text: "a\n# b\tc"}, now); !ok || text != "a # b c" {
+		t.Errorf("whitespace runs: %q %v", text, ok)
+	}
+	for name, m := range map[string]ClientMessage{
+		"empty text":       {Speaker: "a", Start: ms(-2 * time.Second), End: ms(0), Text: "   "},
+		"long text":        {Speaker: "a", Start: ms(-2 * time.Second), End: ms(0), Text: strings.Repeat("я", MaxPhraseLen+1)},
+		"end before start": {Speaker: "a", Start: ms(0), End: ms(-time.Second), Text: "x"},
+		"far future":       {Speaker: "a", Start: ms(time.Minute), End: ms(61 * time.Second), Text: "x"},
+		"zero start":       {Speaker: "a", Start: &zero, End: ms(0), Text: "x"},
+	} {
+		if _, _, _, ok := validPhrase(m, now); ok {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	edge := ClientMessage{Speaker: "a", Start: ms(0), End: ms(MaxPhraseAhead), Text: strings.Repeat("я", MaxPhraseLen)}
+	if _, _, _, ok := validPhrase(edge, now); !ok {
+		t.Error("the longest text ending a minute ahead was refused")
+	}
+}
+
+func TestNotesServerMessagesEncode(t *testing.T) {
+	for _, c := range []struct {
+		msg  any
+		want string
+	}{
+		{Stop(), `{"type":"stop"}`},
+		{NotesReady(), `{"type":"notes_ready"}`},
+		{LivePhrase("Ann", 1760421600000, "Привет"), `{"type":"phrase","name":"Ann","start":1760421600000,"text":"Привет"}`},
+	} {
+		if b, _ := json.Marshal(c.msg); string(b) != c.want {
+			t.Errorf("got %s, want %s", b, c.want)
+		}
 	}
 }

@@ -392,7 +392,7 @@ func (h *Handler) broadcast(lr *liveRoom) {
 	for i, p := range snap.Participants {
 		list[i] = ParticipantInfo{ID: p.ID, Name: p.Name, Muted: p.Muted, Bot: p.Bot, BotKind: p.BotKind, Quality: p.Quality, Camera: p.Camera}
 	}
-	msg := Participants(list, snap.Sharer, snap.Echo)
+	msg := Participants(list, snap.Sharer, snap.Echo, snap.Notes)
 	h.mu.Lock()
 	members := lr.membersExcept("")
 	h.mu.Unlock()

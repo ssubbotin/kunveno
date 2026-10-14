@@ -1,4 +1,29 @@
 // Package signal implements the WebSocket signaling protocol described in the spec.
+//
+// The notes bot contract. The meeting-notes bot (the commercial kunveno-notes add-on, built in
+// another repository) depends on this exact protocol; treat it as a stable interface and change
+// it only together with the bot:
+//
+//   - GET /internal/notes (loopback only, never proxied by nginx) returns a JSON list of the slugs
+//     of rooms that want notes; the bot polls it every 2 s. It is empty while notes.enabled is off.
+//   - The bot joins each listed room over loopback with {"type":"join","room":slug,"name":...,
+//     "role":"notes"} (no PIN); the join is refused unless the room wants notes. It sends no media
+//     and receives every person's audio track (stream id = participant id), no video and no other
+//     helper's audio.
+//   - For each recognised phrase it sends {"type":"phrase","speaker":<participant id>,
+//     "start":<unix ms>,"end":<unix ms>,"text":...}. A malformed frame (wrong field types, a missing
+//     speaker, start or end) is a bad_message: the server closes the socket, as for any other
+//     malformed frame. A well-formed phrase whose content is invalid is ignored and the socket stays
+//     open. Valid content: text of 1..2000 characters after every whitespace run (newlines and tabs
+//     included) is collapsed to a single space and the ends are trimmed, start positive and not
+//     after end, end at most 60 s ahead of the server's clock. Phrases of a speaker unknown to the
+//     server are dropped; people who left during the meeting stay known.
+//   - When the room no longer wants notes the server sends {"type":"stop"}. The bot then finishes
+//     its pending phrases, sends them and {"type":"leave"}. A bot still there 10 s after the stop is
+//     closed. A bot that loses its socket while the room still wants notes rejoins and sends what it
+//     recognised meanwhile.
+//
+// The bot uses pkg/botclient for the join and the offer/answer exchange.
 package signal
 
 import (
@@ -34,8 +59,15 @@ const (
 	RoleEcho   = "echo"
 	RolePlayer = "player" // a media file in a loop
 	RoleCamera = "camera" // a live RTSP feed, through the same player service
+	RoleNotes  = "notes"  // the meeting-notes bot (kunveno-notes add-on)
 	MediaTCP   = "tcp"
 	MaxSDPLen  = 256 * 1024
+)
+
+// Phrase limits of the notes bot contract.
+const (
+	MaxPhraseLen   = 2000             // characters after normalising whitespace
+	MaxPhraseAhead = 60 * time.Second // how far in the future a phrase may end
 )
 
 var (
@@ -58,9 +90,15 @@ type ClientMessage struct {
 	// Client identifies the page: a join with the same client id replaces that page's earlier
 	// session, so a page never shows up twice.
 	Client  string `json:"client,omitempty"`
-	On      *bool  `json:"on,omitempty"`      // echo, camera
+	On      *bool  `json:"on,omitempty"`      // echo, camera, notes
 	Receive *bool  `json:"receive,omitempty"` // video: whether to receive cameras
 	Emoji   string `json:"emoji,omitempty"`   // react: one of Reactions
+
+	// phrase, from the notes bot only
+	Speaker string `json:"speaker,omitempty"` // the speaking participant's id
+	Start   *int64 `json:"start,omitempty"`   // unix ms
+	End     *int64 `json:"end,omitempty"`     // unix ms
+	Text    string `json:"text,omitempty"`
 }
 
 // ParseClient decodes and validates one client frame.
@@ -79,7 +117,7 @@ func ParseClient(data []byte) (ClientMessage, error) {
 			return m, fmt.Errorf("%w: join.client", ErrBadMessage)
 		case m.Media != "" && m.Media != MediaTCP:
 			return m, fmt.Errorf("%w: join.media", ErrBadMessage)
-		case m.Role != "" && m.Role != RoleEcho && m.Role != RolePlayer && m.Role != RoleCamera:
+		case m.Role != "" && m.Role != RoleEcho && m.Role != RolePlayer && m.Role != RoleCamera && m.Role != RoleNotes:
 			return m, fmt.Errorf("%w: join.role", ErrBadMessage)
 		case m.Role == "" && (len(m.PIN) < 1 || len(m.PIN) > 16):
 			return m, fmt.Errorf("%w: join.pin", ErrBadMessage)
@@ -95,13 +133,18 @@ func ParseClient(data []byte) (ClientMessage, error) {
 		if m.Candidate == nil {
 			return m, fmt.Errorf("%w: candidate", ErrBadMessage)
 		}
-	case "echo", "camera":
+	case "echo", "camera", "notes":
 		if m.On == nil {
 			return m, fmt.Errorf("%w: %s.on", ErrBadMessage, m.Type)
 		}
 	case "video":
 		if m.Receive == nil {
 			return m, fmt.Errorf("%w: video.receive", ErrBadMessage)
+		}
+	case "phrase":
+		// The shape only; the content is checked by validPhrase, and a bad phrase is ignored.
+		if m.Speaker == "" || len(m.Speaker) > 64 || m.Start == nil || m.End == nil {
+			return m, fmt.Errorf("%w: phrase", ErrBadMessage)
 		}
 	case "react":
 		// The configured set is checked by the handler; here only the shape.
@@ -129,7 +172,7 @@ type ParticipantInfo struct {
 	Name  string `json:"name"`
 	Muted bool   `json:"muted"`
 	Bot   bool   `json:"bot,omitempty"`
-	// BotKind: "echo" or "player" for helpers.
+	// BotKind: "echo", "player", "camera" or "notes" for helpers.
 	BotKind string `json:"bot_kind,omitempty"`
 	// Quality is the connection grade: "good", "fair" or "poor"; absent until measured.
 	Quality string `json:"quality,omitempty"`
@@ -164,6 +207,7 @@ type participantsMsg struct {
 	Participants []ParticipantInfo `json:"participants"`
 	Sharer       string            `json:"sharer"`
 	Echo         bool              `json:"echo"`
+	Notes        bool              `json:"notes"` // the room takes meeting notes
 }
 
 func Joined(self ParticipantInfo, slug, name string) any {
@@ -191,9 +235,46 @@ type reactionMsg struct {
 // Reaction tells the room that a participant sent an emoji; it is not part of the room state.
 func Reaction(from, emoji string) any { return reactionMsg{Type: "reaction", From: from, Emoji: emoji} }
 
-func Participants(list []ParticipantInfo, sharer string, echo bool) any {
+func Participants(list []ParticipantInfo, sharer string, echo, notes bool) any {
 	if list == nil {
 		list = []ParticipantInfo{}
 	}
-	return participantsMsg{Type: "participants", Participants: list, Sharer: sharer, Echo: echo}
+	return participantsMsg{Type: "participants", Participants: list, Sharer: sharer, Echo: echo, Notes: notes}
+}
+
+// validPhrase checks a phrase's content: text of 1..MaxPhraseLen characters once every whitespace
+// run is collapsed to one space (so no newline reaches the Markdown), a positive start not after
+// the end, and an end at most MaxPhraseAhead after now.
+func validPhrase(m ClientMessage, now time.Time) (text string, start, end time.Time, ok bool) {
+	text = strings.Join(strings.Fields(m.Text), " ")
+	if n := utf8.RuneCountInString(text); n < 1 || n > MaxPhraseLen || m.Start == nil || m.End == nil || *m.Start <= 0 || *m.Start > *m.End {
+		return "", time.Time{}, time.Time{}, false
+	}
+	start, end = time.UnixMilli(*m.Start), time.UnixMilli(*m.End)
+	if end.After(now.Add(MaxPhraseAhead)) {
+		return "", time.Time{}, time.Time{}, false
+	}
+	return text, start, end, true
+}
+
+type typeOnlyMsg struct {
+	Type string `json:"type"`
+}
+
+// Stop asks the notes bot to send its last phrases and leave.
+func Stop() any { return typeOnlyMsg{Type: "stop"} }
+
+// NotesReady tells the people in a room that its notes can be downloaded.
+func NotesReady() any { return typeOnlyMsg{Type: "notes_ready"} }
+
+type livePhraseMsg struct {
+	Type  string `json:"type"`
+	Name  string `json:"name"`
+	Start int64  `json:"start"` // unix ms
+	Text  string `json:"text"`
+}
+
+// LivePhrase shows a recognised phrase in the room (notes.live).
+func LivePhrase(name string, start int64, text string) any {
+	return livePhraseMsg{Type: "phrase", Name: name, Start: start, Text: text}
 }
