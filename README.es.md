@@ -150,6 +150,8 @@ mismo tamaño solo con voz necesita menos de 10 Mbit/s.
 No hace falta STUN, TURN ni ningún servicio externo. Los puertos internos del servidor (API,
 métricas, Prometheus, Grafana, node-exporter) escuchan solo en 127.0.0.1; a Grafana se llega por el mismo 443 en
 `/grafana/`.
+La fila «Заметки» del panel y el trabajo de Prometheus `kunveno-notes` (`127.0.0.1:9101`) pertenecen al
+complemento opcional kunveno-notes; sin él, el trabajo aparece caído y la fila queda vacía.
 
 **Regla del cortafuegos.** Permitir desde las redes de los usuarios hacia el servidor: TCP 443 (y
 80), UDP 7000 y TCP 7000. Si un segmento de red solo puede usar TCP 7000, dejar pasar su UDP 7000

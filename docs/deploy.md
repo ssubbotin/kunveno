@@ -191,6 +191,11 @@ participants lose packets at the same moment, these panels tell load from other 
 host apart from losses in the network: no drops on the host and no CPU pressure point at the
 network between the participants and the host.
 
+The "Заметки" row shows the optional kunveno-notes add-on: Prometheus scrapes the job
+`kunveno-notes` at `127.0.0.1:9101` (the bot's `/metrics`). It covers queue delay, recognition speed,
+queue length, rooms and tracks, phrases, errors, rejoins, the loaded model and the add-on version.
+Without the add-on the target shows as down and the row has no data.
+
 ## Virtual backgrounds
 
 Participants can replace their camera background with an image. The images are the files in
