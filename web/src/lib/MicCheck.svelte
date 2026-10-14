@@ -2,11 +2,14 @@
   import { onMount } from 'svelte';
   import { initials } from './initials';
   import { t } from './i18n/i18n.svelte';
-  import { cameraConstraints, loadPrefs, savePrefs, type Prefs } from './media';
+  import { loadPrefs, savePrefs, type Prefs } from './media';
   import { MIC_KEY, dbfs, meterPercent, noiseFilterOn, rmsOf } from './micLevel';
   import { openMic, type MicInput } from './micInput';
   import { site } from './site.svelte';
   import Video from './Video.svelte';
+  import BackgroundPicker from './BackgroundPicker.svelte';
+  import { openCamera, BackgroundUnavailable, type CameraInput } from './cameraInput';
+  import { NONE, type BackgroundChoice } from './background/choice';
 
   let { name = '' }: { name?: string } = $props();
 
@@ -42,30 +45,71 @@
   let camTrack = $state.raw<MediaStreamTrack | null>(null);
   let camError = $state('');
 
+  let camInput: CameraInput | null = null;
+  let camGeneration = 0;
+  let bgFps = $state<number | null>(null);
+  let bgError = $state(false);
+  let showPicker = $state(false);
+  let unavailableDialog: HTMLDialogElement | undefined = $state();
+
   async function startCamera() {
     stopCamera();
     camError = '';
+    bgError = false;
+    const mine = camGeneration;
+    let opened: CameraInput;
     try {
-      let s: MediaStream;
-      try {
-        s = await navigator.mediaDevices.getUserMedia({ video: cameraConstraints(prefs.cameraId) });
-      } catch (e) {
-        if (!prefs.cameraId || (e as Error).name !== 'OverconstrainedError') throw e;
-        s = await navigator.mediaDevices.getUserMedia({ video: cameraConstraints('') });
+      opened = await openCamera(prefs.cameraId, prefs.background ?? NONE, (f) => (bgFps = f));
+    } catch (e) {
+      if (mine !== camGeneration) return;
+      if (e instanceof BackgroundUnavailable) {
+        bgError = true;
+      } else {
+        camError = 'camera.unavailable';
       }
-      camTrack = s.getVideoTracks()[0];
-      setPref({ cameraId: camTrack.getSettings().deviceId ?? '' });
-      cameras = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
-    } catch {
-      camError = 'camera.unavailable';
       setPref({ cameraOn: false });
+      return;
     }
+    if (mine !== camGeneration) {
+      opened.stop(); // stopped, closed or restarted meanwhile
+      return;
+    }
+    camInput = opened;
+    camTrack = opened.track;
+    setPref({ cameraId: opened.deviceId });
+    const all = await navigator.mediaDevices.enumerateDevices().catch(() => [] as MediaDeviceInfo[]);
+    if (mine !== camGeneration) return;
+    cameras = all.filter((d) => d.kind === 'videoinput');
   }
 
   function stopCamera() {
-    camTrack?.stop();
+    camGeneration += 1;
+    camInput?.stop();
+    camInput = null;
     camTrack = null;
+    bgFps = null;
   }
+
+  function chooseBg(c: BackgroundChoice) {
+    setPref({ background: c });
+    if (prefs.cameraOn) void startCamera();
+  }
+
+  function withoutBackground() {
+    setPref({ background: NONE, cameraOn: true });
+    unavailableDialog?.close();
+    void startCamera();
+  }
+
+  function cancelBackground() {
+    setPref({ cameraOn: false });
+    bgError = false;
+    unavailableDialog?.close();
+  }
+
+  $effect(() => {
+    if (bgError && unavailableDialog && !unavailableDialog.open) unavailableDialog.showModal();
+  });
 
   function toggleCamera() {
     if (hasCamera === false) return;
@@ -199,6 +243,25 @@
     </div>
   </div>
   {#if camError}<p class="hint warn">{t('camera.unavailable')}</p>{/if}
+  {#if hasCamera}
+    <div class="bg">
+      <button type="button" class="btn quiet" aria-expanded={showPicker} aria-controls="bg-panel" onclick={() => (showPicker = !showPicker)}>{t('bg.title')}</button>
+      {#if showPicker}
+        <div id="bg-panel">
+          <BackgroundPicker current={prefs.background ?? NONE} fps={bgFps} lost={false} onchoose={chooseBg} />
+        </div>
+      {/if}
+    </div>
+  {/if}
+  {#if bgError}
+    <dialog bind:this={unavailableDialog} aria-labelledby="bg-unavailable" oncancel={cancelBackground}>
+      <p id="bg-unavailable">{t('bg.unavailable')}</p>
+      <div class="actions">
+        <button type="button" class="btn" onclick={withoutBackground}>{t('bg.withoutBg')}</button>
+        <button type="button" class="btn quiet" onclick={cancelBackground}>{t('bg.cancel')}</button>
+      </div>
+    </dialog>
+  {/if}
 
   <div class="devices">
   {#if prefs.cameraOn && cameras.length > 0}
@@ -302,6 +365,11 @@
   .fill.hot { background: var(--caution); }
   .fill.clip { background: var(--danger); }
   .peak { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--text); opacity: .7; }
+  .bg { display: grid; gap: .75rem; justify-items: start; }
+  .bg > div { justify-self: stretch; }
+  dialog { padding: 1.25rem 1.5rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-2); color: var(--text); }
+  dialog::backdrop { background: rgba(0, 0, 0, .55); }
+  .actions { display: flex; flex-wrap: wrap; gap: .5rem; }
   .hint { margin: 0; font-size: .85rem; color: var(--muted); }
   .hint.ok { color: var(--ok); }
   .hint.warn { color: #f3cf92; }
