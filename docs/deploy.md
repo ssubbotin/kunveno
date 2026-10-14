@@ -9,9 +9,9 @@ packages as an alternative to Docker (appendix).
 
 nginx with the client, the server and the echo and player helpers run from public images that CI
 builds and publishes to GHCR (`.github/workflows/images.yml`): `ghcr.io/ssubbotin/kunveno-server`,
-`-web`, `-echo`, `-player`; Prometheus and Grafana are the upstream images. A tag `vX.Y.Z`
+`-web`, `-echo`, `-player`; Prometheus, Grafana and node-exporter are the upstream images. A tag `vX.Y.Z`
 publishes `X.Y.Z` and `latest` and a GitHub release with `kunveno.tgz`: the stack directory
-`deploy/kunveno` (`docker-compose.yml` pinned to that release, `.env`, `config.yaml`, `grafana/`
+`deploy/kunveno` (`docker-compose.yml`, which runs `latest` unless `.env` sets `KUNVENO_VERSION`, `.env`, `config.yaml`, `grafana/`
 with the data source and the dashboard, empty `data/`, `certs/` and `media/`). Pushes to `main`
 publish `main` and `sha-<commit>`; a pull request from a branch of this repository publishes a
 preview `pr-<number>`. CI checks the kunveno images before pushing (`deploy/docker/check-image.sh`):
@@ -32,11 +32,20 @@ What the stack does on its own:
 `docker compose pull && docker compose up -d`, and remove the line afterwards (then pull and up
 again) to return to the latest release.
 
+**When a release changes the stack files.** `docker compose pull && docker compose up -d` updates
+the images only. When a release changes `docker-compose.yml` or `grafana/` (its notes say so), take
+them from the archive first, in the stack directory; `.env`, `config.yaml` and the data stay:
+
+```bash
+curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz --strip-components=1 kunveno/docker-compose.yml kunveno/grafana
+docker compose pull && docker compose up -d
+```
+
 **Logs** go to the host's systemd journal (Docker `journald` driver), so they survive container
 recreation and reboots; retention follows the journal. Last week of server logs:
 `journalctl -t kunveno-server --since "7 days ago" -o cat`; follow live with `-f`. The other
 services log as `kunveno-web`, `kunveno-echo`, `kunveno-player`, `kunveno-prometheus`,
-`kunveno-grafana`.
+`kunveno-grafana`, `kunveno-node-exporter`.
 
 ## TLS certificate
 
@@ -122,6 +131,13 @@ proxy it). The stack runs Prometheus on `127.0.0.1:${PROMETHEUS_PORT}` (default 
 data) and Grafana behind nginx at `https://<PUBLIC_HOST>/grafana/` with the Prometheus data source
 and the "kunveno" dashboard provisioned from `grafana/` in the stack directory. Log in as `admin`
 with `GRAFANA_ADMIN_PASSWORD` from `.env`; Grafana reads it on its first start only.
+
+The stack also runs node-exporter on `127.0.0.1:${NODE_EXPORTER_PORT}` (default 9105) for the
+"Хост" row of the dashboard: CPU load, CPU, disk and memory pressure (Linux PSI), traffic of the
+physical interfaces, and packets the host dropped (interface drops, UDP buffer overflows). When
+participants lose packets at the same moment, these panels tell load from other software on the
+host apart from losses in the network: no drops on the host and no CPU pressure point at the
+network between the participants and the host.
 
 ## Appendix: Debian packages with the host's own nginx
 

@@ -138,7 +138,7 @@ docker compose pull && docker compose up -d
 | TCP 7000 | запасной канал звука и видео для участника, у которого не проходит UDP (обычно NAT или межсетевой экран на шлюзе, обрывающий долгие UDP-потоки); браузер переключается на него сам |
 
 Снаружи больше ничего не нужно: ни STUN, ни TURN, ни внешних сервисов. Внутренние порты сервера
-(API, метрики, Prometheus, Grafana) слушают только 127.0.0.1, Grafana открыта через тот же 443 по
+(API, метрики, Prometheus, Grafana, node-exporter) слушают только 127.0.0.1, Grafana открыта через тот же 443 по
 пути `/grafana/`.
 
 **Правило для межсетевого экрана.** Разрешить из сетей пользователей к серверу: TCP 443 (и 80),
@@ -228,7 +228,7 @@ Grafana и её пароль администратора.
 ## Эксплуатация
 
 - Журналы: `journalctl -t kunveno-server --since "7 days ago" -o cat` (также `kunveno-web`,
-  `kunveno-echo`, `kunveno-player`, `kunveno-prometheus`, `kunveno-grafana`). Для каждого
+  `kunveno-echo`, `kunveno-player`, `kunveno-prometheus`, `kunveno-grafana`, `kunveno-node-exporter`). Для каждого
   подключения записываются путь медиапотока (UDP или TCP), изменения качества и неверные PIN.
 - Метрики: `/metrics` на сервере (только loopback); Grafana по адресу `https://<хост>/grafana/`
   с готовой панелью «kunveno».

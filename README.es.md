@@ -141,7 +141,7 @@ mismo tamaño solo con voz necesita menos de 10 Mbit/s.
 | TCP 7000 | el canal de reserva para un participante cuyo UDP no pasa (normalmente un NAT o un cortafuegos en una pasarela que corta los flujos UDP largos); el navegador cambia a él por sí solo |
 
 No hace falta STUN, TURN ni ningún servicio externo. Los puertos internos del servidor (API,
-métricas, Prometheus, Grafana) escuchan solo en 127.0.0.1; a Grafana se llega por el mismo 443 en
+métricas, Prometheus, Grafana, node-exporter) escuchan solo en 127.0.0.1; a Grafana se llega por el mismo 443 en
 `/grafana/`.
 
 **Regla del cortafuegos.** Permitir desde las redes de los usuarios hacia el servidor: TCP 443 (y
@@ -233,7 +233,7 @@ público del equipo para Grafana y su contraseña de administrador.
 ## Operación
 
 - Registros: `journalctl -t kunveno-server --since "7 days ago" -o cat` (también `kunveno-web`,
-  `kunveno-echo`, `kunveno-player`, `kunveno-prometheus`, `kunveno-grafana`). Cada conexión
+  `kunveno-echo`, `kunveno-player`, `kunveno-prometheus`, `kunveno-grafana`, `kunveno-node-exporter`). Cada conexión
   registra su ruta de audio y vídeo (UDP o TCP), los cambios de calidad y los PIN erróneos.
 - Métricas: `/metrics` en el servidor (solo loopback); Grafana en `https://<servidor>/grafana/`
   con el panel «kunveno» ya provisto.

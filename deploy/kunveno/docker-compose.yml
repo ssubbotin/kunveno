@@ -119,6 +119,25 @@ services:
     volumes:
       - prometheus-data:/prometheus
 
+  # Host metrics (CPU, CPU pressure, network, packet drops) for the "Хост" panels, so a meeting's
+  # trouble can be told apart from load by other software on the same machine. Loopback only.
+  node-exporter:
+    logging:
+      <<: *journald
+      options:
+        tag: kunveno-node-exporter
+    image: prom/node-exporter:v1.12.1
+    network_mode: host
+    pid: host
+    restart: unless-stopped
+    command:
+      - --path.rootfs=/host
+      - --web.listen-address=127.0.0.1:${NODE_EXPORTER_PORT:-9105}
+      - --collector.netdev.device-exclude=^(lo|veth.*|br-.*|docker.*)$$
+      - --collector.netclass.ignored-devices=^(lo|veth.*|br-.*|docker.*)$$
+    volumes:
+      - /:/host:ro,rslave
+
   # Dashboards at https://<PUBLIC_HOST>/grafana/ (user admin). The Prometheus data source and the
   # "kunveno" dashboard come from ./grafana.
   grafana:
@@ -160,6 +179,9 @@ configs:
         - job_name: kunveno
           static_configs:
             - targets: ["${KUNVENO_UPSTREAM:-127.0.0.1:8080}"]
+        - job_name: host
+          static_configs:
+            - targets: ["127.0.0.1:${NODE_EXPORTER_PORT:-9105}"]
 
 volumes:
   prometheus-data:
