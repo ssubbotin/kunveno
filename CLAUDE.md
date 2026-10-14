@@ -81,7 +81,9 @@ Media model, which explains most design choices:
   as `sharer` in a `participants` snapshot. A disconnect releases the lock and unsubscribes everyone.
 - Keyframes: PLI to the sharer whenever a subscriber attaches to the screen track; subscriber PLIs
   are forwarded to the sharer.
-- Reconnection is always a fresh `join` (the client keeps the name and the PINs of rooms it entered in `localStorage`, `kunveno.name` and `kunveno.pins`; the room and PIN of the current session stay in memory).
+- Reconnection is always a fresh `join`. The client keeps the name (`kunveno.name`) and the PINs of
+  rooms it entered (`kunveno.pins`) in `localStorage`, and the current room slug (`kunveno.room`) in
+  `sessionStorage`; the PIN of the current session also stays in memory.
 
 Web client logic lives in `web/src/lib/` (`protocol.ts` validating parser, `state.svelte.ts` rune
 state, `signaling.ts` reconnect with 1 to 10 s backoff, `rtc.ts`, `levels.ts`, `session.ts`,

@@ -150,7 +150,7 @@ switch, refuses the notes bot, lists no rooms at `/internal/notes`, leaves `note
 together with the add-on (the same text is the package comment of `internal/signal/protocol.go`):
 
 1. `GET /internal/notes` on loopback (never proxied by nginx) returns a JSON list of the slugs of
-   rooms that want notes; the bot polls it every 2 s.
+   rooms that want notes; the bot polls it every 2 s. The list is empty while `notes.enabled` is off.
 2. The bot joins each listed room over loopback with `{"type":"join","room":…,"name":…,"role":"notes"}`
    (no PIN, through `pkg/botclient`); the join is refused unless the room wants notes. It sends no
    media and receives every person's audio track (stream id = participant id); no video, no other
@@ -165,9 +165,9 @@ together with the add-on (the same text is the package comment of `internal/sign
    left during the meeting stay known.
 4. When the room no longer wants notes (switched off, or the last person left) the server sends
    `{"type":"stop"}`; the bot finishes its pending phrases, sends them, then `{"type":"leave"}`. A bot
-   still there 10 s after the stop is closed. Only then are the notes ready.
+   still there 10 s after the stop is closed. The notes are ready only after the bot has left (or the grace closed it).
 5. A bot that loses its socket while the room still wants notes rejoins and sends what it recognised
-   meanwhile. A bot is bound to the meeting it joined: it cannot write into a later one.
+   meanwhile. A bot is bound to the meeting it joined and cannot write into a later one.
 
 The Debian packages have no notes add-on; with them leave `notes.enabled` off.
 

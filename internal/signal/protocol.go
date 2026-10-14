@@ -20,8 +20,10 @@
 //     server are dropped; people who left during the meeting stay known.
 //   - When the room no longer wants notes the server sends {"type":"stop"}. The bot then finishes
 //     its pending phrases, sends them and {"type":"leave"}. A bot still there 10 s after the stop is
-//     closed. A bot that loses its socket while the room still wants notes rejoins and sends what it
-//     recognised meanwhile.
+//     closed. The notes are ready only after the bot has left (or the grace closed it).
+//   - A bot that loses its socket while the room still wants notes rejoins and sends what it
+//     recognised meanwhile. A bot is bound to the meeting it joined and cannot write into a later
+//     one.
 //
 // The bot uses pkg/botclient for the join and the offer/answer exchange.
 package signal
