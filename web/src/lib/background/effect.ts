@@ -7,6 +7,17 @@ export class BackgroundUnavailable extends Error {}
 
 export type Effect = { track: MediaStreamTrack; setMode(mode: EffectMode): void; stop(): void };
 
+// Recognition runs on the CPU (WebAssembly SIMD), as in Meet and Jitsi: the GPU delegate made
+// weaker GPUs lose their WebGL context and freeze the page for seconds. The GPU can still be
+// chosen for comparison with localStorage kunveno.bgDelegate = 'gpu'.
+function delegate(): 'GPU' | 'CPU' {
+  try {
+    return localStorage.getItem('kunveno.bgDelegate') === 'gpu' ? 'GPU' : 'CPU';
+  } catch {
+    return 'CPU';
+  }
+}
+
 type Processor = new (init: { track: MediaStreamTrack }) => { readable: ReadableStream<VideoFrame> };
 
 export async function startEffect(raw: MediaStreamTrack, mode: EffectMode, onStats?: (fps: number) => void): Promise<Effect> {
@@ -28,14 +39,14 @@ export async function startEffect(raw: MediaStreamTrack, mode: EffectMode, onSta
     const MSTP = (globalThis as { MediaStreamTrackProcessor?: Processor }).MediaStreamTrackProcessor;
     if (MSTP) {
       const frames = new MSTP({ track: raw }).readable;
-      send({ type: 'init', canvas: offscreen, width, height, frames }, [offscreen, frames]);
+      send({ type: 'init', canvas: offscreen, width, height, delegate: delegate(), frames }, [offscreen, frames]);
     } else {
       video = document.createElement('video');
       video.muted = true;
       video.playsInline = true;
       video.srcObject = new MediaStream([raw]);
       await video.play();
-      send({ type: 'init', canvas: offscreen, width, height }, [offscreen]);
+      send({ type: 'init', canvas: offscreen, width, height, delegate: delegate() }, [offscreen]);
     }
 
     await new Promise<void>((resolve, reject) => {
@@ -45,6 +56,7 @@ export async function startEffect(raw: MediaStreamTrack, mode: EffectMode, onSta
         if (m.type === 'ready') {
           clearTimeout(timer);
           ready = true;
+          console.info('background effect ready, recognition on', m.delegate);
           resolve();
         } else if (m.type === 'error') {
           if (ready) {

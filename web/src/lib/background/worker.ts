@@ -100,7 +100,7 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
     case 'init':
       try {
         comp = new Compositor(m.canvas, m.width, m.height);
-        seg = await createSegmenter();
+        seg = await createSegmenter(m.delegate === 'CPU' ? 'CPU' : undefined);
       } catch (err) {
         // The frames handed over would stay queued in the stream, unclosed.
         void m.frames?.cancel().catch(() => {});

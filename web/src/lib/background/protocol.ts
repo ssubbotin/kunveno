@@ -2,7 +2,7 @@
 export type EffectMode = { kind: 'blur' } | { kind: 'image'; image: ImageBitmap };
 
 export type ToWorker =
-  | { type: 'init'; canvas: OffscreenCanvas; width: number; height: number; frames?: ReadableStream<VideoFrame> }
+  | { type: 'init'; canvas: OffscreenCanvas; width: number; height: number; delegate: 'GPU' | 'CPU'; frames?: ReadableStream<VideoFrame> }
   | { type: 'frame'; frame: ImageBitmap }
   | { type: 'mode'; mode: EffectMode }
   | { type: 'stop' };
