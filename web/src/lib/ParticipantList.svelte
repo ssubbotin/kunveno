@@ -24,17 +24,20 @@
         <div class="video"><Video track={video} mirror={p.id === selfId} /></div>
       {/if}
       <span class="avatar" aria-hidden="true">
-        {#if p.bot}
+        {#if p.botKind === 'notes'}
+          <svg viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6zM9 9h6M9 13h6M9 17h4" /></svg>
+        {:else if p.bot}
           <svg viewBox="0 0 24 24"><path d="M4 12h2l2-5 3 10 3-8 2 3h4" /></svg>
         {:else}
           {initials(p.name)}
         {/if}
       </span>
       <span class="who">
-        <span class="name">{p.botKind === 'echo' ? t('people.echoName') : p.name}</span>
+        <span class="name">{p.botKind === 'echo' ? t('people.echoName') : p.botKind === 'notes' ? t('people.notesName') : p.name}</span>
         <span class="tags">
           {#if p.id === selfId}<span>{t('people.you')}</span>{/if}
           {#if p.botKind === 'echo'}<span>{t('people.echoTag')}</span>{/if}
+          {#if p.botKind === 'notes'}<span>{t('people.notesTag')}</span>{/if}
           {#if p.botKind === 'player'}<span>{t('people.playerTag')}</span>{/if}
           {#if p.botKind === 'camera'}<span class="live-tag">{t('people.cameraTag')}</span>{/if}
           {#if p.id === sharer}<span class="share">{t('people.sharing')}</span>{/if}

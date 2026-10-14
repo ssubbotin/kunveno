@@ -8,7 +8,8 @@
   import CopyLink from './CopyLink.svelte';
   import { roomLink } from './link';
   import { nextIndex } from './roving';
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
+  import { fetchNotes, notesErrorText, saveFile } from './notes';
   import Announcer from './Announcer.svelte';
   import ShortcutsDialog from './ShortcutsDialog.svelte';
   import { ariaShortcut, isMac, matchShortcut, shortcutLabel, type ShortcutAction } from './shortcuts';
@@ -211,6 +212,32 @@
   }
   const shareReason = $derived(rs.isSharing ? '' : shareBusy ? t('control.shareBusy', { name: sharerName }) : rs.status !== 'connected' ? t('control.shareWait') : '');
   const echoPresent = $derived(rs.participants.some((p) => p.botKind === 'echo'));
+  const notesPresent = $derived(rs.participants.some((p) => p.botKind === 'notes'));
+  // The notes state is announced on joining and on every change.
+  let notesSeen = false;
+  $effect(() => {
+    const on = rs.notes;
+    if (on !== notesSeen) untrack(() => announce(on ? t('notes.recording') : t('notes.stopped')));
+    notesSeen = on;
+  });
+  let notesError = $state('');
+  let notesBusy = $state(false);
+  async function downloadNotes() {
+    if (notesBusy) return;
+    notesBusy = true;
+    notesError = '';
+    try {
+      const r = await fetchNotes(fetch, rs.roomSlug, session.pin, i18n.lang);
+      if (r.ok) saveFile(r.blob, r.filename);
+      else notesError = notesErrorText(r, t);
+    } finally {
+      notesBusy = false;
+    }
+  }
+  function dismissNotes() {
+    rs.notesReady = false;
+    notesError = '';
+  }
   const statusText = $derived(
     rs.status === 'connected' ? (rs.transport === 'tcp' ? t('status.backup') : t('status.connected'))
       : rs.status === 'reconnecting' ? t('status.reconnecting')
@@ -251,6 +278,9 @@
       title={rs.transport === 'tcp' ? t('status.backupHint') : ''}>
       <span class="dot" aria-hidden="true"></span>{statusText}
     </span>
+    {#if site.notesEnabled && rs.notes}
+      <span class="notes-mark" role="status"><span class="rec" aria-hidden="true"></span>{t('notes.recording')}</span>
+    {/if}
     <span class="invite"><CopyLink link={roomLink(location.origin, rs.roomSlug, session.pin)} label={t('control.invite')} /></span>
     <span class="count">{people(rs.peopleCount)}</span>
   </header>
@@ -261,6 +291,15 @@
     {/if}
     <ParticipantList participants={rs.participants} selfId={rs.selfId} sharer={rs.sharer} speaking={rs.speaking} videos={rs.videos} reactions={rs.reactions} compact={screenTrack !== null} />
   </div>
+
+  {#if site.notesEnabled && rs.notesReady}
+    <div class="notes-ready" role="status">
+      <span>{t('notes.ready')}</span>
+      <button type="button" class="btn primary" disabled={notesBusy} onclick={downloadNotes}>{t('notes.download')}</button>
+      <button type="button" class="btn quiet" onclick={dismissNotes}>{t('notes.dismiss')}</button>
+      {#if notesError}<span class="notes-error" role="alert">{notesError}</span>{/if}
+    </div>
+  {/if}
 
   <!-- Labels stay the same whatever the state, so buttons never change width; the icon, the colour
        and aria-pressed carry the state. Below 1024 px only the icons remain. -->
@@ -314,7 +353,7 @@
       </div>
 
       <div class="popover-anchor">
-        <button class="btn" class:active={more} class:flag={!more && (rs.echo || !rs.receiveVideo)} aria-expanded={more} aria-controls="more-menu" title={t('control.more')}
+        <button class="btn" class:active={more} class:flag={!more && (rs.echo || !rs.receiveVideo || rs.notes)} aria-expanded={more} aria-controls="more-menu" title={t('control.more')}
           bind:this={moreBtn} onclick={openMore}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="19" cy="12" r="1.3" /></svg>
           <span class="label">{t('control.more')}</span>
@@ -328,6 +367,13 @@
               <span class="text">{t('control.echo')}<small id="echo-hint">{rs.echo && !echoPresent ? t('control.echoStarting') : t('control.echoHint')}</small></span>
               <span class="switch" aria-hidden="true"></span>
             </button>
+            {#if site.notesEnabled}
+              <button type="button" class="row" aria-describedby="notes-hint" disabled={rs.status !== 'connected'}
+                onclick={() => session.setNotes(!rs.notes)}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6zM9 9h6M9 13h6M9 17h4" /></svg>
+                <span class="text">{rs.notes ? t('control.notesStop') : t('control.notes')}<small id="notes-hint">{rs.notes && !notesPresent ? t('notes.starting') : t('control.notesHint')}</small></span>
+              </button>
+            {/if}
             <button type="button" class="row" role="switch" aria-checked={!rs.receiveVideo} aria-label={t('control.noVideo')} aria-describedby="novideo-hint"
               onclick={() => session.setReceiveVideo(!rs.receiveVideo)}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="2.5" /><path d="M3 3l18 18" /></svg>
@@ -443,6 +489,15 @@
   .row[aria-checked='true'] .switch { background: var(--live); }
   .row[aria-checked='true'] .switch::after { transform: translateX(.85rem); }
 
+  .notes-mark { display: inline-flex; align-items: center; gap: .4rem; font-size: .9rem; color: #f1b5b3; }
+  .notes-mark .rec { width: .55rem; height: .55rem; border-radius: 50%; background: var(--danger); }
+  .notes-ready {
+    position: fixed; left: 50%; bottom: 5.5rem; transform: translateX(-50%); z-index: 6;
+    display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; max-width: 92vw;
+    padding: .7rem 1rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-2);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
+  }
+  .notes-error { color: #f1b5b3; font-size: .9rem; }
   @media (max-width: 1024px) {
     .controls .label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
     .controls .btn { min-width: 2.75rem; min-height: 2.75rem; padding: .6rem; }
