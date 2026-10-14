@@ -19,7 +19,9 @@ RUN find dist -type f \( -name '*.html' -o -name '*.js' -o -name '*.css' -o -nam
 
 # The official image renders templates/*.template with envsubst on start, substituting only
 # variables defined in the environment (nginx's own $vars are kept).
-FROM nginx:1.27-alpine
+# The slim variant leaves out modules the site does not use (njs, image filter with its codecs, xslt,
+# geoip); it keeps TLS, HTTP/2, gzip_static and the template rendering. 1.30 is the stable branch.
+FROM nginx:1.30-alpine-slim
 RUN rm -f /etc/nginx/conf.d/default.conf && apk add --no-cache openssl
 # Issues a self-signed certificate on first start when ./certs is empty.
 COPY --chmod=0755 deploy/docker/web-cert.sh /docker-entrypoint.d/05-kunveno-cert.sh
