@@ -11,31 +11,33 @@ type Processor = new (init: { track: MediaStreamTrack }) => { readable: Readable
 
 export async function startEffect(raw: MediaStreamTrack, mode: EffectMode, onStats?: (fps: number) => void): Promise<Effect> {
   const { width = 640, height = 360 } = raw.getSettings();
-  const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
-  const offscreen = canvas.transferControlToOffscreen();
+  const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
   const send = (m: ToWorker, transfer: Transferable[] = []) => worker.postMessage(m, transfer);
-
-  const MSTP = (globalThis as { MediaStreamTrackProcessor?: Processor }).MediaStreamTrackProcessor;
   let video: HTMLVideoElement | null = null;
-  if (MSTP) {
-    const frames = new MSTP({ track: raw }).readable;
-    send({ type: 'init', canvas: offscreen, width, height, frames }, [offscreen, frames]);
-  } else {
-    video = document.createElement('video');
-    video.muted = true;
-    video.playsInline = true;
-    video.srcObject = new MediaStream([raw]);
-    await video.play();
-    send({ type: 'init', canvas: offscreen, width, height }, [offscreen]);
-  }
 
+  // Everything from here to ready can fail (the video refusing to play, the frame stream or the
+  // canvas failing to transfer, the worker's own error); the worker must not outlive the attempt.
   // Once the worker is ready, an error is a degraded picture (a frame failed, the stream ended):
   // the effect keeps running, since the background is never turned off by itself.
   let ready = false;
   try {
+    const offscreen = canvas.transferControlToOffscreen();
+    const MSTP = (globalThis as { MediaStreamTrackProcessor?: Processor }).MediaStreamTrackProcessor;
+    if (MSTP) {
+      const frames = new MSTP({ track: raw }).readable;
+      send({ type: 'init', canvas: offscreen, width, height, frames }, [offscreen, frames]);
+    } else {
+      video = document.createElement('video');
+      video.muted = true;
+      video.playsInline = true;
+      video.srcObject = new MediaStream([raw]);
+      await video.play();
+      send({ type: 'init', canvas: offscreen, width, height }, [offscreen]);
+    }
+
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new BackgroundUnavailable('timeout')), 20000);
       worker.onmessage = async (e: MessageEvent<FromWorker>) => {
@@ -70,7 +72,7 @@ export async function startEffect(raw: MediaStreamTrack, mode: EffectMode, onSta
   } catch (e) {
     worker.terminate();
     if (video) video.srcObject = null;
-    throw e;
+    throw e instanceof BackgroundUnavailable ? e : new BackgroundUnavailable(String(e));
   }
 
   const setMode = (m: EffectMode) => send({ type: 'mode', mode: m }, m.kind === 'image' ? [m.image] : []);
