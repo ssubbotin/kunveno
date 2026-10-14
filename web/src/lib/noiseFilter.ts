@@ -11,10 +11,17 @@ let binary: Promise<ArrayBuffer> | null = null;
 // filterTrack returns a track carrying raw's sound through RNNoise. RNNoise works at 48 kHz.
 export async function filterTrack(raw: MediaStreamTrack): Promise<{ track: MediaStreamTrack; stop(): void }> {
   if (typeof AudioWorkletNode === 'undefined') throw new Error('AudioWorklet is not supported');
-  binary ??= loadRnnoise({ url: wasmUrl, simdUrl }).catch((e) => {
-    binary = null; // try again next time
-    throw e;
-  });
+  // The fetch does not check the status, and a missing file may come back as the page itself;
+  // the worklet would then output silence, so anything but WebAssembly fails here.
+  binary ??= loadRnnoise({ url: wasmUrl, simdUrl })
+    .then((b) => {
+      if (!WebAssembly.validate(b)) throw new Error('the noise filter file is not WebAssembly');
+      return b;
+    })
+    .catch((e) => {
+      binary = null; // try again next time
+      throw e;
+    });
   const ctx = new AudioContext({ sampleRate: 48000 });
   try {
     const [wasm] = await Promise.all([binary, ctx.audioWorklet.addModule(workletUrl)]);
@@ -23,11 +30,23 @@ export async function filterTrack(raw: MediaStreamTrack): Promise<{ track: Media
     const dest = ctx.createMediaStreamDestination();
     source.connect(node);
     node.connect(dest);
-    void ctx.resume(); // a context made without a user gesture may start suspended
+    // A context made without a user gesture may start suspended, and browsers suspend it later
+    // (a phone locks, a call comes in); a suspended context sends silence, so it is woken up again,
+    // at once and on the next click or key press.
+    const wake = () => {
+      if (ctx.state !== 'running' && ctx.state !== 'closed') void ctx.resume();
+    };
+    ctx.onstatechange = wake;
+    addEventListener('pointerdown', wake, true);
+    addEventListener('keydown', wake, true);
+    wake();
     const track = dest.stream.getAudioTracks()[0];
     return {
       track,
       stop() {
+        ctx.onstatechange = null;
+        removeEventListener('pointerdown', wake, true);
+        removeEventListener('keydown', wake, true);
         source.disconnect();
         node.disconnect();
         node.destroy();

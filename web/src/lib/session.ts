@@ -100,11 +100,29 @@ export class Session {
         return;
       }
       next.track.enabled = !this.state.muted;
-      await this.rtc?.replaceMic(next.track);
+      // The new input is ours from here on, so mute and leave act on it while the track is replaced.
       const old = this.micIn;
+      const rtc = this.rtc;
       this.micIn = next;
       this.watchSelf();
+      try {
+        await rtc?.replaceMic(next.track);
+      } catch (e) {
+        // A reconnect or leave closes the connection under us; a new one will send next. On the same
+        // connection the old microphone stays.
+        if (this.micIn === next && this.rtc === rtc && rtc) {
+          this.micIn = old;
+          old.track.enabled = !this.state.muted;
+          this.watchSelf();
+          next.stop();
+          throw e;
+        }
+      }
       old.stop();
+      if (this.micIn !== next) {
+        next.stop(); // left meanwhile
+        return;
+      }
       this.state.noiseFilter = filterState(on, next);
     } finally {
       this.switchingMic = false;

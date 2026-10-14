@@ -84,7 +84,12 @@
   let frame = 0;
   let silenceTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Each start gets a number; stop (also when the lobby closes) moves it on, so a start still
+  // waiting for the microphone knows it is stale and releases what it opened.
+  let generation = 0;
+
   function stop() {
+    generation += 1;
     cancelAnimationFrame(frame);
     if (silenceTimer) clearTimeout(silenceTimer);
     input?.stop();
@@ -101,16 +106,25 @@
     heard = false;
     silentTooLong = false;
     const filter = filterOn;
+    const mine = generation;
+    let opened: MicInput;
     try {
-      input = await openMic(selected, filter); // falls back to the default device when it is gone
+      opened = await openMic(selected, filter); // falls back to the default device when it is gone
     } catch {
-      status = 'denied';
+      if (mine === generation) status = 'denied';
       return;
     }
+    if (mine !== generation) {
+      opened.stop(); // stopped or closed meanwhile
+      return;
+    }
+    input = opened;
     filterUnavailable = filter && !input.filtered;
     selected = input.deviceId || selected;
     localStorage.setItem(MIC_KEY, selected);
-    devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput');
+    const all = await navigator.mediaDevices.enumerateDevices();
+    if (mine !== generation) return; // stop() already released the input
+    devices = all.filter((d) => d.kind === 'audioinput');
     ctx = new AudioContext();
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 1024;

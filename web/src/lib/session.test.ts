@@ -187,4 +187,53 @@ describe('Session', () => {
       site.noiseSuppression = false;
     }
   });
+
+  it('keeps the new microphone muted when mute is pressed while the track is being replaced', async () => {
+    let release = () => {};
+    vi.spyOn(Rtc.prototype, 'replaceMic').mockImplementation(() => new Promise<void>((r) => (release = r)));
+    const s = await joined();
+    const switching = s.setNoiseFilter(true);
+    await flush();
+    s.setMuted(true); // pressed while replaceTrack waits
+    release();
+    await switching;
+    expect(mic.inputs[1].track.enabled).toBe(false);
+  });
+
+  it('stops the new input when the participant leaves while the track is being replaced', async () => {
+    let fail = (_e: Error) => {};
+    vi.spyOn(Rtc.prototype, 'replaceMic').mockImplementation(() => new Promise<void>((_r, j) => (fail = j)));
+    const s = await joined();
+    const switching = s.setNoiseFilter(true);
+    await flush();
+    s.leave();
+    fail(new Error('closed')); // the connection is gone
+    await switching;
+    expect(mic.inputs[1].stopped).toBe(true);
+  });
+
+  it('stops the new input when leaving finishes first and the replacement then succeeds', async () => {
+    let release = () => {};
+    vi.spyOn(Rtc.prototype, 'replaceMic').mockImplementation(() => new Promise<void>((r) => (release = r)));
+    const s = await joined();
+    const switching = s.setNoiseFilter(true);
+    await flush();
+    s.leave();
+    release();
+    await switching;
+    expect(mic.inputs[1].stopped).toBe(true);
+  });
+
+  it('keeps the microphone input across a reconnect', async () => {
+    const s = await joined();
+    vi.useFakeTimers();
+    FakeSocket.all[0].close(); // the server went away
+    await vi.advanceTimersByTimeAsync(1000);
+    FakeSocket.all[1].open();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mic.inputs).toHaveLength(1);
+    expect(mic.inputs[0].stopped).toBe(false);
+    expect(s.state.status).not.toBe('idle');
+  });
 });
+
