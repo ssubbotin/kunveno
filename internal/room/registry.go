@@ -162,3 +162,14 @@ func (g *Registry) EchoRooms() []string {
 	}
 	return out
 }
+
+// NotesRooms lists the slugs of rooms that want meeting notes.
+func (g *Registry) NotesRooms() []string {
+	out := []string{}
+	for _, r := range g.All() {
+		if r.Notes() {
+			out = append(out, r.slug)
+		}
+	}
+	return out
+}

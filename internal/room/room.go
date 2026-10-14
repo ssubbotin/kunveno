@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"errors"
 	"sync"
+	"time"
 )
 
 var (
@@ -21,7 +22,7 @@ type Participant struct {
 	Name  string
 	Muted bool
 	Bot   bool // a server-side helper such as the echo, not a person
-	// BotKind says which helper: BotEcho, BotPlayer or BotCamera.
+	// BotKind says which helper: BotEcho, BotPlayer, BotCamera or BotNotes.
 	BotKind string
 	// Quality is the connection grade ("good", "fair", "poor"), empty until measured.
 	Quality string
@@ -35,6 +36,7 @@ type Snapshot struct {
 	Participants []Participant
 	Sharer       string
 	Echo         bool // someone asked for the echo helper in this room
+	Notes        bool // someone asked for meeting notes in this room
 }
 
 // Room is safe for concurrent use.
@@ -49,10 +51,13 @@ type Room struct {
 	sharer  string
 	echo    bool
 	player  bool
+	notes   bool
+	meeting time.Time        // start of the current meeting, or of the last one
+	now     func() time.Time // time.Now; tests replace it
 }
 
 func New(slug, name, pin string, max int) *Room {
-	return &Room{slug: slug, name: name, pin: pin, max: max, members: map[string]*Participant{}}
+	return &Room{slug: slug, name: name, pin: pin, max: max, members: map[string]*Participant{}, now: time.Now}
 }
 
 func (r *Room) Slug() string  { return r.slug }
@@ -90,6 +95,7 @@ const (
 	BotEcho   = "echo"
 	BotPlayer = "player"
 	BotCamera = "camera"
+	BotNotes  = "notes"
 )
 
 // JoinBot admits a trusted server-side helper without a PIN; capacity still applies.
@@ -119,6 +125,9 @@ func (r *Room) add(p *Participant) error {
 	if len(r.members) >= r.max {
 		return ErrFull
 	}
+	if !p.Bot && !r.hasPeopleLocked() {
+		r.meeting = r.now() // the first person in a room without people starts a meeting
+	}
 	r.members[p.ID] = p
 	r.order = append(r.order, p.ID)
 	return nil
@@ -137,6 +146,28 @@ func (r *Room) Echo() bool {
 	return r.echo
 }
 
+// SetNotes records whether the room wants meeting notes.
+func (r *Room) SetNotes(on bool) {
+	r.mu.Lock()
+	r.notes = on
+	r.mu.Unlock()
+}
+
+func (r *Room) Notes() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.notes
+}
+
+// Meeting returns the start of the current meeting (from the first person entering a room without
+// people until the last person leaves) and whether it is still going on. After it ends the start
+// stays, so late phrases still find their meeting; zero before the first meeting.
+func (r *Room) Meeting() (start time.Time, active bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.meeting, r.hasPeopleLocked()
+}
+
 // Leave removes id. It reports whether id held the share lock, which is now released.
 func (r *Room) Leave(id string) (releasedShare bool) {
 	r.mu.Lock()
@@ -152,7 +183,8 @@ func (r *Room) Leave(id string) (releasedShare bool) {
 		}
 	}
 	if !r.hasPeopleLocked() {
-		r.echo = false // nobody left to listen
+		r.echo = false  // nobody left to listen
+		r.notes = false // nor to take notes of
 	}
 	if r.sharer == id {
 		r.sharer = ""
@@ -211,7 +243,7 @@ func (r *Room) StopShare(id string) bool {
 func (r *Room) Snapshot() Snapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	s := Snapshot{Sharer: r.sharer, Echo: r.echo, Participants: make([]Participant, 0, len(r.order))}
+	s := Snapshot{Sharer: r.sharer, Echo: r.echo, Notes: r.notes, Participants: make([]Participant, 0, len(r.order))}
 	for _, id := range r.order {
 		s.Participants = append(s.Participants, *r.members[id])
 	}
