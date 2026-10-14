@@ -167,7 +167,7 @@
         {/if}
       </div>
     {/if}
-    <span id="mic-check-noise" class="sr">{t('noise.on')}</span>
+    <span id="mic-check-noise" hidden>{t('noise.on')}</span>
     <div class="toggles">
       <button type="button" class="round" class:off={!prefs.micOn} aria-pressed={prefs.micOn} onclick={() => setPref({ micOn: !prefs.micOn })}
         title={(prefs.micOn ? t('mic.joinMuted') : t('mic.joinUnmuted')) + (noiseMark ? ' · ' + t('noise.on') : '')}
