@@ -3,7 +3,9 @@
   import { initials } from './initials';
   import { t } from './i18n/i18n.svelte';
   import { cameraConstraints, loadPrefs, savePrefs, type Prefs } from './media';
-  import { MIC_KEY, audioConstraints, dbfs, meterPercent, rmsOf } from './micLevel';
+  import { MIC_KEY, dbfs, meterPercent, noiseFilterOn, rmsOf } from './micLevel';
+  import { openMic, type MicInput } from './micInput';
+  import { site } from './site.svelte';
   import Video from './Video.svelte';
 
   let { name = '' }: { name?: string } = $props();
@@ -22,6 +24,16 @@
   function setPref(patch: Partial<Prefs>) {
     prefs = { ...prefs, ...patch };
     savePrefs(localStorage, prefs);
+  }
+  // The noise filter: the person's own choice, or the installation's default.
+  const filterOn = $derived(noiseFilterOn(prefs.noiseFilter, site.noiseSuppression));
+  let filterUnavailable = $state(false);
+  // The mark on the microphone toggle: the filter is running on a microphone that will be on.
+  const noiseMark = $derived(status === 'live' && prefs.micOn && filterOn && !filterUnavailable);
+  function toggleFilter() {
+    if (filterUnavailable) return;
+    setPref({ noiseFilter: !filterOn });
+    void start(); // reopen, so the meter shows the sound as it will be sent
   }
 
   let cameras = $state<MediaDeviceInfo[]>([]);
@@ -67,7 +79,7 @@
     void startCamera();
   }
 
-  let stream: MediaStream | null = null;
+  let input: MicInput | null = null;
   let ctx: AudioContext | null = null;
   let frame = 0;
   let silenceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -75,8 +87,8 @@
   function stop() {
     cancelAnimationFrame(frame);
     if (silenceTimer) clearTimeout(silenceTimer);
-    stream?.getTracks().forEach((t) => t.stop());
-    stream = null;
+    input?.stop();
+    input = null;
     void ctx?.close();
     ctx = null;
     level = 0;
@@ -88,26 +100,21 @@
     status = 'asking';
     heard = false;
     silentTooLong = false;
+    const filter = filterOn;
     try {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints(selected) });
-      } catch (e) {
-        if (!selected || (e as Error).name !== 'OverconstrainedError') throw e;
-        selected = ''; // the remembered device is gone; fall back to the default
-        stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints('') });
-      }
+      input = await openMic(selected, filter); // falls back to the default device when it is gone
     } catch {
       status = 'denied';
       return;
     }
-    const track = stream.getAudioTracks()[0];
-    selected = track.getSettings().deviceId ?? selected;
+    filterUnavailable = filter && !input.filtered;
+    selected = input.deviceId || selected;
     localStorage.setItem(MIC_KEY, selected);
     devices = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audioinput');
     ctx = new AudioContext();
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 1024;
-    ctx.createMediaStreamSource(stream).connect(analyser);
+    ctx.createMediaStreamSource(new MediaStream([input.track])).connect(analyser);
     const buf = new Float32Array(analyser.fftSize);
     status = 'live';
     silenceTimer = setTimeout(() => (silentTooLong = !heard), 8000);
@@ -160,11 +167,14 @@
         {/if}
       </div>
     {/if}
+    <span id="mic-check-noise" class="sr">{t('noise.on')}</span>
     <div class="toggles">
       <button type="button" class="round" class:off={!prefs.micOn} aria-pressed={prefs.micOn} onclick={() => setPref({ micOn: !prefs.micOn })}
-        title={prefs.micOn ? t('mic.joinMuted') : t('mic.joinUnmuted')}>
+        title={(prefs.micOn ? t('mic.joinMuted') : t('mic.joinUnmuted')) + (noiseMark ? ' · ' + t('noise.on') : '')}
+        aria-describedby={noiseMark ? 'mic-check-noise' : undefined}>
         <svg viewBox="0 0 24 24" aria-hidden="true">{#if prefs.micOn}<rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 11a7 7 0 0 0 14 0M12 18v3" />{:else}<path d="M9 5a3 3 0 0 1 6 0v6M5 11a7 7 0 0 0 11.5 5.4M12 18v3M4 4l16 16" />{/if}</svg>
         <span class="sr">{prefs.micOn ? t('mic.on') : t('mic.off')}</span>
+        {#if noiseMark}<span class="nf" aria-hidden="true"></span>{/if}
       </button>
       <button type="button" class="round" class:off={!prefs.cameraOn} aria-pressed={prefs.cameraOn} onclick={toggleCamera}
         disabled={hasCamera === false}
@@ -196,6 +206,13 @@
     </label>
   {/if}
   </div>
+  {#if status === 'live'}
+    <button type="button" class="switch-row" role="switch" aria-checked={filterOn && !filterUnavailable}
+      aria-label={t('noise.label')} aria-describedby="noise-hint" aria-disabled={filterUnavailable} onclick={toggleFilter}>
+      <span class="text">{t('noise.label')}<small id="noise-hint">{filterUnavailable ? t('noise.unavailable') : t('noise.hint')}</small></span>
+      <span class="switch" aria-hidden="true"></span>
+    </button>
+  {/if}
   {#if status === 'live'}
     <div class="level">
       <div class="meter" role="meter" aria-label={t('mic.level')} aria-valuemin="0" aria-valuemax="100" aria-valuenow={level}>
@@ -245,6 +262,19 @@
     border: 1px solid var(--line); background: rgba(22, 32, 43, .8); color: var(--text);
   }
   .round:disabled { opacity: .45; cursor: default; }
+  .round { position: relative; }
+  .nf { position: absolute; right: .1rem; bottom: .1rem; width: .55rem; height: .55rem; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 2px var(--panel); }
+  .switch-row {
+    display: grid; grid-template-columns: 1fr auto; align-items: center; gap: .75rem; text-align: left;
+    padding: .25rem 0; border: 0; background: transparent; cursor: pointer; color: inherit; font: inherit;
+  }
+  .switch-row[aria-disabled='true'] { opacity: .55; cursor: default; }
+  .text { display: grid; gap: .1rem; }
+  .text small { color: var(--muted); font-size: .8rem; line-height: 1.3; }
+  .switch { width: 2rem; height: 1.15rem; border-radius: 999px; background: var(--line); position: relative; transition: background .15s; }
+  .switch::after { content: ''; position: absolute; top: .15rem; left: .15rem; width: .85rem; height: .85rem; border-radius: 50%; background: var(--text); transition: transform .15s; }
+  .switch-row[aria-checked='true'] .switch { background: var(--live); }
+  .switch-row[aria-checked='true'] .switch::after { transform: translateX(.85rem); }
   .round.off { border-color: var(--caution); background: rgba(227, 161, 59, .2); color: #f3cf92; }
   .round svg { width: 1.2rem; height: 1.2rem; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
