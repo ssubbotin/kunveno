@@ -8,6 +8,7 @@
   import CopyLink from './CopyLink.svelte';
   import { roomLink } from './link';
   import Announcer from './Announcer.svelte';
+  import ShortcutsDialog from './ShortcutsDialog.svelte';
   import { ariaShortcut, isMac, matchShortcut, shortcutLabel, type ShortcutAction } from './shortcuts';
 
   let { session }: { session: Session } = $props();
@@ -23,6 +24,7 @@
   let picking = $state(false);
   let more = $state(false);
   const mac = isMac(navigator as Navigator & { userAgentData?: { platform?: string } });
+  let shortcuts: ShortcutsDialog;
   let announcement = $state('');
   let announceSeq = $state(0);
   function announce(text: string) {
@@ -58,6 +60,10 @@
       ev.preventDefault(); // Ctrl+D would bookmark the page, Ctrl+E open the search
       if (action === 'mic') toggleMic();
       else if (action === 'camera') void toggleCamera();
+      else {
+        closePopovers();
+        shortcuts.open();
+      }
       return;
     }
     if (ev.key === 'Escape') closePopovers();
@@ -90,6 +96,7 @@
 
 <main class="room" class:sharing={screenTrack !== null}>
   <Announcer message={announcement} seq={announceSeq} />
+  <ShortcutsDialog bind:this={shortcuts} {mac} />
   <header class="bar">
     <h1>{rs.roomName || rs.roomSlug}</h1>
     <span class="status {rs.status}" class:backup={rs.transport === 'tcp'}
@@ -162,6 +169,11 @@
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="2.5" /><path d="M3 3l18 18" /></svg>
               <span class="text">{t('control.noVideo')}<small>{t('control.noVideoHint')}</small></span>
               <span class="switch" aria-hidden="true"></span>
+            </button>
+            <button type="button" class="row" aria-keyshortcuts={ariaShortcut('help', mac)} onclick={() => { more = false; shortcuts.open(); }}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2" /><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" /></svg>
+              <span class="text">{t('control.shortcuts')}</span>
+              <kbd class="keys" aria-hidden="true">{shortcutLabel('help', mac)}</kbd>
             </button>
           </div>
         {/if}
@@ -236,6 +248,7 @@
   .row:disabled { opacity: .45; cursor: default; }
   .row svg { width: 1.15rem; height: 1.15rem; }
   .text { display: grid; gap: .1rem; }
+  .keys { font: inherit; font-size: .8rem; color: var(--muted); }
   .text small { color: var(--muted); font-size: .8rem; line-height: 1.3; }
   .switch { width: 2rem; height: 1.15rem; border-radius: 999px; background: var(--line); position: relative; transition: background .15s; }
   .switch::after { content: ''; position: absolute; top: .15rem; left: .15rem; width: .85rem; height: .85rem; border-radius: 50%; background: var(--text); transition: transform .15s; }
