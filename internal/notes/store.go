@@ -28,6 +28,8 @@ var (
 	ErrBadSlug = errors.New("notes: bad room slug")
 	ErrNoNotes = errors.New("notes: none ready for this room")
 	ErrNotOpen = errors.New("notes: the room has no open transcript")
+	// ErrRecording: the room's notes are still being recorded and cannot be deleted.
+	ErrRecording = errors.New("notes: still being recorded")
 )
 
 var slugRe = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
@@ -246,6 +248,34 @@ func (s *Store) Delete(slug string) error {
 	if err := os.Remove(s.path(slug)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
+	return nil
+}
+
+// DeleteEnded removes the room's ready notes at a person's request: ErrRecording while its
+// transcript is open, ErrNoNotes when there are none or they have expired. The check and the
+// removal hold the store's lock, so a meeting cannot reopen the transcript in between. When the
+// file cannot be removed the notes stay listed and the error is returned, so the request can be
+// repeated.
+func (s *Store) DeleteEnded(slug string) error {
+	if !slugRe.MatchString(slug) {
+		return ErrBadSlug
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ended, ok := s.ended[slug]
+	switch {
+	case ok && ended.IsZero():
+		return ErrRecording
+	case !ok:
+		return ErrNoNotes
+	}
+	if _, ready := s.untilLocked(slug); !ready {
+		return ErrNoNotes // expired; the sweep removes it
+	}
+	if err := os.Remove(s.path(slug)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	delete(s.ended, slug)
 	return nil
 }
 

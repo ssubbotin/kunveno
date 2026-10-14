@@ -269,3 +269,71 @@ func TestOpenSkipsAFileItCannotRead(t *testing.T) {
 		t.Fatalf("the unreadable file was changed: mode %v, size %d", fi.Mode().Perm(), fi.Size())
 	}
 }
+
+// DeleteEnded removes ended notes only: open ones (still being recorded) are refused, missing or
+// expired ones are reported as none.
+func TestStoreDeleteEnded(t *testing.T) {
+	dir := t.TempDir()
+	now := at(30, 0)
+	s, err := Open(dir, time.Hour, func() time.Time { return now })
+	must(t, err)
+	if err := s.DeleteEnded("ops"); !errors.Is(err, ErrNoNotes) {
+		t.Fatalf("DeleteEnded of nothing = %v", err)
+	}
+	if err := s.DeleteEnded("../etc"); !errors.Is(err, ErrBadSlug) {
+		t.Fatalf("DeleteEnded of a bad slug = %v", err)
+	}
+	must(t, s.Begin("ops", "Ops", at(0, 0)))
+	must(t, s.Phrase("ops", Phrase{Name: "Анна", Start: at(1, 0), End: at(1, 2), Text: "Текст."}))
+	if err := s.DeleteEnded("ops"); !errors.Is(err, ErrRecording) {
+		t.Fatalf("DeleteEnded of an open transcript = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "ops.jsonl")); err != nil {
+		t.Fatalf("open transcript removed: %v", err)
+	}
+	must(t, s.Phrase("ops", Phrase{Name: "Анна", Start: at(2, 0), End: at(2, 2), Text: "Ещё."})) // still open
+	must(t, s.End("ops", at(3, 0)))
+	must(t, s.DeleteEnded("ops"))
+	if _, ok := s.Until("ops"); ok {
+		t.Fatal("deleted notes still ready")
+	}
+	if _, err := s.Load("ops"); !errors.Is(err, ErrNoNotes) {
+		t.Fatalf("Load after DeleteEnded = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "ops.jsonl")); !os.IsNotExist(err) {
+		t.Fatalf("file not removed: %v", err)
+	}
+	if err := s.Resume("ops", at(4, 0)); !errors.Is(err, ErrNotOpen) {
+		t.Fatalf("Resume after DeleteEnded = %v", err) // the signal handler then begins anew
+	}
+	if err := s.DeleteEnded("ops"); !errors.Is(err, ErrNoNotes) {
+		t.Fatalf("second DeleteEnded = %v", err)
+	}
+
+	must(t, s.Begin("dev", "Dev", at(0, 0)))
+	must(t, s.End("dev", at(5, 0)))
+	now = at(5, 0).Add(61 * time.Minute)
+	if err := s.DeleteEnded("dev"); !errors.Is(err, ErrNoNotes) {
+		t.Fatalf("DeleteEnded of expired notes = %v", err)
+	}
+}
+
+// A file that cannot be removed keeps the notes listed, so the person can try again.
+func TestStoreDeleteEndedKeepsNotesWhenRemoveFails(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	dir := t.TempDir()
+	s, err := Open(dir, time.Hour, func() time.Time { return at(30, 0) })
+	must(t, err)
+	must(t, s.Begin("ops", "Ops", at(0, 0)))
+	must(t, s.End("ops", at(2, 0)))
+	must(t, os.Chmod(dir, 0o500))
+	defer os.Chmod(dir, 0o700)
+	if err := s.DeleteEnded("ops"); err == nil || errors.Is(err, ErrNoNotes) || errors.Is(err, ErrRecording) {
+		t.Fatalf("DeleteEnded with an unremovable file = %v", err)
+	}
+	if _, ok := s.Until("ops"); !ok {
+		t.Fatal("notes forgotten though the file stays")
+	}
+}
