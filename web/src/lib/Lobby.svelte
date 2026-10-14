@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { build, repoUrl } from './build';
   import { forgetPin, knownRooms, pinFor } from './pins';
   import { parseJoinLink, roomLink } from './link';
@@ -39,7 +39,10 @@
   // browser knows. Deleting asks for a confirmation inside the dialog first.
   let notesDialog: HTMLDialogElement;
   let notesForm: HTMLFormElement;
-  let notesConfirm = $state(false);
+  // Focus targets: the confirmation replaces the buttons, so focus moves explicitly.
+  let notesPinInput: HTMLInputElement;
+  let notesDeleteButton = $state<HTMLButtonElement>();
+  let notesCancelButton = $state<HTMLButtonElement>();  let notesConfirm = $state(false);
   let notesSlug = $state('');
   let notesRoomName = $state('');
   let notesPin = $state('');
@@ -72,10 +75,17 @@
       notesBusy = false;
     }
   }
-  function askDeleteNotes() {
+  async function askDeleteNotes() {
     if (!notesForm.reportValidity()) return;
     notesError = '';
     notesConfirm = true;
+    await tick();
+    notesCancelButton?.focus(); // the safe choice
+  }
+  async function cancelDeleteNotes() {
+    notesConfirm = false;
+    await tick();
+    notesDeleteButton?.focus();
   }
   async function removeNotes() {
     if (notesBusy) return;
@@ -90,6 +100,10 @@
         notesConfirm = false;
         notesError = notesErrorText(r, t, 'notes.deleteFailed');
         if (r.error === 'gone') void loadRooms(room);
+        notesBusy = false;
+        await tick();
+        if (r.error === 'bad_pin') notesPinInput.focus();
+        else notesDeleteButton?.focus();
       }
     } finally {
       notesBusy = false;
@@ -265,18 +279,18 @@
     <form bind:this={notesForm} onsubmit={downloadNotes}>
       <h2 id="notes-title">{t('notes.pinTitle', { room: notesRoomName })}</h2>
       <label class="field"><span>{t('notes.pin')}</span>
-        <input bind:value={notesPin} type="password" maxlength="16" autocomplete="off" spellcheck="false" required /></label>
+        <input bind:this={notesPinInput} bind:value={notesPin} type="password" maxlength="16" autocomplete="off" spellcheck="false" required /></label>
       {#if notesError}<p class="error" role="alert">{notesError}</p>{/if}
       {#if notesConfirm}
         <p class="confirm" role="alert">{t('notes.deleteConfirm')}</p>
         <div class="row">
           <button class="btn danger" type="button" disabled={notesBusy} onclick={removeNotes}>{t('notes.deleteYes')}</button>
-          <button class="btn quiet" type="button" disabled={notesBusy} onclick={() => (notesConfirm = false)}>{t('notes.cancel')}</button>
+          <button class="btn quiet" type="button" disabled={notesBusy} bind:this={notesCancelButton} onclick={cancelDeleteNotes}>{t('notes.cancel')}</button>
         </div>
       {:else}
         <div class="row">
           <button class="btn primary" type="submit" disabled={notesBusy}>{t('notes.download')}</button>
-          <button class="btn danger" type="button" disabled={notesBusy} onclick={askDeleteNotes}>{t('notes.delete')}</button>
+          <button class="btn danger" type="button" disabled={notesBusy} bind:this={notesDeleteButton} onclick={askDeleteNotes}>{t('notes.delete')}</button>
           <button class="btn quiet" type="button" onclick={() => notesDialog.close()}>{t('notes.cancel')}</button>
         </div>
       {/if}
