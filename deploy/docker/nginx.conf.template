@@ -22,6 +22,10 @@ server {
 
     root /usr/share/nginx/kunveno;
     index index.html;
+    # The static files come with gzip copies made at build time. Nothing is compressed on the fly:
+    # the API answers are small, and compressing them over TLS invites BREACH-style attacks.
+    gzip_static on;
+    gzip_vary on;
 
     location / {
         try_files $uri /index.html;
