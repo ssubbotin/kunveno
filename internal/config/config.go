@@ -56,6 +56,9 @@ type Config struct {
 		Title string `yaml:"title"`
 		// Reactions are the emoji participants can send; DefaultReactions when unset.
 		Reactions []string `yaml:"reactions"`
+		// NoiseSuppression turns the client's noise filter on for participants who have not
+		// chosen themselves.
+		NoiseSuppression bool `yaml:"noise_suppression"`
 	} `yaml:"ui"`
 	Rooms []Room `yaml:"rooms"`
 	// RoomsFile stores rooms created through the API (JSON, mode 0600: it holds PINs).

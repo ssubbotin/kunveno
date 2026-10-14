@@ -95,7 +95,7 @@ func run(cfgPath string, log *slog.Logger) error {
 	mux.Handle("/api/rooms", rooms)
 	mux.Handle("/api/rooms/", rooms)
 	mux.Handle("/healthz", httpapi.Health())
-	mux.Handle("/api/info", httpapi.Info(cfg.UI.Title, cfg.UI.Reactions))
+	mux.Handle("/api/info", httpapi.Info(cfg.UI.Title, cfg.UI.Reactions, cfg.UI.NoiseSuppression))
 	mux.Handle("/internal/echo", httpapi.EchoRooms(reg))                       // never proxied by nginx
 	mux.Handle("/metrics", metrics.Handler(metrics.NewRegistry(reg, version))) // local scrapers only
 

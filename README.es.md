@@ -224,6 +224,7 @@ repasa las comprobaciones manuales de [docs/test-matrix.md](docs/test-matrix.md)
 | `media.share_max_kbps` | tope de bitrate de la pantalla compartida |
 | `ui.title` | título que se muestra en la página de inicio y en la pestaña del navegador |
 | `ui.reactions` | emojis que los participantes pueden enviar como reacciones (1..16; diez por defecto) |
+| `ui.noise_suppression` | `true` activa la supresión de ruido (RNNoise) del cliente para quien no haya elegido (por defecto `false`) |
 | `rooms[]` | `slug`, `name`, `pin`, `max_participants` y, opcionalmente, `player: {file, name}` para un vídeo en bucle del directorio media o `player: {url, name}` para una cámara en directo (`rtsp://` o `rtsps://`; las credenciales de la URL se ocultan en los registros) |
 | `rooms_file` | dónde se guardan las salas creadas desde la página de inicio (`/var/lib/kunveno/rooms.json`) |
 

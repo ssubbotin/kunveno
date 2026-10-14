@@ -219,6 +219,7 @@ cd web && npm run check                                          # svelte-check
 | `media.share_max_kbps` | потолок битрейта показа экрана |
 | `ui.title` | заголовок на стартовой странице и во вкладке браузера |
 | `ui.reactions` | эмодзи для реакций участников (1..16; по умолчанию десять) |
+| `ui.noise_suppression` | `true` включает шумоподавление (RNNoise) в клиенте тем, кто не выбирал сам (по умолчанию `false`) |
 | `rooms[]` | `slug`, `name`, `pin`, `max_participants` и при необходимости `player: {file, name}` для видео по кругу из каталога media или `player: {url, name}` для живой камеры (`rtsp://` или `rtsps://`; учётные данные из адреса скрываются в журналах) |
 | `rooms_file` | куда сохраняются комнаты, созданные на стартовой странице (`/var/lib/kunveno/rooms.json`) |
 

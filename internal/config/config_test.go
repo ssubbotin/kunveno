@@ -268,3 +268,15 @@ func TestTemplateLoadsAsIs(t *testing.T) {
 		t.Fatalf("cfg=%+v", cfg)
 	}
 }
+
+func TestNoiseSuppression(t *testing.T) {
+	base := "media: {advertise_ip: 10.8.0.1}\nrooms: [{slug: a, name: A, pin: \"1234\"}]\n"
+	cfg, err := Parse([]byte(base))
+	if err != nil || cfg.UI.NoiseSuppression {
+		t.Fatalf("default = %v, %v", cfg.UI.NoiseSuppression, err)
+	}
+	cfg, err = Parse([]byte("ui: {noise_suppression: true}\n" + base))
+	if err != nil || !cfg.UI.NoiseSuppression {
+		t.Fatalf("set = %v, %v", cfg.UI.NoiseSuppression, err)
+	}
+}
