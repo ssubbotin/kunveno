@@ -5,10 +5,13 @@ import loaderUrl from '@mediapipe/tasks-vision/vision_wasm_module_internal.js?ur
 import wasmUrl from '@mediapipe/tasks-vision/vision_wasm_module_internal.wasm?url';
 import modelUrl from './model/selfie_segmenter_landscape.tflite?url';
 
+export type Mask = { data: Uint8Array; width: number; height: number };
+
 export type Segmenter = {
   delegate: 'GPU' | 'CPU';
-  // segment returns the person mask (256x144, 0..255, top row first), or null if none came out.
-  segment(frame: TexImageSource, ts: number): Uint8Array | null;
+  // segment returns the person mask (0..255, top row first) with its size, or null if none came
+  // out. MediaPipe scales the mask to the input frame, so its size is the frame's.
+  segment(frame: TexImageSource, ts: number): Mask | null;
   close(): void;
 };
 
@@ -49,7 +52,7 @@ export async function createSegmenter(force?: 'CPU'): Promise<Segmenter> {
         const f = m.getAsFloat32Array();
         if (!out || out.length !== f.length) out = new Uint8Array(f.length);
         for (let i = 0; i < f.length; i++) out[i] = f[i] * 255;
-        return out;
+        return { data: out, width: m.width, height: m.height };
       } finally {
         r.close();
       }

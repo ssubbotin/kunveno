@@ -14,6 +14,7 @@ let busy = false;
 let stopped = false;
 let recovering = false;
 let cpuErrorReported = false;
+let drawErrorReported = false;
 let ticker: ReturnType<typeof setInterval> | null = null;
 let statsTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -51,7 +52,7 @@ function process(frame: VideoFrame | ImageBitmap): void {
       try {
         const mask = seg.segment(frame, t);
         pace.record(performance.now() - t);
-        if (mask) comp.setMask(mask, 256, 144);
+        if (mask) comp.setMask(mask.data, mask.width, mask.height);
       } catch (err) {
         if (seg.delegate === 'GPU') {
           recovering = true;
@@ -64,6 +65,12 @@ function process(frame: VideoFrame | ImageBitmap): void {
     }
     comp.draw(frame, mode.kind);
     pace.frame(performance.now());
+  } catch (err) {
+    // One bad frame must not stop the stream: report the first failure and carry on.
+    if (!drawErrorReported) {
+      drawErrorReported = true;
+      post({ type: 'error', message: String(err) });
+    }
   } finally {
     frame.close();
     busy = false;
@@ -72,12 +79,19 @@ function process(frame: VideoFrame | ImageBitmap): void {
 
 async function pump(frames: ReadableStream<VideoFrame>): Promise<void> {
   const reader = frames.getReader();
-  while (!stopped) {
-    const { value, done } = await reader.read();
-    if (done) return;
-    process(value); // drops frames that arrive while one is being processed
+  try {
+    while (!stopped) {
+      const { value, done } = await reader.read();
+      if (done) {
+        if (!stopped) post({ type: 'error', message: 'camera frames ended' });
+        return;
+      }
+      process(value); // drops frames that arrive while one is being processed
+    }
+    await reader.cancel();
+  } catch (err) {
+    if (!stopped) post({ type: 'error', message: String(err) });
   }
-  await reader.cancel();
 }
 
 self.onmessage = async (e: MessageEvent<ToWorker>) => {
