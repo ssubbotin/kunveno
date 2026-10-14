@@ -22,6 +22,11 @@ describe('fetchNotes', () => {
     expect(r.filename).toBe('ops-2026-10-14-0937.md');
     expect(await r.blob.text()).toBe('# Заметки');
   });
+  it('reports a failed body read as failed', async () => {
+    const res = new Response('x', { status: 200 });
+    res.blob = () => Promise.reject(new Error('reset'));
+    expect(await fetchNotes(fakeFetch(res).fn, 'ops', '1234', 'ru')).toEqual({ ok: false, error: 'failed' });
+  });
   it('names each failure', async () => {
     expect(await fetchNotes(fakeFetch(new Response('', { status: 403 })).fn, 'ops', 'x', 'ru')).toEqual({ ok: false, error: 'bad_pin' });
     expect(await fetchNotes(fakeFetch(new Response('', { status: 404 })).fn, 'ops', 'x', 'ru')).toEqual({ ok: false, error: 'gone' });

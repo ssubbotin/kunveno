@@ -5,11 +5,12 @@
   import { parseJoinLink, roomLink } from './link';
   import CopyLink from './CopyLink.svelte';
   import { formatDate, i18n, setLang, t } from './i18n/i18n.svelte';
-  import { LANGS, LANG_NAMES, type Lang } from './i18n/messages';
+  import { LANGS, LANG_NAMES, LANG_TAGS, type Lang } from './i18n/messages';
+  import { fetchNotes, notesErrorText, notesUntil, saveFile } from './notes';
   import { loadInfo, site } from './site.svelte';
   import MicCheck from './MicCheck.svelte';
 
-  type RoomItem = { slug: string; name: string; participants: number; capacity: number; created: boolean };
+  type RoomItem = { slug: string; name: string; participants: number; capacity: number; created: boolean; notes_until?: string };
   let { onJoin, error = '' }: { onJoin: (room: string, pin: string, name: string) => void; error?: string } = $props();
 
   let rooms = $state<RoomItem[]>([]);
@@ -33,6 +34,43 @@
   let actionError = $state('');
 
   const selected = $derived(rooms.find((r) => r.slug === room));
+  const selectedNotes = $derived(site.notesEnabled && selected ? notesUntil(selected.notes_until) : null);
+  // The notes download: a PIN dialog for the chosen room, filled in from the PINs this browser knows.
+  let notesDialog: HTMLDialogElement;
+  let notesSlug = $state('');
+  let notesRoomName = $state('');
+  let notesPin = $state('');
+  let notesError = $state('');
+  let notesBusy = $state(false);
+  function openNotes() {
+    if (!selected) return;
+    notesSlug = selected.slug;
+    notesRoomName = selected.name;
+    notesPin = pinFor(localStorage, selected.slug) || pin;
+    notesError = '';
+    notesDialog.showModal();
+  }
+  async function downloadNotes(ev: Event) {
+    ev.preventDefault();
+    if (notesBusy) return;
+    notesBusy = true;
+    notesError = '';
+    try {
+      const r = await fetchNotes(fetch, notesSlug, notesPin, i18n.lang);
+      if (r.ok) {
+        saveFile(r.blob, r.filename);
+        notesDialog.close();
+      } else {
+        notesError = notesErrorText(r, t);
+        if (r.error === 'gone') void loadRooms(room);
+      }
+    } finally {
+      notesBusy = false;
+    }
+  }
+  function untilText(d: Date): string {
+    return new Intl.DateTimeFormat(LANG_TAGS[i18n.lang], { dateStyle: 'short', timeStyle: 'short' }).format(d);
+  }
 
   async function loadRooms(prefer?: string) {
     try {
@@ -136,6 +174,7 @@
           <span class="room-name">{r.name}</span>
           <span class="count">
             {#if saved.includes(r.slug)}<svg class="key" viewBox="0 0 24 24" role="img" aria-label={t('rooms.pinKnown')}><title>{t('rooms.pinKnown')}</title><circle cx="8" cy="12" r="4" /><path d="M12 12h9M18 12v3M21 12v2" /></svg>{/if}
+            {#if site.notesEnabled && notesUntil(r.notes_until)}<svg class="key" viewBox="0 0 24 24" role="img" aria-label={t('notes.last')}><title>{t('notes.last')}</title><path d="M6 3h9l3 3v15H6zM9 9h6M9 13h6M9 17h4" /></svg>{/if}
             {occupancy(r)}
           </span>
         </label>
@@ -160,6 +199,10 @@
     <div class="room-actions">
       <CopyLink link={roomLink(location.origin, room, pin)} label={t('enter.copyLink')} disabled={!selected || pin === ''} />
       <p class="hint">{t('enter.linkHint')}</p>
+      {#if selectedNotes}
+        <button class="btn" type="button" aria-haspopup="dialog" onclick={openNotes}>{t('notes.last')}</button>
+        <p class="hint">{t('notes.until', { time: untilText(selectedNotes) })}</p>
+      {/if}
       {#if selected?.created}
         <button class="btn danger" type="button" disabled={selected.participants > 0} onclick={deleteRoom}>
           {selected.participants > 0 ? t('rooms.deleteOnlyEmpty') : t('rooms.delete')}
@@ -190,6 +233,19 @@
     </button>
   </form>
   </section>
+
+  <dialog class="notes-dialog" bind:this={notesDialog} aria-labelledby="notes-title">
+    <form onsubmit={downloadNotes}>
+      <h2 id="notes-title">{t('notes.pinTitle', { room: notesRoomName })}</h2>
+      <label class="field"><span>{t('notes.pin')}</span>
+        <input bind:value={notesPin} type="password" maxlength="16" autocomplete="off" spellcheck="false" required /></label>
+      {#if notesError}<p class="error" role="alert">{notesError}</p>{/if}
+      <div class="row">
+        <button class="btn primary" type="submit" disabled={notesBusy}>{t('notes.download')}</button>
+        <button class="btn quiet" type="button" onclick={() => notesDialog.close()}>{t('notes.cancel')}</button>
+      </div>
+    </form>
+  </dialog>
 </div>
 
 <footer class="about">
@@ -269,4 +325,11 @@
     .lobby { grid-template-columns: 1fr; }
     .pair { grid-template-columns: 1fr; }
   }
+  .notes-dialog {
+    width: min(26rem, 92vw); padding: 1.25rem 1.5rem; border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--panel-2); color: var(--text);
+  }
+  .notes-dialog::backdrop { background: rgba(0, 0, 0, .55); }
+  .notes-dialog form { display: grid; gap: .9rem; }
+  .notes-dialog h2 { color: var(--text); margin: 0; }
 </style>

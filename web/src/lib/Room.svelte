@@ -10,6 +10,7 @@
   import { nextIndex } from './roving';
   import { tick, untrack } from 'svelte';
   import { fetchNotes, notesErrorText, saveFile } from './notes';
+  import NotesPanel from './NotesPanel.svelte';
   import Announcer from './Announcer.svelte';
   import ShortcutsDialog from './ShortcutsDialog.svelte';
   import { ariaShortcut, isMac, matchShortcut, shortcutLabel, type ShortcutAction } from './shortcuts';
@@ -238,6 +239,7 @@
     rs.notesReady = false;
     notesError = '';
   }
+  let showLive = $state(true);
   const statusText = $derived(
     rs.status === 'connected' ? (rs.transport === 'tcp' ? t('status.backup') : t('status.connected'))
       : rs.status === 'reconnecting' ? t('status.reconnecting')
@@ -281,6 +283,11 @@
     {#if site.notesEnabled && rs.notes}
       <span class="notes-mark" role="status"><span class="rec" aria-hidden="true"></span>{t('notes.recording')}</span>
     {/if}
+    {#if site.notesLive && (rs.notes || rs.phrases.length > 0)}
+      <button type="button" class="btn quiet live-toggle" aria-expanded={showLive} aria-controls="notes-live" onclick={() => (showLive = !showLive)}>
+        {showLive ? t('notes.hideLive') : t('notes.showLive')}
+      </button>
+    {/if}
     <span class="invite"><CopyLink link={roomLink(location.origin, rs.roomSlug, session.pin)} label={t('control.invite')} /></span>
     <span class="count">{people(rs.peopleCount)}</span>
   </header>
@@ -291,6 +298,10 @@
     {/if}
     <ParticipantList participants={rs.participants} selfId={rs.selfId} sharer={rs.sharer} speaking={rs.speaking} videos={rs.videos} reactions={rs.reactions} compact={screenTrack !== null} />
   </div>
+
+  {#if site.notesLive && showLive && (rs.notes || rs.phrases.length > 0)}
+    <NotesPanel phrases={rs.phrases} />
+  {/if}
 
   {#if site.notesEnabled && rs.notesReady}
     <div class="notes-ready" role="status">
@@ -489,6 +500,7 @@
   .row[aria-checked='true'] .switch { background: var(--live); }
   .row[aria-checked='true'] .switch::after { transform: translateX(.85rem); }
 
+  .live-toggle { padding: .35rem .8rem; font-size: .85rem; }
   .notes-mark { display: inline-flex; align-items: center; gap: .4rem; font-size: .9rem; color: #f1b5b3; }
   .notes-mark .rec { width: .55rem; height: .55rem; border-radius: 50%; background: var(--danger); }
   .notes-ready {

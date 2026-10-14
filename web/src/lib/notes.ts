@@ -18,7 +18,13 @@ export async function fetchNotes(fetchFn: Fetch, slug: string, pin: string, lang
   } catch {
     return { ok: false, error: 'failed' };
   }
-  if (res.ok) return { ok: true, blob: await res.blob(), filename: fileName(res.headers.get('Content-Disposition'), slug) };
+  if (res.ok) {
+    try {
+      return { ok: true, blob: await res.blob(), filename: fileName(res.headers.get('Content-Disposition'), slug) };
+    } catch {
+      return { ok: false, error: 'failed' };
+    }
+  }
   if (res.status === 403) return { ok: false, error: 'bad_pin' };
   if (res.status === 404) return { ok: false, error: 'gone' };
   if (res.status === 429) return { ok: false, error: 'too_many', retryAfter: Number(res.headers.get('Retry-After')) || 60 };
