@@ -4,6 +4,8 @@ export type Status = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'err
 
 export class RoomState {
   status = $state<Status>('idle');
+  // Our microphone's noise filter; set by the session, not by reset().
+  noiseFilter = $state<'off' | 'on' | 'unavailable'>('off');
   errorCode = $state('');
   errorMessage = $state('');
   retryAfter = $state(0); // seconds, for too_many_attempts

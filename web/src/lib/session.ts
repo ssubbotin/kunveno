@@ -3,7 +3,9 @@ import { RoomState } from './state.svelte';
 import { Signaling } from './signaling';
 import { Rtc } from './rtc';
 import { watchLevel } from './levels';
-import { MIC_KEY, audioConstraints } from './micLevel';
+import { MIC_KEY, noiseFilterOn } from './micLevel';
+import { openMic, type MicInput } from './micInput';
+import { site } from './site.svelte';
 import { prefersTcp, rememberTcp } from './transport';
 import { Reconnector, newClientId } from './reconnect';
 import { forgetPin, rememberPin } from './pins';
@@ -22,7 +24,8 @@ export class Session {
 
   private sig: Signaling | null = null;
   private rtc: Rtc | null = null;
-  private mic: MediaStreamTrack | null = null;
+  private micIn: MicInput | null = null;
+  private switchingMic = false;
   private wanted: Wanted | null = null;
   // The PIN the current room was entered with, for invitation links.
   get pin(): string {
@@ -53,7 +56,7 @@ export class Session {
     const prefs = loadPrefs(localStorage);
     this.state.muted = !prefs.micOn;
     this.state.receiveVideo = prefs.receiveVideo;
-    if (this.mic) this.mic.enabled = prefs.micOn;
+    if (this.micIn) this.micIn.track.enabled = prefs.micOn;
     this.state.hasCamera = await hasCamera();
     if (prefs.cameraOn && this.state.hasCamera && !this.camera) {
       try {
@@ -62,16 +65,50 @@ export class Session {
         console.warn('camera', e); // join without it; the button stays available
       }
     }
-    if (!this.mic) {
-      const stream = await openMic(localStorage.getItem(MIC_KEY) ?? '');
-      this.mic = stream.getAudioTracks()[0];
-      this.mic.enabled = !this.state.muted;
-      // Own level drives the speaking highlight of our row; a muted (disabled) track reads as silence.
-      this.stopSelfLevel = watchLevel(this.mic, (speaking) => {
-        if (this.state.selfId) this.state.speaking[this.state.selfId] = speaking;
-      });
+    if (!this.micIn) {
+      const filter = noiseFilterOn(prefs.noiseFilter, site.noiseSuppression);
+      this.micIn = await openMic(localStorage.getItem(MIC_KEY) ?? '', filter);
+      this.micIn.track.enabled = !this.state.muted;
+      this.state.noiseFilter = filterState(filter, this.micIn);
+      this.watchSelf();
     }
     await this.connect();
+  }
+
+  // Own level drives the speaking highlight of our row; a muted (disabled) track reads as silence.
+  private watchSelf(): void {
+    this.stopSelfLevel?.();
+    this.stopSelfLevel = null;
+    if (!this.micIn) return;
+    this.stopSelfLevel = watchLevel(this.micIn.track, (speaking) => {
+      if (this.state.selfId) this.state.speaking[this.state.selfId] = speaking;
+    });
+  }
+
+  // setNoiseFilter remembers the choice and, in a call, reopens the microphone with or without the
+  // filter and sends the new track in place of the old one. A call while a switch is under way is
+  // ignored, the stored choice included, so the switch, the choice and the microphone agree.
+  async setNoiseFilter(on: boolean): Promise<void> {
+    if (this.switchingMic) return;
+    savePrefs(localStorage, { ...loadPrefs(localStorage), noiseFilter: on });
+    if (!this.micIn) return;
+    this.switchingMic = true;
+    try {
+      const next = await openMic(localStorage.getItem(MIC_KEY) ?? '', on);
+      if (!this.micIn) {
+        next.stop(); // left meanwhile
+        return;
+      }
+      next.track.enabled = !this.state.muted;
+      await this.rtc?.replaceMic(next.track);
+      const old = this.micIn;
+      this.micIn = next;
+      this.watchSelf();
+      old.stop();
+      this.state.noiseFilter = filterState(on, next);
+    } finally {
+      this.switchingMic = false;
+    }
   }
 
   private wsUrl(): string {
@@ -79,7 +116,7 @@ export class Session {
   }
 
   private async connect(): Promise<void> {
-    if (!this.wanted || !this.mic) return;
+    if (!this.wanted || !this.micIn) return;
     this.state.status = this.everJoined ? 'reconnecting' : 'connecting';
     // Events of a connection that is no longer the current one are ignored, so a late close
     // of an old socket cannot start a second session.
@@ -101,7 +138,7 @@ export class Session {
     }
     try {
       this.rtc = new Rtc(
-        this.mic,
+        this.micIn.track,
         (m) => sig.send(m),
         (pid, track) => this.onRemoteTrack(pid, track),
         () => {
@@ -194,8 +231,9 @@ export class Session {
     this.teardownMedia();
     this.stopSelfLevel?.();
     this.stopSelfLevel = null;
-    this.mic?.stop();
-    this.mic = null;
+    this.micIn?.stop();
+    this.micIn = null;
+    this.state.noiseFilter = 'off';
     this.camera?.stop();
     this.camera = null;
     this.state.reset();
@@ -204,7 +242,7 @@ export class Session {
 
   setMuted(muted: boolean): void {
     this.state.muted = muted;
-    if (this.mic) this.mic.enabled = !muted;
+    if (this.micIn) this.micIn.track.enabled = !muted;
     this.sig?.send({ type: 'mute', muted });
   }
 
@@ -356,14 +394,9 @@ export class Session {
   }
 }
 
-// openMic opens the microphone chosen in the lobby, or the default one if it is gone.
-async function openMic(deviceId: string): Promise<MediaStream> {
-  try {
-    return await navigator.mediaDevices.getUserMedia({ audio: audioConstraints(deviceId) });
-  } catch (e) {
-    if (!deviceId || (e as Error).name !== 'OverconstrainedError') throw e;
-    return navigator.mediaDevices.getUserMedia({ audio: audioConstraints('') });
-  }
+// filterState is what the switch shows: off, on, or asked for but not running in this browser.
+function filterState(asked: boolean, input: MicInput): 'off' | 'on' | 'unavailable' {
+  return !asked ? 'off' : input.filtered ? 'on' : 'unavailable';
 }
 
 // openCamera opens the camera chosen in the lobby, or the default one if it is gone.

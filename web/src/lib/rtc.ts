@@ -12,7 +12,7 @@ export class Rtc {
   readonly ready = new Promise<void>((r) => (this.resolveReady = r));
 
   constructor(
-    private readonly mic: MediaStreamTrack,
+    private mic: MediaStreamTrack,
     private readonly send: (m: ClientMessage) => void,
     private readonly onTrack: (participantId: string, track: MediaStreamTrack) => void,
     private readonly onFailed: () => void,
@@ -63,6 +63,13 @@ export class Rtc {
       }
     }
     if (this.micSender && this.screenSender && this.cameraSender) this.resolveReady();
+  }
+
+  // replaceMic sends another microphone track (the noise filter turned on or off); before the
+  // first offer the slot is bound with it then.
+  async replaceMic(track: MediaStreamTrack): Promise<void> {
+    this.mic = track;
+    await this.micSender?.replaceTrack(track);
   }
 
   async startShare(track: MediaStreamTrack): Promise<void> {

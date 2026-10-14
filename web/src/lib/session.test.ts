@@ -2,7 +2,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('./levels', () => ({ watchLevel: () => () => {} }));
 
+// Microphone inputs the session opened, in order; the filter can be made to fail.
+type FakeInput = { track: { enabled: boolean; stop(): void }; deviceId: string; filtered: boolean; stopped: boolean; stop(): void };
+const mic = vi.hoisted(() => ({ inputs: [] as FakeInput[], filterWorks: true }));
+vi.mock('./micInput', () => ({
+  openMic: async (_id: string, filter: boolean) => {
+    const i: FakeInput = {
+      track: { enabled: true, stop() {} },
+      deviceId: 'mic',
+      filtered: filter && mic.filterWorks,
+      stopped: false,
+      stop() {
+        i.stopped = true;
+      },
+    };
+    mic.inputs.push(i);
+    return i;
+  },
+}));
+
 import { Session } from './session';
+import { Rtc } from './rtc';
+import { site } from './site.svelte';
 
 // A stand-in for the browser WebSocket that records what the client sends.
 class FakeSocket {
@@ -66,6 +87,8 @@ describe('Session', () => {
   beforeEach(() => {
     FakeSocket.all = [];
     networkDown = false;
+    mic.inputs.length = 0;
+    mic.filterWorks = true;
     const track = { enabled: true, stop() {} };
     vi.stubGlobal('WebSocket', FakeSocket);
     vi.stubGlobal('RTCPeerConnection', FakePeerConnection);
@@ -81,7 +104,18 @@ describe('Session', () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
+
+  // joined enters a room and opens the socket, so the session has a peer connection.
+  async function joined(): Promise<Session> {
+    const s = new Session();
+    const p = s.join('ops', '1234', 'Ann');
+    await flush();
+    FakeSocket.all[0].open();
+    await p;
+    return s;
+  }
 
   it('retries the join when the peer connection cannot be created', async () => {
     const s = new Session();
@@ -102,5 +136,55 @@ describe('Session', () => {
     FakeSocket.all[1].open();
     await vi.advanceTimersByTimeAsync(0);
     expect(FakeSocket.all[1].sent.map((m) => m.type)).toEqual(['join']);
+  });
+
+  it('switches the sent microphone to the filtered one and keeps it muted', async () => {
+    const replace = vi.spyOn(Rtc.prototype, 'replaceMic').mockResolvedValue();
+    const s = await joined();
+    s.setMuted(true);
+    await s.setNoiseFilter(true);
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(replace).toHaveBeenCalledWith(mic.inputs[1].track);
+    expect(mic.inputs[1].track.enabled).toBe(false);
+    expect(mic.inputs[0].stopped).toBe(true);
+    expect(s.state.noiseFilter).toBe('on');
+    expect(JSON.parse(localStorage.getItem('kunveno.prefs') ?? '{}').noiseFilter).toBe(true);
+  });
+
+  it('says unavailable when the filter cannot start', async () => {
+    vi.spyOn(Rtc.prototype, 'replaceMic').mockResolvedValue();
+    const s = await joined();
+    mic.filterWorks = false;
+    await s.setNoiseFilter(true);
+    expect(s.state.noiseFilter).toBe('unavailable');
+  });
+
+  it('ignores a second switch while one is in progress', async () => {
+    const replace = vi.spyOn(Rtc.prototype, 'replaceMic').mockResolvedValue();
+    const s = await joined();
+    await Promise.all([s.setNoiseFilter(true), s.setNoiseFilter(false)]);
+    expect(replace).toHaveBeenCalledTimes(1);
+    expect(mic.inputs).toHaveLength(2);
+    expect(JSON.parse(localStorage.getItem('kunveno.prefs') ?? '{}').noiseFilter).toBe(true);
+  });
+
+  it('stops the new input when the participant left during the switch', async () => {
+    const replace = vi.spyOn(Rtc.prototype, 'replaceMic').mockResolvedValue();
+    const s = await joined();
+    const switching = s.setNoiseFilter(true);
+    s.leave();
+    await switching;
+    expect(replace).not.toHaveBeenCalled();
+    expect(mic.inputs[1].stopped).toBe(true);
+  });
+
+  it('opens the microphone at join with the site default when the participant never chose', async () => {
+    site.noiseSuppression = true;
+    try {
+      const s = await joined();
+      expect(s.state.noiseFilter).toBe('on');
+    } finally {
+      site.noiseSuppression = false;
+    }
   });
 });
