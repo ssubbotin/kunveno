@@ -134,3 +134,38 @@ func TestMethodNotAllowed(t *testing.T) {
 		t.Fatalf("%d", rec.Code)
 	}
 }
+
+func TestBrokenPreviewIsNotCached(t *testing.T) {
+	dir := t.TempDir()
+	writeJPEG(t, dir, "full.jpg", 640, 360)
+	data, err := os.ReadFile(filepath.Join(dir, "full.jpg"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Cut the file just after its header: DecodeConfig still works, Decode does not.
+	n := 1
+	for ; n < len(data); n++ {
+		if _, err := jpeg.DecodeConfig(bytes.NewReader(data[:n])); err == nil {
+			break
+		}
+	}
+	data = data[:n]
+	if _, err := jpeg.Decode(bytes.NewReader(data)); err == nil {
+		t.Fatal("truncated file decodes")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "cut.jpg"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	h := New(dir, slog.New(slog.NewTextHandler(&logs, nil))).Handler()
+	for i := 0; i < 2; i++ {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/backgrounds/cut.jpg/preview", nil))
+		if rec.Code != 404 || rec.Header().Get("Cache-Control") != "" {
+			t.Fatalf("%d %v", rec.Code, rec.Header())
+		}
+	}
+	if n := bytes.Count(logs.Bytes(), []byte("background preview failed")); n != 1 {
+		t.Fatalf("logged %d times: %s", n, logs.String())
+	}
+}

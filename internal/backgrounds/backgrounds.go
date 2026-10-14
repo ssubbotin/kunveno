@@ -105,11 +105,16 @@ func (d *Dir) check(e os.DirEntry) (Item, bool) {
 }
 
 func (d *Dir) skip(name, why string) {
+	d.warnOnce(name, "background skipped", why)
+}
+
+// warnOnce logs one warning per key.
+func (d *Dir) warnOnce(key, msg, why string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if !d.warned[name] {
-		d.warned[name] = true
-		d.log.Warn("background skipped", "file", name, "reason", why)
+	if !d.warned[key] {
+		d.warned[key] = true
+		d.log.Warn(msg, "file", key, "reason", why)
 	}
 }
 
@@ -189,17 +194,19 @@ func (d *Dir) Handler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Cache-Control", "public, max-age=86400")
 		if len(parts) == 2 {
 			b, err := d.preview(it.Name)
 			if err != nil {
+				d.warnOnce(it.Name+"/preview", "background preview failed", err.Error())
 				http.NotFound(w, r)
 				return
 			}
+			w.Header().Set("Cache-Control", "public, max-age=86400")
 			w.Header().Set("Content-Type", "image/jpeg")
 			_, _ = w.Write(b)
 			return
 		}
+		w.Header().Set("Cache-Control", "public, max-age=86400")
 		w.Header().Set("Content-Type", types[strings.ToLower(filepath.Ext(it.Name))])
 		http.ServeFile(w, r, filepath.Join(d.path, it.Name))
 	})
