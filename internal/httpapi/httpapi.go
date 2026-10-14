@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ssubbotin/kunveno/internal/metrics"
+	"github.com/ssubbotin/kunveno/internal/notes"
 	"github.com/ssubbotin/kunveno/internal/ratelimit"
 	"github.com/ssubbotin/kunveno/internal/room"
 )
@@ -21,37 +22,47 @@ type roomItem struct {
 	Participants int    `json:"participants"`
 	Capacity     int    `json:"capacity"`
 	Created      bool   `json:"created"` // made through the API; deletable with its PIN
+	// NotesUntil (RFC 3339) says until when the notes of the room's last meeting can be downloaded.
+	NotesUntil string `json:"notes_until,omitempty"`
 }
 
 // Rooms serves the room list and its changes. PINs never leave the server.
 //
-//	GET    /api/rooms          list with live participant counts
+//	GET    /api/rooms          list with live participant counts and, with notes on, notes_until
 //	POST   /api/rooms          {"name","pin"} creates a room, 201 {"slug","name"}
-//	DELETE /api/rooms/{slug}   {"pin"} deletes an empty created room, 204
+//	DELETE /api/rooms/{slug}   {"pin"} deletes an empty created room and its notes, 204
 //
 // persist (may be nil) is called after every change to save the created rooms. pins (may be
-// nil) limits wrong PINs per client address, shared with joining.
-func Rooms(reg *room.Registry, persist func() error, pins *ratelimit.Limiter) http.Handler {
+// nil) limits wrong PINs per client address, shared with joining. store (may be nil) holds the
+// meeting notes: it is passed even while notes.enabled is off so that deleting a room always
+// deletes its notes; notesEnabled alone decides whether notes_until is listed.
+func Rooms(reg *room.Registry, persist func() error, pins *ratelimit.Limiter, store *notes.Store, notesEnabled bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		slug := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/rooms"), "/")
 		switch {
 		case r.Method == http.MethodGet && slug == "":
-			list(w, reg)
+			list(w, reg, store, notesEnabled)
 		case r.Method == http.MethodPost && slug == "":
 			create(w, r, reg, persist)
 		case r.Method == http.MethodDelete && slug != "":
-			remove(w, r, reg, persist, pins, slug)
+			remove(w, r, reg, persist, pins, store, slug)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
 	})
 }
 
-func list(w http.ResponseWriter, reg *room.Registry) {
+func list(w http.ResponseWriter, reg *room.Registry, store *notes.Store, notesEnabled bool) {
 	rooms := reg.All()
 	items := make([]roomItem, 0, len(rooms))
 	for _, rm := range rooms {
-		items = append(items, roomItem{Slug: rm.Slug(), Name: rm.Name(), Participants: rm.Count(), Capacity: rm.Capacity(), Created: rm.Created()})
+		item := roomItem{Slug: rm.Slug(), Name: rm.Name(), Participants: rm.Count(), Capacity: rm.Capacity(), Created: rm.Created()}
+		if notesEnabled && store != nil {
+			if until, ok := store.Until(rm.Slug()); ok {
+				item.NotesUntil = until.Format(time.RFC3339)
+			}
+		}
+		items = append(items, item)
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, items)
@@ -88,7 +99,7 @@ func create(w http.ResponseWriter, r *http.Request, reg *room.Registry, persist 
 	writeJSON(w, http.StatusCreated, map[string]string{"slug": rm.Slug(), "name": rm.Name()})
 }
 
-func remove(w http.ResponseWriter, r *http.Request, reg *room.Registry, persist func() error, pins *ratelimit.Limiter, slug string) {
+func remove(w http.ResponseWriter, r *http.Request, reg *room.Registry, persist func() error, pins *ratelimit.Limiter, store *notes.Store, slug string) {
 	ip := ratelimit.ClientIP(r)
 	if pins != nil {
 		if ok, wait := pins.Allow(ip); !ok {
@@ -121,6 +132,10 @@ func remove(w http.ResponseWriter, r *http.Request, reg *room.Registry, persist 
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	default:
 		metrics.RoomsDeleted.Inc()
+		if store != nil {
+			// A failure leaves the file to the expiry sweep; the room itself is gone.
+			_ = store.Delete(slug)
+		}
 		if save(w, persist) {
 			w.WriteHeader(http.StatusNoContent)
 		}
@@ -178,9 +193,11 @@ func local(r *http.Request) bool {
 }
 
 // Info serves GET /api/info: installation details the client shows: the title, the reactions
-// participants can send, and whether the noise filter is on by default.
-func Info(title string, reactions []string, noiseSuppression bool) http.Handler {
-	body := map[string]any{"title": title, "reactions": reactions, "noise_suppression": noiseSuppression}
+// participants can send, whether the noise filter is on by default, whether meeting notes are
+// offered (notes.enabled) and whether phrases are shown live (notes.live).
+func Info(title string, reactions []string, noiseSuppression, notesEnabled, notesLive bool) http.Handler {
+	body := map[string]any{"title": title, "reactions": reactions, "noise_suppression": noiseSuppression,
+		"notes": notesEnabled, "notes_live": notesEnabled && notesLive}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)

@@ -92,14 +92,14 @@ func run(cfgPath string, log *slog.Logger) error {
 	ws := sig.New(reg, engineMedia{engine}, cfg.HTTP.AllowedOrigins, log)
 	ws.SetReactions(cfg.UI.Reactions)
 	mux.Handle("/ws", ws)
-	rooms := httpapi.Rooms(reg, persist, ws.PINLimiter())
+	rooms := httpapi.Rooms(reg, persist, ws.PINLimiter(), nil, false)
 	mux.Handle("/api/rooms", rooms)
 	mux.Handle("/api/rooms/", rooms)
 	bg := backgrounds.New(cfg.BackgroundsDir, log).Handler()
 	mux.Handle("/api/backgrounds", bg)
 	mux.Handle("/api/backgrounds/", bg)
 	mux.Handle("/healthz", httpapi.Health())
-	mux.Handle("/api/info", httpapi.Info(cfg.UI.Title, cfg.UI.Reactions, cfg.UI.NoiseSuppression))
+	mux.Handle("/api/info", httpapi.Info(cfg.UI.Title, cfg.UI.Reactions, cfg.UI.NoiseSuppression, false, false))
 	mux.Handle("/internal/echo", httpapi.EchoRooms(reg))                       // never proxied by nginx
 	mux.Handle("/metrics", metrics.Handler(metrics.NewRegistry(reg, version))) // local scrapers only
 

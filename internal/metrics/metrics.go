@@ -90,7 +90,7 @@ var (
 		Name: "kunveno_nacked_packets_total", Help: "Packets viewers asked to resend (NACK), by kind.",
 	}, []string{"kind"})
 	PINFailures = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "kunveno_pin_failures_total", Help: "Wrong room PINs, by where they were tried (join or delete).",
+		Name: "kunveno_pin_failures_total", Help: "Wrong room PINs, by where they were tried (join, delete or notes).",
 	}, []string{"source"})
 	PINBlocks = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "kunveno_pin_blocks_total", Help: "Addresses blocked for a minute after too many wrong PINs.",
