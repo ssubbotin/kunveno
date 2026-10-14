@@ -379,10 +379,11 @@
               <span class="switch" aria-hidden="true"></span>
             </button>
             {#if site.notesEnabled}
-              <button type="button" class="row" aria-describedby="notes-hint" disabled={rs.status !== 'connected'}
-                onclick={() => session.setNotes(!rs.notes)}>
+              <button type="button" class="row" role="switch" aria-checked={rs.notes} aria-label={t('control.notes')} aria-describedby="notes-hint"
+                disabled={rs.status !== 'connected'} onclick={() => session.setNotes(!rs.notes)}>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6zM9 9h6M9 13h6M9 17h4" /></svg>
-                <span class="text">{rs.notes ? t('control.notesStop') : t('control.notes')}<small id="notes-hint">{rs.notes && !notesPresent ? t('notes.starting') : t('control.notesHint')}</small></span>
+                <span class="text">{t('control.notes')}<small id="notes-hint">{rs.notes && !notesPresent ? t('notes.starting') : t('control.notesHint')}</small></span>
+                <span class="switch" aria-hidden="true"></span>
               </button>
             {/if}
             <button type="button" class="row" role="switch" aria-checked={!rs.receiveVideo} aria-label={t('control.noVideo')} aria-describedby="novideo-hint"

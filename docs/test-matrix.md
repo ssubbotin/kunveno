@@ -67,14 +67,14 @@ without it):
     and `curl -s 127.0.0.1:8080/internal/notes` on the host prints `[]`.
 31. More → "Take notes": within 10 s the "Notes" participant appears with "writes down the meeting",
     the header shows "● Taking notes" for everyone, a screen reader announces the change, and the
-    menu item reads "Stop notes".
+    "Take notes" switch is on.
 32. Two people speak in turn (Russian with some English terms): with `notes.live: true` the side
     panel shows each phrase within about 2 s of its end, with the right name and time; "Hide text"
     hides the panel while phrases keep arriving.
-33. "Stop notes": the Notes participant leaves within 10 s and everyone in the room gets "Notes are
-    ready" with "Download"; the file is named `<room>-YYYY-MM-DD-HHMM.md` and shows the room, the
-    date, the time span, who spoke and the phrases in order. Switching notes off and on within one
-    meeting adds "recording paused" and "recording resumed" lines to the same file.
+33. Switching "Take notes" off: the Notes participant leaves within 10 s and everyone in the room
+    gets "Notes are ready" with "Download"; the file is named `<room>-YYYY-MM-DD-HHMM.md` and shows
+    the room, the date, the time span, who spoke and the phrases in order. Switching notes off and
+    on within one meeting adds "recording paused" and "recording resumed" lines to the same file.
 34. Download with the interface in English and in Spanish: the fixed labels follow the language,
     the phrases stay as spoken.
 35. Lobby: the room shows the notes mark, "Notes of the last meeting" and the time they are kept
