@@ -22,6 +22,9 @@ Licencia GNU Affero General Public License v3.0 only; hay disponible una licenci
 - Audio de todos, cámaras (640x360, 15 fps), una pantalla compartida a la vez.
 - Comprobación antes de entrar: elección de micrófono y cámara, medidor de nivel, y entrar con el
   micrófono o la cámara apagados. Funciona en equipos sin cámara.
+- Fondos virtuales, procesados en el navegador: desenfoque, bloques de vidrio, imágenes que el
+  administrador pone en `backgrounds/`, o una imagen propia que no sale del navegador. Supresión
+  de ruido del micrófono (teclado, sonidos de fondo), también en el navegador.
 - Enlaces a una sala (`https://<servidor>/join/<sala>#pin=…`), copiados desde la página de inicio
   o desde dentro de una sala: quien lo recibe llega a la comprobación previa con la sala y el PIN ya
   rellenados. El PIN va en el fragmento de la dirección, que el navegador no envía a ningún sitio:

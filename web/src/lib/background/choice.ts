@@ -2,16 +2,18 @@
 export type BackgroundChoice =
   | { kind: 'none' }
   | { kind: 'blur' }
+  | { kind: 'glass' }
   | { kind: 'image'; source: 'server'; name: string }
   | { kind: 'image'; source: 'own' };
 
 export const NONE: BackgroundChoice = { kind: 'none' };
 
-// parseChoice accepts a stored value only when it is one of the four shapes; a server image name
+// parseChoice accepts a stored value only when it is one of the known shapes; a server image name
 // is a plain file name.
 export function parseChoice(v: unknown): BackgroundChoice {
   const c = (v ?? {}) as { kind?: unknown; source?: unknown; name?: unknown };
   if (c.kind === 'blur') return { kind: 'blur' };
+  if (c.kind === 'glass') return { kind: 'glass' };
   if (c.kind === 'image' && c.source === 'own') return { kind: 'image', source: 'own' };
   if (c.kind === 'image' && c.source === 'server' && typeof c.name === 'string' && /^[^/\\]+$/.test(c.name) && !c.name.startsWith('.')) {
     return { kind: 'image', source: 'server', name: c.name };

@@ -23,3 +23,12 @@ describe('background choice', () => {
     expect(sameEffect({ kind: 'blur' }, NONE)).toBe(false);
   });
 });
+
+describe('glass blocks', () => {
+  it('is a choice of its own that switches inside the effect', () => {
+    expect(parseChoice({ kind: 'glass' })).toEqual({ kind: 'glass' });
+    expect(sameEffect({ kind: 'glass' }, { kind: 'blur' })).toBe(true);
+    expect(sameEffect({ kind: 'glass' }, NONE)).toBe(false);
+    expect(resolveChoice({ kind: 'glass' }, [], false)).toEqual({ choice: { kind: 'glass' }, lost: false });
+  });
+});

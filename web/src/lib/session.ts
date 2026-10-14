@@ -110,13 +110,13 @@ export class Session {
 
   // openCam opens the camera with the current background; when the background cannot start it
   // reports so and leaves the camera off. Other camera errors are thrown.
-  private async openCam(): Promise<CameraInput | null> {
+  private async openCam(reuse?: CameraInput): Promise<CameraInput | null> {
     if (this.lost) {
       this.state.backgroundError = true; // the dialog says the image is gone
       return null;
     }
     try {
-      const c = await openCamera(loadPrefs(localStorage).cameraId, this.background, this.onFps);
+      const c = await openCamera(loadPrefs(localStorage).cameraId, this.background, this.onFps, reuse && { raw: reuse.raw, deviceId: reuse.deviceId });
       this.state.backgroundError = false;
       return c;
     } catch (e) {
@@ -179,7 +179,7 @@ export class Session {
       }
       let next: CameraInput | null;
       try {
-        next = await this.openCam();
+        next = await this.openCam(this.cam); // the open camera, with or without the effect on top
       } catch (e) {
         this.useBackground(before); // the running camera stays
         throw e;
@@ -208,11 +208,11 @@ export class Session {
           this.cam = old;
           this.useBackground(before);
           this.showOwnCamera();
-          next.stop();
+          next.release(); // the camera stays with the old input
           throw e;
         }
       }
-      old.stop();
+      old.release(); // the camera itself now belongs to next
       if (this.cam !== next) next.stop(); // left meanwhile
     } finally {
       this.switchingCam = false;
@@ -433,10 +433,22 @@ export class Session {
     const prefs = loadPrefs(localStorage);
     savePrefs(localStorage, { ...prefs, cameraOn: on });
     if (!on) {
+      this.state.cameraStarting = false; // a click while it starts cancels the start
       this.dropCamera();
       this.sig?.send({ type: 'camera', on: false });
       return;
     }
+    const startEpoch = this.camEpoch;
+    this.state.cameraStarting = true;
+    try {
+      await this.startCamera();
+    } finally {
+      if (this.camEpoch === startEpoch) this.state.cameraStarting = false;
+    }
+  }
+
+  // startCamera opens the camera (with the background, if one is chosen) and sends it.
+  private async startCamera(): Promise<void> {
     if (!this.cam) {
       const epoch = this.camEpoch;
       let opened: CameraInput | null;

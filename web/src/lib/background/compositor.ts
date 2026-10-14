@@ -44,21 +44,48 @@ void main() {
   o = c;
 }`;
 
-// The final picture: the person from the frame over the blurred frame or the image, by the soft mask.
+// The final picture: the person from the frame over the background, by the soft mask. The
+// background is the blurred frame (uKind 0), an image (1), or glass blocks (2): every block shows
+// its own piece of the scene, magnified toward the block's centre like a convex lens and shifted by
+// the block's own amount (the hash is glass.ts's blockShift), half sharp and half blurred, with
+// seams, a highlight along the edges and a gradient inside the block.
 const MIX = `#version 300 es
-precision mediump float;
+precision highp float;
 in vec2 v;
 uniform sampler2D uFrame;
 uniform sampler2D uBack;
 uniform sampler2D uMask;
 uniform vec2 uCover;
-uniform bool uImage;
+uniform int uKind;
+uniform vec2 uGrid;
+uniform float uBlockPx;
 out vec4 o;
+vec2 shift(vec2 c) {
+  return (fract(sin(vec2(dot(c, vec2(127.1, 311.7)), dot(c, vec2(269.5, 183.3)))) * 43758.5453) - 0.5) * 0.6;
+}
+vec3 glass() {
+  vec2 g = v * uGrid;
+  vec2 cell = floor(g);
+  vec2 f = fract(g);
+  vec2 local = f - 0.5;
+  vec2 src = (cell + 0.5 + local * (0.55 + 0.6 * dot(local, local)) + shift(cell)) / uGrid;
+  vec3 c = mix(texture(uFrame, src).rgb, texture(uBack, src).rgb, 0.5);
+  c *= 0.9 + 0.16 * (1.0 - f.y) + 0.08 * (fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453) - 0.5);
+  vec2 px = f * uBlockPx;
+  vec2 far = (1.0 - f) * uBlockPx;
+  float seam = min(min(px.x, px.y), min(far.x, far.y));
+  if (seam < 1.5) c *= 0.55;
+  else if (px.x < 3.0 || px.y < 3.0) c = mix(c, vec3(1.0), 0.18);
+  return c;
+}
 void main() {
   float m = smoothstep(0.35, 0.75, texture(uMask, v).r);
-  vec2 bv = uImage ? 0.5 + (v - 0.5) * uCover : v;
-  o = vec4(mix(texture(uBack, bv).rgb, texture(uFrame, v).rgb, m), 1.0);
+  vec3 back = uKind == 2 ? glass() : texture(uBack, uKind == 1 ? 0.5 + (v - 0.5) * uCover : v).rgb;
+  o = vec4(mix(back, texture(uFrame, v).rgb, m), 1.0);
 }`;
+
+// Glass blocks are 40 px across at 640x360: a wall of 16 x 9 blocks.
+const GLASS_BLOCK_PX = 40;
 
 type Target = { tex: WebGLTexture; fb: WebGLFramebuffer; w: number; h: number };
 
@@ -173,7 +200,7 @@ export class Compositor {
     this.imageSize = [img.width, img.height];
   }
 
-  draw(frame: TexImageSource, mode: 'blur' | 'image'): void {
+  draw(frame: TexImageSource, mode: 'blur' | 'glass' | 'image'): void {
     const gl = this.gl;
     gl.bindTexture(gl.TEXTURE_2D, this.frameTex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
@@ -201,7 +228,9 @@ export class Compositor {
       gl.uniform1i(u('uBack'), this.bind(1, back));
       gl.uniform1i(u('uMask'), this.bind(2, mask));
       gl.uniform2f(u('uCover'), c.sx, c.sy);
-      gl.uniform1i(u('uImage'), image ? 1 : 0);
+      gl.uniform1i(u('uKind'), image ? 1 : mode === 'glass' ? 2 : 0);
+      gl.uniform2f(u('uGrid'), this.w / GLASS_BLOCK_PX, this.h / GLASS_BLOCK_PX);
+      gl.uniform1f(u('uBlockPx'), GLASS_BLOCK_PX);
     });
   }
 

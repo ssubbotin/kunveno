@@ -26,7 +26,9 @@ export class RoomState {
   // (it cannot start, or the stored image is gone), whether the stored image was gone at join
   // (until another choice), and whether an image could not replace the running effect. Not
   // cleared by reset().
-  background = $state<'none' | 'blur' | 'image'>('none');
+  // From the click on the camera button until the camera is sent (the effect takes about a second).
+  cameraStarting = $state(false);
+  background = $state<'none' | 'blur' | 'glass' | 'image'>('none');
   backgroundFps = $state(0);
   backgroundError = $state(false);
   backgroundLost = $state(false);

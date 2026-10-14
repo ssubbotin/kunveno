@@ -21,6 +21,9 @@ Licensed under the GNU Affero General Public License v3.0 only; a commercial lic
 - Audio from everyone, cameras (640x360, 15 fps), one shared screen at a time.
 - A pre-join check: microphone and camera choice, a level meter, and entering with the
   microphone or camera off. Works on computers without a camera.
+- Virtual backgrounds, processed in the browser: blur, glass blocks, images the administrator puts
+  in `backgrounds/`, or your own image that never leaves the browser. Noise suppression for the
+  microphone (keyboard clicks, background sounds), also in the browser.
 - Links to a room (`https://<host>/join/<room>#pin=…`), copied from the lobby or from inside a
   room: the recipient lands in the pre-join check with the room and PIN filled in. The PIN sits
   in the fragment, which the browser keeps to itself: it never reaches the server or its logs.

@@ -6,7 +6,7 @@
   import { deleteOwn, loadOwn, saveOwn } from './background/ownImage';
   import { nextIndex } from './roving';
 
-  // The background choices: none, blur, the server's presets and the participant's own image.
+  // The background choices: none, blur, glass blocks, the server's presets and the participant's own image.
   // lost: the stored image is gone; imageError: an image could not replace the running effect.
   let { current, fps, lost, imageError = false, onchoose }: {
     current: BackgroundChoice; fps: number | null; lost: boolean; imageError?: boolean; onchoose: (c: BackgroundChoice) => void;
@@ -32,6 +32,7 @@
   const options = $derived<Option[]>([
     { key: 'none', label: t('bg.none'), choice: { kind: 'none' } },
     { key: 'blur', label: t('bg.blur'), choice: { kind: 'blur' } },
+    { key: 'glass', label: t('bg.glass'), choice: { kind: 'glass' } },
     ...presets.map((p) => ({ key: 'p:' + p.name, label: presetLabel(p.name), choice: { kind: 'image', source: 'server', name: p.name } as BackgroundChoice, thumb: previewUrl(p.name) })),
     ...(ownUrl ? [{ key: 'own', label: t('bg.ownLabel'), choice: { kind: 'image', source: 'own' } as BackgroundChoice, thumb: ownUrl }] : []),
   ]);
@@ -99,6 +100,13 @@
   .opt[aria-checked='true'] { border-color: var(--live); }
   .opt img, .swatch { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: calc(var(--radius-sm) - 2px); display: block; }
   .swatch.none { background: repeating-linear-gradient(45deg, var(--panel-2) 0 .5rem, var(--ink) .5rem 1rem); }
+  .swatch.glass {
+    background:
+      linear-gradient(90deg, rgba(0, 0, 0, .45) 2px, transparent 2px) 0 0 / 25% 33.4%,
+      linear-gradient(rgba(0, 0, 0, .45) 2px, transparent 2px) 0 0 / 25% 33.4%,
+      linear-gradient(90deg, rgba(255, 255, 255, .25) 4px, transparent 4px) 2px 0 / 25% 33.4%,
+      linear-gradient(160deg, #b9c6d3, #5f7286 55%, #8fa2b5);
+  }
   .swatch.blur { background: radial-gradient(circle at 50% 40%, #9aabbd, #283849 70%); filter: blur(2px); }
   .label { font-size: .85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .own { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
