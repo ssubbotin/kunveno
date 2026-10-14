@@ -7,6 +7,8 @@
   import { site } from './site.svelte';
   import CopyLink from './CopyLink.svelte';
   import { roomLink } from './link';
+  import Announcer from './Announcer.svelte';
+  import { ariaShortcut, isMac, matchShortcut, shortcutLabel, type ShortcutAction } from './shortcuts';
 
   let { session }: { session: Session } = $props();
   // The session object lives for the whole page; Room never receives another one.
@@ -20,12 +22,54 @@
   const shareBusy = $derived(rs.sharer !== '' && !rs.isSharing);
   let picking = $state(false);
   let more = $state(false);
+  const mac = isMac(navigator as Navigator & { userAgentData?: { platform?: string } });
+  let announcement = $state('');
+  let announceSeq = $state(0);
+  function announce(text: string) {
+    announcement = text;
+    announceSeq += 1;
+  }
+  // Why the camera button cannot be used now; empty when it can.
+  const cameraReason = $derived(!rs.hasCamera ? t('camera.notFound') : rs.status !== 'connected' ? t('control.cameraWait') : '');
+  function withKeys(label: string, action: ShortcutAction): string {
+    return t('control.withKeys', { label, keys: shortcutLabel(action, mac) });
+  }
+
+  // Shortcut actions are announced; clicks are not, since the focused button's state is read anyway.
+  function toggleMic() {
+    const muted = !rs.muted;
+    session.setMuted(muted);
+    announce(muted ? t('control.micOff') : t('control.micOn'));
+  }
+  async function toggleCamera() {
+    if (cameraReason) {
+      announce(cameraReason);
+      return;
+    }
+    const on = !rs.cameraOn;
+    await session.setCamera(on);
+    // Read the result: opening the camera can fail (another app holds it).
+    announce(on && !rs.cameraOn ? t('camera.unavailable') : rs.cameraOn ? t('camera.on') : t('camera.off'));
+  }
+
+  function onKey(ev: KeyboardEvent) {
+    const action = matchShortcut(ev, mac);
+    if (action) {
+      ev.preventDefault(); // Ctrl+D would bookmark the page, Ctrl+E open the search
+      if (action === 'mic') toggleMic();
+      else if (action === 'camera') void toggleCamera();
+      return;
+    }
+    if (ev.key === 'Escape') closePopovers();
+  }
   // Popovers close on Escape and on a click anywhere outside them.
-  function closePopovers(ev: Event) {
-    if (ev instanceof KeyboardEvent && ev.key !== 'Escape') return;
-    if (ev instanceof MouseEvent && (ev.target as Element).closest('.popover-anchor')) return;
+  function closePopovers() {
     picking = false;
     more = false;
+  }
+  function onPointer(ev: PointerEvent) {
+    if ((ev.target as Element).closest('.popover-anchor')) return;
+    closePopovers();
   }
   const echoPresent = $derived(rs.participants.some((p) => p.botKind === 'echo'));
   const statusText = $derived(
@@ -42,9 +86,10 @@
 
 </script>
 
-<svelte:window onkeydown={closePopovers} onpointerdown={closePopovers} />
+<svelte:window onkeydown={onKey} onpointerdown={onPointer} />
 
 <main class="room" class:sharing={screenTrack !== null}>
+  <Announcer message={announcement} seq={announceSeq} />
   <header class="bar">
     <h1>{rs.roomName || rs.roomSlug}</h1>
     <span class="status {rs.status}" class:backup={rs.transport === 'tcp'}
@@ -66,7 +111,7 @@
        and aria-pressed carry the state. Below 1024 px only the icons remain. -->
   <footer class="controls">
     <div class="main">
-      <button class="btn mic" class:off={rs.muted} aria-pressed={!rs.muted} title={t('control.mic')} onclick={() => session.setMuted(!rs.muted)}>
+      <button class="btn mic" class:off={rs.muted} aria-pressed={!rs.muted} title={withKeys(t('control.mic'), 'mic')} aria-keyshortcuts={ariaShortcut('mic', mac)} onclick={() => session.setMuted(!rs.muted)}>
         {#if rs.muted}
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5a3 3 0 0 1 6 0v6M5 11a7 7 0 0 0 11.5 5.4M12 18v3M4 4l16 16" /></svg>
         {:else}
@@ -77,7 +122,7 @@
       </button>
 
       <button class="btn" class:off={rs.hasCamera && !rs.cameraOn} aria-pressed={rs.cameraOn} disabled={rs.status !== 'connected' || !rs.hasCamera}
-        title={!rs.hasCamera ? t('camera.notFound') : rs.cameraError ? t('camera.unavailable') : t('control.camera')}
+        title={cameraReason || (rs.cameraError ? t('camera.unavailable') : withKeys(t('control.camera'), 'camera'))} aria-keyshortcuts={ariaShortcut('camera', mac)}
         onclick={() => void session.setCamera(!rs.cameraOn)}>
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2" /><path d="m16 10 5-3v10l-5-3" />{#if !rs.cameraOn}<path d="M3 3l18 18" />{/if}</svg>
         <span class="label">{t('control.camera')}</span>
