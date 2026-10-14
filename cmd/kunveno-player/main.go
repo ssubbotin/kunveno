@@ -18,9 +18,9 @@ import (
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
 
-	"github.com/ssubbotin/kunveno/internal/botclient"
 	"github.com/ssubbotin/kunveno/internal/config"
 	"github.com/ssubbotin/kunveno/internal/player"
+	"github.com/ssubbotin/kunveno/pkg/botclient"
 )
 
 var version = "dev"

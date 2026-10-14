@@ -1,5 +1,7 @@
-// Package botclient is the signaling side of the server-side helpers (echo, player): join a
-// room in a helper role and answer the server's offers on a pion peer connection.
+// Package botclient is the signaling side of the server-side helpers (echo, player, and the notes
+// bot of the kunveno-notes add-on): join a room in a helper role and answer the server's offers on a
+// pion peer connection. It is public so that helpers built in other modules can use it; keep its API
+// stable.
 package botclient
 
 import (
@@ -35,10 +37,25 @@ func Dial(ctx context.Context, url string, insecure bool) (*websocket.Conn, erro
 	return conn, nil
 }
 
-// Serve joins room as a helper (role "echo" or "player") and answers every offer on pc until
-// the connection or ctx ends. onJoined (may be nil) runs once the server has admitted us and
-// gets a function for sending further messages.
+// Serve joins room as a helper (role "echo", "player", "camera" or "notes") and answers every
+// offer on pc until the connection or ctx ends. onJoined (may be nil) runs once the server has
+// admitted us and gets a function for sending further messages.
 func Serve(ctx context.Context, conn *websocket.Conn, pc *webrtc.PeerConnection, room, name, role string, onJoined func(send func(any) error)) error {
+	return ServeWith(ctx, conn, pc, room, name, role, Options{OnJoined: onJoined})
+}
+
+// Options are the optional callbacks of ServeWith.
+type Options struct {
+	// OnJoined runs once the server has admitted us, with a function for sending further messages.
+	// The function is safe for concurrent use.
+	OnJoined func(send func(any) error)
+	// OnMessage gets every server message other than joined, error and offer: its type and the
+	// raw frame. It runs on the read loop and must not block.
+	OnMessage func(typ string, data []byte)
+}
+
+// ServeWith is Serve with every callback.
+func ServeWith(ctx context.Context, conn *websocket.Conn, pc *webrtc.PeerConnection, room, name, role string, o Options) error {
 	send := func(v any) error { return wsjson.Write(ctx, conn, v) }
 	if err := send(map[string]string{"type": "join", "room": room, "name": name, "role": role}); err != nil {
 		return err
@@ -54,8 +71,8 @@ func Serve(ctx context.Context, conn *websocket.Conn, pc *webrtc.PeerConnection,
 		}
 		switch msg.Type {
 		case "joined":
-			if onJoined != nil {
-				onJoined(send)
+			if o.OnJoined != nil {
+				o.OnJoined(send)
 			}
 		case "error":
 			return fmt.Errorf("server error %s: %s", msg.Code, msg.Message)
@@ -74,6 +91,10 @@ func Serve(ctx context.Context, conn *websocket.Conn, pc *webrtc.PeerConnection,
 			<-gathered
 			if err := send(map[string]string{"type": "answer", "sdp": pc.LocalDescription().SDP}); err != nil {
 				return err
+			}
+		default:
+			if o.OnMessage != nil {
+				o.OnMessage(msg.Type, data)
 			}
 		}
 	}

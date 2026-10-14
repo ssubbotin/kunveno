@@ -89,3 +89,57 @@ func TestServeJoinsAndAnswers(t *testing.T) {
 		t.Fatal("no answer")
 	}
 }
+
+// ServeWith hands the caller every message it does not handle itself, for example the notes
+// bot's stop.
+func TestServeWithPassesOtherMessages(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer c.CloseNow()
+		ctx := r.Context()
+		var join map[string]string
+		if wsjson.Read(ctx, c, &join) != nil {
+			return
+		}
+		_ = wsjson.Write(ctx, c, map[string]any{"type": "joined", "self": map[string]any{"id": "n", "name": join["name"], "muted": false}, "room": map[string]string{"slug": join["room"], "name": "R"}})
+		_ = wsjson.Write(ctx, c, map[string]any{"type": "participants", "participants": []any{}, "sharer": ""})
+		_ = wsjson.Write(ctx, c, map[string]string{"type": "stop"})
+		<-ctx.Done()
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, err := Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc, _ := webrtc.NewPeerConnection(webrtc.Configuration{})
+	defer pc.Close()
+	got := make(chan string, 4)
+	joined := make(chan struct{})
+	go func() {
+		_ = ServeWith(ctx, conn, pc, "ops", "Заметки", "notes", Options{
+			OnJoined:  func(func(any) error) { close(joined) },
+			OnMessage: func(typ string, data []byte) { got <- typ + " " + string(data) },
+		})
+	}()
+	select {
+	case <-joined:
+	case <-ctx.Done():
+		t.Fatal("OnJoined not called")
+	}
+	for _, want := range []string{"participants", "stop"} {
+		select {
+		case m := <-got:
+			if !strings.HasPrefix(m, want+" {") {
+				t.Fatalf("message = %q, want %s with its frame", m, want)
+			}
+		case <-ctx.Done():
+			t.Fatalf("no %s", want)
+		}
+	}
+}

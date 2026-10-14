@@ -183,7 +183,7 @@ UDP 7000 и TCP 7000. Если какой-то сегмент сети рабо�
 | `internal/room`, `internal/signal`, `internal/sfu` | состояние комнат, сигнализация по WebSocket, SFU |
 | `internal/config`, `internal/httpapi`, `internal/metrics` | конфигурация, HTTP API, метрики Prometheus |
 | `internal/quality`, `internal/ratelimit`, `internal/roomstore` | оценки связи, ограничение попыток PIN, сохранённые комнаты |
-| `internal/echo`, `internal/player`, `internal/botclient` | внутренности вспомогательных сервисов |
+| `internal/echo`, `internal/player`, `pkg/botclient` | внутренности вспомогательных сервисов |
 | `web/` | браузерный клиент |
 | `deploy/` | образы Docker и каталог compose, nginx, модуль systemd, пакеты deb, пример конфигурации |
 | `tools/loadgen` | синтетические участники для нагрузочных и сквозных проверок |

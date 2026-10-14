@@ -182,7 +182,7 @@ Certificates, the firewall, troubleshooting and the helpers in detail: [docs/dep
 | `internal/room`, `internal/signal`, `internal/sfu` | room state, WebSocket signaling, the SFU |
 | `internal/config`, `internal/httpapi`, `internal/metrics` | configuration, HTTP API, Prometheus metrics |
 | `internal/quality`, `internal/ratelimit`, `internal/roomstore` | connection grades, PIN limits, saved rooms |
-| `internal/echo`, `internal/player`, `internal/botclient` | helper internals |
+| `internal/echo`, `internal/player`, `pkg/botclient` | helper internals |
 | `web/` | the browser client |
 | `deploy/` | Docker images and compose stack, nginx, systemd unit, deb packaging, example configuration |
 | `tools/loadgen` | synthetic participants for load and end-to-end checks |

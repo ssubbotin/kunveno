@@ -188,7 +188,7 @@ Certificados, cortafuegos, resolución de problemas y los ayudantes en detalle: 
 | `internal/room`, `internal/signal`, `internal/sfu` | estado de las salas, señalización por WebSocket, la SFU |
 | `internal/config`, `internal/httpapi`, `internal/metrics` | configuración, API HTTP, métricas de Prometheus |
 | `internal/quality`, `internal/ratelimit`, `internal/roomstore` | calidad de conexión, límite de intentos de PIN, salas guardadas |
-| `internal/echo`, `internal/player`, `internal/botclient` | interior de los ayudantes |
+| `internal/echo`, `internal/player`, `pkg/botclient` | interior de los ayudantes |
 | `web/` | el cliente para el navegador |
 | `deploy/` | imágenes Docker y directorio compose, nginx, unidad systemd, paquetes deb, configuración de ejemplo |
 | `tools/loadgen` | participantes sintéticos para pruebas de carga y de extremo a extremo |
