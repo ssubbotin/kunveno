@@ -23,3 +23,15 @@ pull request.
     bar shows `/`.
 14. A link to a deleted room opens the lobby with "The room in the link no longer exists" and the
     room list.
+15. Keyboard in the room (Linux or Windows: Ctrl; macOS: ⌘): Ctrl+D mutes and unmutes, also with
+    focus on the mic button (one toggle per press) and with the Russian layout; Ctrl+E turns the
+    camera on and off; Ctrl+Shift+D and Ctrl+Alt+D do nothing; in the lobby Ctrl+D is the browser's
+    bookmark again.
+16. While sharing the screen, Ctrl+D still mutes; typing text with spaces in another window does not.
+17. Ctrl+/ opens the shortcut list, Escape closes it and focus returns where it was; the list also
+    opens from More → Keyboard shortcuts, and closing it then puts focus on More.
+    Pressing Ctrl+E twice quickly opens the camera once (its light goes off when it is turned off).
+18. Keyboard only: Tab reaches every control, including an unavailable camera or share button, whose
+    reason is read; Reaction and More open with Enter, focus lands on the first item, arrows move,
+    Escape closes and returns to the button.
+19. At 320 px width (devtools) the room controls fit without horizontal scrolling.
