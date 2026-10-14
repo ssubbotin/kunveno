@@ -84,3 +84,14 @@ without it):
     reports "The notes have already been deleted".
 36. The last person leaving ends the recording and the file holds the last phrase said before
     leaving; the first phrase of a new meeting in the room replaces the old notes.
+37. Lobby → "Notes of the last meeting" → "Delete notes": the dialog asks "Delete the notes of the
+    last meeting for good?" with "Delete" and "Cancel" (no browser prompt); "Cancel" returns to the
+    dialog with the notes intact. With a wrong PIN "Delete" shows "Wrong PIN"; with the right one
+    the dialog closes, the notes mark and the button disappear from the room, and downloading in a
+    second tab with the dialog still open reports "The notes have already been deleted". Recording
+    in progress: with notes switched off in a running meeting, open the lobby dialog and press
+    "Delete notes"; then in the room switch notes on again and speak one phrase (the recording
+    reopens the same file); now "Delete" in the lobby shows "Notes are being taken right now: stop
+    them to delete the notes", returns to the dialog, and the file stays. Deleting the notes of a
+    meeting still in progress (notes switched off) and switching notes on again starts a fresh file
+    holding only the new phrases.
