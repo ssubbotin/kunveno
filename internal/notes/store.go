@@ -227,17 +227,19 @@ func (s *Store) Load(slug string) (Transcript, error) {
 	return t, nil
 }
 
-// Delete removes the room's notes, for a deleted room.
+// Delete removes the room's notes, for a deleted room. The room is forgotten even when the file
+// cannot be removed (the error is returned; the expiry sweep may clean the file later), so a room
+// created again under the same slug never inherits the old notes.
 func (s *Store) Delete(slug string) error {
 	if !slugRe.MatchString(slug) {
 		return ErrBadSlug
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	delete(s.ended, slug)
 	if err := os.Remove(s.path(slug)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	delete(s.ended, slug)
 	return nil
 }
 

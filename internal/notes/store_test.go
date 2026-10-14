@@ -192,3 +192,28 @@ func TestOpenWithoutDirectory(t *testing.T) {
 	}
 	must(t, s.Begin("ops", "Ops", time.Now())) // creates the directory
 }
+
+// A failed file removal still forgets the room's notes, so a room created again under the same
+// slug neither lists nor serves the old ones.
+func TestStoreDeleteForgetsNotesWhenRemoveFails(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	dir := t.TempDir()
+	s, err := Open(dir, time.Hour, func() time.Time { return at(30, 0) })
+	must(t, err)
+	must(t, s.Begin("retro", "Retro", at(0, 0)))
+	must(t, s.Phrase("retro", Phrase{Name: "Анна", Start: at(1, 0), End: at(1, 2), Text: "Текст."}))
+	must(t, s.End("retro", at(2, 0)))
+	must(t, os.Chmod(dir, 0o500))
+	defer os.Chmod(dir, 0o700)
+	if err := s.Delete("retro"); err == nil {
+		t.Fatal("Delete reported success though the file cannot be removed")
+	}
+	if _, ok := s.Until("retro"); ok {
+		t.Fatal("notes still listed after a failed removal")
+	}
+	if _, err := s.Load("retro"); !errors.Is(err, ErrNoNotes) {
+		t.Fatalf("Load after a failed removal = %v", err)
+	}
+}
