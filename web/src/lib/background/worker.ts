@@ -102,6 +102,8 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
         comp = new Compositor(m.canvas, m.width, m.height);
         seg = await createSegmenter();
       } catch (err) {
+        // The frames handed over would stay queued in the stream, unclosed.
+        void m.frames?.cancel().catch(() => {});
         post({ type: 'error', message: String(err) });
         return;
       }
