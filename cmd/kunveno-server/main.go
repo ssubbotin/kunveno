@@ -108,6 +108,7 @@ func run(cfgPath string, log *slog.Logger) error {
 	mux.Handle("/api/rooms", rooms)
 	mux.Handle("/api/rooms/", rooms)
 	mux.Handle("POST /api/rooms/{slug}/notes", httpapi.NotesDownload(reg, store, cfg.Notes.Enabled, ws.PINLimiter(), time.Local))
+	mux.Handle("DELETE /api/rooms/{slug}/notes", httpapi.NotesDelete(reg, store, cfg.Notes.Enabled, ws.PINLimiter()))
 	bg := backgrounds.New(cfg.BackgroundsDir, log).Handler()
 	mux.Handle("/api/backgrounds", bg)
 	mux.Handle("/api/backgrounds/", bg)

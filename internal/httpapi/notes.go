@@ -42,47 +42,9 @@ type notesRequest struct {
 // still being written, or notes are off (enabled false).
 func NotesDownload(reg *room.Registry, store *notes.Store, enabled bool, pins *ratelimit.Limiter, loc *time.Location) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
+		slug, req, ok := notesAccess(w, r, http.MethodPost, reg, enabled && store != nil, pins)
+		if !ok {
 			return
-		}
-		if !enabled || store == nil {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "no notes"})
-			return
-		}
-		slug, ok := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/api/rooms/"), "/notes")
-		if !ok || slug == "" || strings.Contains(slug, "/") {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
-			return
-		}
-		ip := ratelimit.ClientIP(r)
-		if pins != nil {
-			if ok, wait := pins.Allow(ip); !ok {
-				w.Header().Set("Retry-After", strconv.Itoa(int((wait+time.Second-1)/time.Second)))
-				writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many wrong PINs; try again later"})
-				return
-			}
-		}
-		var req notesRequest
-		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request body"})
-			return
-		}
-		rm, found := reg.Get(slug)
-		if !found {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": room.ErrNotFound.Error()})
-			return
-		}
-		if !rm.CheckPIN(req.PIN) {
-			metrics.PINFailures.WithLabelValues("notes").Inc()
-			if pins != nil && pins.Fail(ip) {
-				metrics.PINBlocks.Inc()
-			}
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": room.ErrBadPIN.Error()})
-			return
-		}
-		if pins != nil {
-			pins.Success(ip)
 		}
 		t, err := store.Load(slug)
 		switch {
@@ -98,4 +60,78 @@ func NotesDownload(reg *room.Registry, store *notes.Store, enabled bool, pins *r
 		w.Header().Set("Cache-Control", "no-store")
 		_, _ = w.Write(notes.Markdown(t, req.Lang, loc))
 	})
+}
+
+// NotesDelete serves DELETE /api/rooms/{slug}/notes with {"pin"}: it deletes the notes of the
+// room's last meeting, 204. The same checks as NotesDownload come first (404 while notes are off,
+// for an unknown room, or for notes that do not exist or have expired; 403 for a wrong PIN, counted
+// in pins); 409 while the room's notes are still being recorded.
+func NotesDelete(reg *room.Registry, store *notes.Store, enabled bool, pins *ratelimit.Limiter) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		slug, _, ok := notesAccess(w, r, http.MethodDelete, reg, enabled && store != nil, pins)
+		if !ok {
+			return
+		}
+		err := store.DeleteEnded(slug)
+		switch {
+		case errors.Is(err, notes.ErrRecording):
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "notes are being recorded"})
+		case errors.Is(err, notes.ErrNoNotes):
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "no notes"})
+		case err != nil:
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		default:
+			w.WriteHeader(http.StatusNoContent)
+		}
+	})
+}
+
+// notesAccess runs the checks shared by the notes requests, in order: the method (405), notes on
+// (404 before anything else), the path, the per-address PIN limit (429), the body (400), the room
+// (404) and its PIN (403, counted toward the limit). It writes the answer and reports false when a
+// check fails.
+func notesAccess(w http.ResponseWriter, r *http.Request, method string, reg *room.Registry, enabled bool, pins *ratelimit.Limiter) (string, notesRequest, bool) {
+	var req notesRequest
+	if r.Method != method {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return "", req, false
+	}
+	if !enabled {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no notes"})
+		return "", req, false
+	}
+	slug, ok := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/api/rooms/"), "/notes")
+	if !ok || slug == "" || strings.Contains(slug, "/") {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return "", req, false
+	}
+	ip := ratelimit.ClientIP(r)
+	if pins != nil {
+		if ok, wait := pins.Allow(ip); !ok {
+			w.Header().Set("Retry-After", strconv.Itoa(int((wait+time.Second-1)/time.Second)))
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many wrong PINs; try again later"})
+			return "", req, false
+		}
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request body"})
+		return "", req, false
+	}
+	rm, found := reg.Get(slug)
+	if !found {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": room.ErrNotFound.Error()})
+		return "", req, false
+	}
+	if !rm.CheckPIN(req.PIN) {
+		metrics.PINFailures.WithLabelValues("notes").Inc()
+		if pins != nil && pins.Fail(ip) {
+			metrics.PINBlocks.Inc()
+		}
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": room.ErrBadPIN.Error()})
+		return "", req, false
+	}
+	if pins != nil {
+		pins.Success(ip)
+	}
+	return slug, req, true
 }

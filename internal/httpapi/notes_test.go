@@ -291,3 +291,132 @@ func TestDeletingARoomForgetsNotesEvenIfTheFileStays(t *testing.T) {
 		t.Fatalf("the new room lists the old notes: %s", rec.Body)
 	}
 }
+
+func del(h http.Handler, path, body, ip string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest("DELETE", path, strings.NewReader(body))
+	req.RemoteAddr = "127.0.0.1:1"
+	req.Header.Set("X-Forwarded-For", ip)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestNotesDelete(t *testing.T) {
+	now := meetingAt(10, 5)
+	store := notesStore(t, &now)
+	reg := room.NewRegistry()
+	reg.Add(room.New("ops", "Операции", "1234", 15))
+	reg.Add(room.New("dev", "Разработка", "5678", 15))
+	reg.Add(room.New("qa", "Тесты", "9999", 15))
+	recordMeeting(t, store, "ops")
+	if err := store.Begin("dev", "Разработка", meetingAt(10, 0)); err != nil { // still being recorded
+		t.Fatal(err)
+	}
+	h := NotesDelete(reg, store, true, ratelimit.New(5, 10*time.Minute, time.Minute))
+	for _, c := range []struct {
+		path, body string
+		want       int
+		error      string
+	}{
+		{"/api/rooms/ops/notes", `{"pin":"0000"}`, http.StatusForbidden, ""},
+		{"/api/rooms/nope/notes", `{"pin":"1234"}`, http.StatusNotFound, ""},
+		{"/api/rooms/dev/notes", `{"pin":"5678"}`, http.StatusConflict, "notes are being recorded"},
+		{"/api/rooms/qa/notes", `{"pin":"9999"}`, http.StatusNotFound, "no notes"},
+		{"/api/rooms/ops/notes", `not json`, http.StatusBadRequest, ""},
+		{"/api/rooms/ops/x/notes", `{"pin":"1234"}`, http.StatusNotFound, ""},
+	} {
+		rec := del(h, c.path, c.body, "10.0.0.2")
+		if rec.Code != c.want {
+			t.Errorf("%s %s: %d, want %d", c.path, c.body, rec.Code, c.want)
+		}
+		if c.error != "" && !strings.Contains(rec.Body.String(), `"error":"`+c.error+`"`) {
+			t.Errorf("%s: body %s, want error %q", c.path, rec.Body, c.error)
+		}
+		if strings.Contains(rec.Body.String(), "1234") || strings.Contains(rec.Body.String(), "5678") {
+			t.Errorf("%s: a PIN in the answer: %s", c.path, rec.Body)
+		}
+	}
+	if _, ok := store.Until("ops"); !ok {
+		t.Fatal("refused requests deleted the notes")
+	}
+	rec := del(h, "/api/rooms/ops/notes", `{"pin":"1234"}`, "10.0.0.1")
+	if rec.Code != http.StatusNoContent || rec.Body.Len() != 0 {
+		t.Fatalf("delete: %d %s", rec.Code, rec.Body)
+	}
+	if _, ok := store.Until("ops"); ok {
+		t.Fatal("notes still ready after delete")
+	}
+	if _, err := store.Load("ops"); err != notes.ErrNoNotes {
+		t.Fatalf("Load after delete: %v", err)
+	}
+	if rec := do(t, Rooms(reg, nil, nil, store, true), "GET", "/api/rooms", ""); strings.Contains(rec.Body.String(), "notes_until") {
+		t.Fatalf("the list still shows the deleted notes: %s", rec.Body)
+	}
+	if rec := del(h, "/api/rooms/ops/notes", `{"pin":"1234"}`, "10.0.0.1"); rec.Code != http.StatusNotFound {
+		t.Fatalf("second delete: %d", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/api/rooms/ops/notes", nil))
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET: %d", rec.Code)
+	}
+}
+
+func TestNotesDeleteExpired(t *testing.T) {
+	now := meetingAt(10, 5)
+	store := notesStore(t, &now)
+	reg := room.NewRegistry()
+	reg.Add(room.New("ops", "Операции", "1234", 15))
+	recordMeeting(t, store, "ops")
+	now = meetingAt(10, 2).Add(24*time.Hour + time.Minute)
+	if rec := del(NotesDelete(reg, store, true, nil), "/api/rooms/ops/notes", `{"pin":"1234"}`, "10.0.0.3"); rec.Code != http.StatusNotFound {
+		t.Fatalf("expired: %d", rec.Code)
+	}
+}
+
+// Notes off: 404 right after the method check, before body parsing, PIN check or rate limiting.
+func TestNotesDeleteDisabledAnswers404First(t *testing.T) {
+	reg := room.NewRegistry()
+	reg.Add(room.New("ops", "Операции", "1234", 15))
+	pins := ratelimit.New(1, 10*time.Minute, time.Minute)
+	now := meetingAt(10, 5)
+	store := notesStore(t, &now)
+	recordMeeting(t, store, "ops")
+	h := NotesDelete(reg, store, false, pins)
+	for i, body := range []string{`{"pin":"0000"}`, `not json`, `{"pin":"1234"}`} {
+		if rec := del(h, "/api/rooms/ops/notes", body, "10.0.0.9"); rec.Code != http.StatusNotFound {
+			t.Fatalf("attempt %d: %d, want 404", i, rec.Code)
+		}
+	}
+	if ok, _ := pins.Allow("10.0.0.9"); !ok {
+		t.Fatal("disabled notes counted wrong PINs")
+	}
+	if _, ok := store.Until("ops"); !ok {
+		t.Fatal("notes deleted while notes are disabled")
+	}
+	if rec := del(NotesDelete(reg, nil, true, nil), "/api/rooms/ops/notes", `{"pin":"1234"}`, "10.0.0.9"); rec.Code != http.StatusNotFound {
+		t.Fatalf("no store: %d", rec.Code)
+	}
+}
+
+func TestNotesDeleteSharesThePINLimit(t *testing.T) {
+	now := meetingAt(10, 5)
+	store := notesStore(t, &now)
+	reg := room.NewRegistry()
+	reg.Add(room.New("ops", "Операции", "1234", 15))
+	recordMeeting(t, store, "ops")
+	pins := ratelimit.New(5, 10*time.Minute, time.Minute)
+	h := NotesDelete(reg, store, true, pins)
+	for i := 0; i < 5; i++ {
+		if rec := del(h, "/api/rooms/ops/notes", `{"pin":"0000"}`, "10.0.0.66"); rec.Code != http.StatusForbidden {
+			t.Fatalf("attempt %d: %d", i, rec.Code)
+		}
+	}
+	rec := del(h, "/api/rooms/ops/notes", `{"pin":"1234"}`, "10.0.0.66")
+	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" {
+		t.Fatalf("blocked: %d retry-after=%q", rec.Code, rec.Header().Get("Retry-After"))
+	}
+	if _, ok := store.Until("ops"); !ok {
+		t.Fatal("a blocked address deleted the notes")
+	}
+}
