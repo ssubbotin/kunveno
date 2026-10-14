@@ -63,6 +63,8 @@ type Config struct {
 	Rooms []Room `yaml:"rooms"`
 	// RoomsFile stores rooms created through the API (JSON, mode 0600: it holds PINs).
 	RoomsFile string `yaml:"rooms_file"`
+	// BackgroundsDir holds the virtual background presets (images listed at /api/backgrounds).
+	BackgroundsDir string `yaml:"backgrounds_dir"`
 }
 
 const (
@@ -71,6 +73,7 @@ const (
 	MaxTitleLen            = 80
 	MaxReactions           = 16
 	DefaultRoomsFile       = "/var/lib/kunveno/rooms.json"
+	DefaultBackgroundsDir  = "/var/lib/kunveno/backgrounds"
 	DefaultUDPPort         = 7000
 	DefaultShareMaxKbps    = 2500
 	DefaultMaxParticipants = 15
@@ -144,6 +147,9 @@ func (c *Config) applyDefaults() {
 	}
 	if c.RoomsFile == "" {
 		c.RoomsFile = DefaultRoomsFile
+	}
+	if c.BackgroundsDir == "" {
+		c.BackgroundsDir = DefaultBackgroundsDir
 	}
 	if c.HTTP.Listen == "" {
 		c.HTTP.Listen = DefaultListen

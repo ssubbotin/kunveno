@@ -5,6 +5,7 @@
 #   data/          rooms created in the lobby and the player's cache (written by the server)
 #   certs/         fullchain.pem and privkey.pem; a self-signed pair is issued on first start,
 #                  replace the two files with your own and restart web
+#   backgrounds/   images offered as virtual backgrounds
 #   media/         video files for rooms with "player: {file: …}"
 #   grafana/       Grafana's data source and dashboard, provisioned on start
 # Start with: docker compose pull && docker compose up -d
@@ -37,6 +38,7 @@ services:
     volumes:
       - ./config.yaml:/etc/kunveno/config.yaml:ro
       - ./data:/var/lib/kunveno
+      - ./backgrounds:/var/lib/kunveno/backgrounds:ro
 
   web:
     logging:

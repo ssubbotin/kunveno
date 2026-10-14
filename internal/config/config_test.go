@@ -280,3 +280,15 @@ func TestNoiseSuppression(t *testing.T) {
 		t.Fatalf("set = %v, %v", cfg.UI.NoiseSuppression, err)
 	}
 }
+
+func TestBackgroundsDir(t *testing.T) {
+	base := "media: {advertise_ip: 10.8.0.1}\nrooms: [{slug: a, name: A, pin: \"1234\"}]\n"
+	cfg, err := Parse([]byte(base))
+	if err != nil || cfg.BackgroundsDir != DefaultBackgroundsDir {
+		t.Fatalf("default = %q, %v", cfg.BackgroundsDir, err)
+	}
+	cfg, err = Parse([]byte("backgrounds_dir: /srv/bg\n" + base))
+	if err != nil || cfg.BackgroundsDir != "/srv/bg" {
+		t.Fatalf("set = %q, %v", cfg.BackgroundsDir, err)
+	}
+}

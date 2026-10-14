@@ -57,6 +57,7 @@ docker-compose.yml
 config.yaml     salas, PIN y título; los valores por defecto funcionan tal cual
 data/           salas creadas desde la página de inicio, caché del reproductor
 certs/          certificado TLS: autofirmado en el primer arranque, o el tuyo
+backgrounds/    imágenes que se ofrecen como fondos virtuales
 media/          archivos de vídeo para salas con reproductor
 grafana/        fuente de datos y panel de Grafana
 ```
@@ -227,6 +228,7 @@ repasa las comprobaciones manuales de [docs/test-matrix.md](docs/test-matrix.md)
 | `ui.noise_suppression` | `true` activa la supresión de ruido (GTCRN) del cliente para quien no haya elegido (por defecto `false`) |
 | `rooms[]` | `slug`, `name`, `pin`, `max_participants` y, opcionalmente, `player: {file, name}` para un vídeo en bucle del directorio media o `player: {url, name}` para una cámara en directo (`rtsp://` o `rtsps://`; las credenciales de la URL se ocultan en los registros) |
 | `rooms_file` | dónde se guardan las salas creadas desde la página de inicio (`/var/lib/kunveno/rooms.json`) |
+| `backgrounds_dir` | carpeta con las imágenes de fondo virtual (`/var/lib/kunveno/backgrounds`; el stack monta ahí `backgrounds/`) |
 
 `.env`, junto al archivo compose, fija la versión (`KUNVENO_VERSION`), los puertos, el nombre
 público del equipo para Grafana y su contraseña de administrador.

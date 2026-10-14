@@ -55,6 +55,7 @@ docker-compose.yml
 config.yaml     rooms, PINs and the title; the defaults work as they are
 data/           rooms created in the lobby, the player's cache
 certs/          TLS certificate: self-signed on first start, or your own
+backgrounds/    images offered as virtual backgrounds
 media/          video files for rooms with a player
 grafana/        Grafana's data source and dashboard
 ```
@@ -220,6 +221,7 @@ through the manual checks in [docs/test-matrix.md](docs/test-matrix.md).
 | `ui.noise_suppression` | `true` turns the client's noise filter (GTCRN) on for participants who have not chosen themselves (default `false`) |
 | `rooms[]` | `slug`, `name`, `pin`, `max_participants`, and optionally `player: {file, name}` for a video loop from the media directory or `player: {url, name}` for a live camera (`rtsp://` or `rtsps://`, credentials in the URL are masked in logs) |
 | `rooms_file` | where rooms created in the lobby are saved (`/var/lib/kunveno/rooms.json`) |
+| `backgrounds_dir` | folder with the virtual background images (`/var/lib/kunveno/backgrounds`; the stack mounts `backgrounds/` there) |
 
 `.env` next to the compose file sets the release (`KUNVENO_VERSION`), ports, the public host name
 for Grafana and its admin password.
