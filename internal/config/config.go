@@ -12,10 +12,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/ssubbotin/kunveno/internal/notes"
 )
 
 // Room is one configured meeting room.
@@ -65,6 +68,20 @@ type Config struct {
 	RoomsFile string `yaml:"rooms_file"`
 	// BackgroundsDir holds the virtual background presets (images listed at /api/backgrounds).
 	BackgroundsDir string `yaml:"backgrounds_dir"`
+	// Notes configures meeting notes. They need the notes bot of the commercial kunveno-notes
+	// add-on; switch them on together with installing it.
+	Notes struct {
+		// Enabled offers notes in rooms; false hides every notes option.
+		Enabled bool `yaml:"enabled"`
+		// Keep is how long the last meeting's notes stay after it ends (notes.ParseKeep);
+		// DefaultNotesKeep when unset. A pointer, so that an empty value is an error.
+		Keep *string `yaml:"keep"`
+		// Live sends each phrase to the room as it is recognised, for checking the recognition.
+		Live bool   `yaml:"live"`
+		Dir  string `yaml:"dir"`
+		// KeepFor is Keep parsed; set by Parse and Load.
+		KeepFor time.Duration `yaml:"-"`
+	} `yaml:"notes"`
 }
 
 const (
@@ -74,6 +91,8 @@ const (
 	MaxReactions           = 16
 	DefaultRoomsFile       = "/var/lib/kunveno/rooms.json"
 	DefaultBackgroundsDir  = "/var/lib/kunveno/backgrounds"
+	DefaultNotesKeep       = "1d"
+	DefaultNotesDir        = "/var/lib/kunveno/notes"
 	DefaultUDPPort         = 7000
 	DefaultShareMaxKbps    = 2500
 	DefaultMaxParticipants = 15
@@ -134,6 +153,7 @@ func parse(data []byte, getenv func(string) string, detect func() (string, error
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	cfg.Notes.KeepFor, _ = notes.ParseKeep(*cfg.Notes.Keep) // checked by Validate
 	return &cfg, nil
 }
 
@@ -150,6 +170,13 @@ func (c *Config) applyDefaults() {
 	}
 	if c.BackgroundsDir == "" {
 		c.BackgroundsDir = DefaultBackgroundsDir
+	}
+	if c.Notes.Keep == nil {
+		keep := DefaultNotesKeep
+		c.Notes.Keep = &keep
+	}
+	if c.Notes.Dir == "" {
+		c.Notes.Dir = DefaultNotesDir
 	}
 	if c.HTTP.Listen == "" {
 		c.HTTP.Listen = DefaultListen
@@ -200,6 +227,11 @@ func (c *Config) Validate() error {
 	}
 	if c.Media.ShareMaxKbps < 200 || c.Media.ShareMaxKbps > 20000 {
 		errs = append(errs, fmt.Errorf("media.share_max_kbps %d out of range 200..20000", c.Media.ShareMaxKbps))
+	}
+	if c.Notes.Keep != nil {
+		if _, err := notes.ParseKeep(*c.Notes.Keep); err != nil {
+			errs = append(errs, fmt.Errorf("notes.keep: %w", err))
+		}
 	}
 	seen := map[string]bool{}
 	for i, r := range c.Rooms {
