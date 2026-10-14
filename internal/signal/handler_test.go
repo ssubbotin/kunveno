@@ -128,6 +128,8 @@ type env struct {
 	srv   *httptest.Server
 	media *fakeMedia
 	h     *Handler
+
+	notesDir string // the notes store's directory, for tests with notes
 }
 
 func newEnv(t *testing.T, capacity int) *env {
@@ -194,6 +196,10 @@ type anyMsg struct {
 	RetryAfter   int               `json:"retry_after"`
 	From         string            `json:"from"`
 	Emoji        string            `json:"emoji"`
+	Notes        bool              `json:"notes"`
+	Name         string            `json:"name"`
+	Text         string            `json:"text"`
+	Start        int64             `json:"start"`
 }
 
 // expect reads frames until one of the wanted type arrives.

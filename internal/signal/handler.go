@@ -19,6 +19,7 @@ import (
 	"github.com/coder/websocket/wsjson"
 	"github.com/pion/webrtc/v4"
 
+	"github.com/ssubbotin/kunveno/internal/notes"
 	"github.com/ssubbotin/kunveno/internal/room"
 	"github.com/ssubbotin/kunveno/internal/sfu"
 )
@@ -56,6 +57,10 @@ type Handler struct {
 	qualityEvery time.Duration      // how often connection quality is sampled
 	pins         *ratelimit.Limiter // wrong-PIN limit per client address
 	reactions    map[string]bool    // emoji participants may send (ui.reactions)
+	notes        *notes.Store       // meeting notes (notes.enabled); nil when off
+	notesLive    bool               // send each phrase to the room as it is recognised
+	stopGrace    time.Duration      // how long a stopped notes bot may take to leave
+	notesMu      sync.Mutex         // orders every room's notes state and the store's writes
 
 	mu   sync.Mutex
 	live map[string]*liveRoom // slug -> members
@@ -64,15 +69,18 @@ type Handler struct {
 type liveRoom struct {
 	room    *room.Room
 	members map[string]*session
+	notes   notesRoom // guarded by Handler.notesMu
 }
 
 type session struct {
 	id, name, slug string
-	bot            bool      // a helper: the echo or a player
-	botKind        string    // RoleEcho or RolePlayer
-	noVideo        bool      // declined other participants' cameras; guarded by Handler.mu
-	client         string    // the page's id from join, if it sent one
-	lastReaction   time.Time // for the reaction rate limit; only the session's read loop uses it
+	bot            bool        // a helper: the echo or a player
+	botKind        string      // RoleEcho, RolePlayer, RoleCamera or RoleNotes
+	noVideo        bool        // declined other participants' cameras; guarded by Handler.mu
+	stopping       bool        // notes bot told to stop; guarded by Handler.mu
+	stopTimer      *time.Timer // closes a stopped notes bot that does not leave; guarded by Handler.mu
+	client         string      // the page's id from join, if it sent one
+	lastReaction   time.Time   // for the reaction rate limit; only the session's read loop uses it
 	joined         time.Time
 	conn           *websocket.Conn
 	peer           MediaPeer
@@ -82,7 +90,7 @@ type session struct {
 
 func New(reg *room.Registry, media Media, origins []string, log *slog.Logger) *Handler {
 	return &Handler{reg: reg, media: media, origins: origins, log: log, live: map[string]*liveRoom{}, qualityEvery: 3 * time.Second,
-		pins: ratelimit.New(5, 10*time.Minute, time.Minute), reactions: set(config.DefaultReactions)}
+		stopGrace: NotesStopGrace, pins: ratelimit.New(5, 10*time.Minute, time.Minute), reactions: set(config.DefaultReactions)}
 }
 
 // lookup returns the live state of a registered room, creating it on first use. Rooms can be
@@ -240,6 +248,9 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 		case "react":
 			h.react(s, m.Emoji)
 		case "video":
+			if s.botKind == RoleNotes {
+				continue // the notes bot hears audio only
+			}
 			h.setReceiveVideo(s, *m.Receive)
 		case "echo":
 			if s.bot {
@@ -249,7 +260,18 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 			lr.room.SetEcho(*m.On)
 			h.dropBotsIfUnwanted(lr)
 			h.broadcast(lr)
+		case "notes":
+			if s.bot || h.notes == nil {
+				continue // helpers cannot switch notes; with notes.enabled off the switch does not exist
+			}
+			h.switchNotes(s, *m.On)
+		case "phrase":
+			if s.botKind != RoleNotes {
+				continue
+			}
+			h.phrase(s, m)
 		case "leave":
+			h.leave(s) // at once: closing waits for the other side's answer
 			_ = conn.Close(websocket.StatusNormalClosure, "bye")
 			return
 		case "join":
@@ -278,6 +300,8 @@ func (h *Handler) join(conn *websocket.Conn, cancel context.CancelFunc, m Client
 		return nil, CodeBadRoom, "echo not requested in this room"
 	case (m.Role == RolePlayer || m.Role == RoleCamera) && !lr.room.HasPlayer():
 		return nil, CodeBadRoom, "no player configured for this room"
+	case m.Role == RoleNotes && (h.notes == nil || !lr.room.Notes()):
+		return nil, CodeBadRoom, "notes not requested in this room"
 	}
 	h.replaceClient(lr, m.Client)
 	id := newID()
@@ -310,16 +334,20 @@ func (h *Handler) join(conn *websocket.Conn, cancel context.CancelFunc, m Client
 	// Subscribe before announcing the join, so the first offer already carries every existing track.
 	sharer := lr.room.Sharer()
 	for _, o := range others {
-		if err := peer.Subscribe(o.peer, sfu.KindAudio); err != nil && !errors.Is(err, sfu.ErrNoTrack) {
-			s.log.Warn("subscribe audio", "from", o.id, "err", err)
+		if receives(s, o, sfu.KindAudio) {
+			if err := peer.Subscribe(o.peer, sfu.KindAudio); err != nil && !errors.Is(err, sfu.ErrNoTrack) {
+				s.log.Warn("subscribe audio", "from", o.id, "err", err)
+			}
 		}
-		if o.id == sharer {
+		if o.id == sharer && receives(s, o, sfu.KindScreen) {
 			if err := peer.Subscribe(o.peer, sfu.KindScreen); err != nil && !errors.Is(err, sfu.ErrNoTrack) {
 				s.log.Warn("subscribe screen", "from", o.id, "err", err)
 			}
 		}
-		if err := peer.Subscribe(o.peer, sfu.KindCamera); err != nil && !errors.Is(err, sfu.ErrNoTrack) {
-			s.log.Warn("subscribe camera", "from", o.id, "err", err)
+		if receives(s, o, sfu.KindCamera) {
+			if err := peer.Subscribe(o.peer, sfu.KindCamera); err != nil && !errors.Is(err, sfu.ErrNoTrack) {
+				s.log.Warn("subscribe camera", "from", o.id, "err", err)
+			}
 		}
 	}
 	metrics.Joins.WithLabelValues(lr.room.Slug(), "ok").Inc()
@@ -353,7 +381,11 @@ func (h *Handler) leave(s *session) {
 	delete(lr.members, s.id)
 	others := lr.membersExcept(s.id)
 	h.mu.Unlock()
+	wasNotes := lr.room.Notes()
 	lr.room.Leave(s.id)
+	if !s.bot {
+		h.rememberSpeaker(lr, s, wasNotes)
+	}
 	for _, o := range others {
 		_ = o.peer.Unsubscribe(s.peer, sfu.KindAudio)
 		_ = o.peer.Unsubscribe(s.peer, sfu.KindScreen)
@@ -364,6 +396,12 @@ func (h *Handler) leave(s *session) {
 	metrics.Leaves.WithLabelValues(s.slug).Inc()
 	metrics.SessionSeconds.Observe(time.Since(s.joined).Seconds())
 	h.dropBotsIfUnwanted(lr)
+	switch {
+	case s.botKind == RoleNotes:
+		h.notesBotLeft(lr, s)
+	case wasNotes && !lr.room.Notes():
+		h.stopNotes(lr) // the last person left
+	}
 	h.broadcast(lr)
 }
 
@@ -434,6 +472,9 @@ func (h *Handler) subscribeAll(lr *liveRoom, from *session, kind sfu.Kind) {
 	others := lr.membersExcept(from.id)
 	h.mu.Unlock()
 	for _, o := range others {
+		if !receives(o, from, kind) {
+			continue
+		}
 		if kind == sfu.KindCamera && h.declinesVideo(o) {
 			continue
 		}
