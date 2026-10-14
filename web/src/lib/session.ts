@@ -99,17 +99,26 @@ export class Session {
       sig.close(); // superseded while connecting
       return;
     }
-    this.rtc = new Rtc(
-      this.mic,
-      (m) => sig.send(m),
-      (pid, track) => this.onRemoteTrack(pid, track),
-      () => {
-        this.useTcp();
-        if (this.sig === sig) this.restart();
-      },
-      2500,
-      (t) => (this.state.transport = t),
-    );
+    try {
+      this.rtc = new Rtc(
+        this.mic,
+        (m) => sig.send(m),
+        (pid, track) => this.onRemoteTrack(pid, track),
+        () => {
+          this.useTcp();
+          if (this.sig === sig) this.restart();
+        },
+        2500,
+        (t) => (this.state.transport = t),
+      );
+    } catch (e) {
+      // Chrome refuses to create a peer connection while it believes the network is down, which
+      // happens for a moment when the network changes. Retry instead of leaving the socket open
+      // without a join until the server gives up on it.
+      console.warn('rtc', e);
+      this.restart();
+      return;
+    }
     sig.send({ type: 'join', ...this.wanted, client: this.clientId, ...(this.preferTcp ? { media: 'tcp' as const } : {}) });
   }
 
