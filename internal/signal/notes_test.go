@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -84,6 +85,12 @@ func waitReady(t *testing.T, store *notes.Store) notes.Transcript {
 // until reads frames until done(m) holds, failing on a frame of the banned type first.
 func until(t *testing.T, c *websocket.Conn, banned string, done func(anyMsg) bool) {
 	t.Helper()
+	untilNone(t, c, []string{banned}, done)
+}
+
+// untilNone reads frames until done(m) holds, failing on a frame of any banned type first.
+func untilNone(t *testing.T, c *websocket.Conn, banned []string, done func(anyMsg) bool) {
+	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		ctx, cancel := context.WithDeadline(context.Background(), deadline)
@@ -96,8 +103,8 @@ func until(t *testing.T, c *websocket.Conn, banned string, done func(anyMsg) boo
 		if err := json.Unmarshal(data, &m); err != nil {
 			t.Fatal(err)
 		}
-		if m.Type == banned {
-			t.Fatalf("unexpected %q", banned)
+		if slices.Contains(banned, m.Type) {
+			t.Fatalf("unexpected %q", m.Type)
 		}
 		if done(m) {
 			return
@@ -244,8 +251,13 @@ func TestNotesBotClosedAfterGrace(t *testing.T) {
 	expect(t, ca, "phrase")
 	notesOn(t, ca, false)
 	expect(t, bot, "stop")
-	expectClosed(t, bot) // it never leaves on its own
+	stopped := time.Now()
+	// The bot never leaves on its own and does not read: closing must not wait for its answer.
 	expect(t, ca, "notes_ready")
+	if took := time.Since(stopped); took < e.h.stopGrace-50*time.Millisecond || took > e.h.stopGrace+2*time.Second {
+		t.Fatalf("notes ready %v after the stop; grace %v", took, e.h.stopGrace)
+	}
+	expectClosed(t, bot)
 	waitReady(t, store)
 }
 
@@ -489,4 +501,73 @@ func TestNotesBotCannotAskForVideo(t *testing.T) {
 	if n := e.media.peer(nid).subCount(ida, sfu.KindCamera); n != 0 {
 		t.Fatalf("notes bot subscribed to a camera %d times", n)
 	}
+}
+
+// Review fix 1: the old meeting's bot flushes after a new meeting began. Its phrases go to the old
+// meeting's transcript, which ends when it leaves; the new meeting's people hear nothing of it.
+func TestOldBotFlushAfterANewMeetingBegan(t *testing.T) {
+	e, store := newNotesEnv(t, true)
+	e.h.stopGrace = 5 * time.Second
+	ca, ida := join(t, e, "Ann")
+	notesOn(t, ca, true)
+	bot, _ := joinNotesBot(t, e)
+	send(t, bot, phrase(ida, "Первая встреча.", 3*time.Second))
+	waitPhrases(t, e, 1)
+	_ = ca.Close(websocket.StatusNormalClosure, "")
+	expect(t, bot, "stop")
+	cb, _ := join(t, e, "Bob") // a new meeting while the old bot flushes
+	send(t, bot, phrase(ida, "Поздняя фраза.", time.Second))
+	send(t, bot, `{"type":"leave"}`)
+	expectClosed(t, bot)
+	untilNone(t, cb, []string{"notes_ready", "phrase"}, func(m anyMsg) bool {
+		return m.Type == "participants" && len(m.Participants) == 1
+	})
+	tr := waitReady(t, store)
+	if len(tr.Phrases) != 2 || tr.Phrases[1].Text != "Поздняя фраза." || tr.Phrases[1].Name != "Ann" {
+		t.Fatalf("transcript = %+v", tr)
+	}
+}
+
+// Review fix 1 (minor 3): the new meeting switching notes on and off while the old bot flushes
+// does not make the old meeting's notes ready to the new meeting's people.
+func TestNewMeetingIsNotToldOfTheOldNotes(t *testing.T) {
+	e, store := newNotesEnv(t, false)
+	e.h.stopGrace = 5 * time.Second
+	ca, ida := join(t, e, "Ann")
+	notesOn(t, ca, true)
+	bot, _ := joinNotesBot(t, e)
+	send(t, bot, phrase(ida, "Первая встреча.", 3*time.Second))
+	waitPhrases(t, e, 1)
+	_ = ca.Close(websocket.StatusNormalClosure, "")
+	expect(t, bot, "stop")
+	cb, _ := join(t, e, "Bob")
+	notesOn(t, cb, true)
+	notesOn(t, cb, false)
+	send(t, bot, `{"type":"leave"}`)
+	expectClosed(t, bot)
+	until(t, cb, "notes_ready", func(m anyMsg) bool {
+		return m.Type == "participants" && len(m.Participants) == 1 && !m.Notes
+	})
+	if tr := waitReady(t, store); len(tr.Phrases) != 1 || tr.Phrases[0].Text != "Первая встреча." {
+		t.Fatalf("transcript = %+v", tr)
+	}
+}
+
+// Review fix 2: notes switched off while the bot's join is still setting up media; the bot must
+// still get the stop and the grace.
+func TestNotesOffWhileTheBotJoins(t *testing.T) {
+	e, _ := newNotesEnv(t, false)
+	ca, _ := join(t, e, "Ann")
+	notesOn(t, ca, true)
+	entered, release := make(chan struct{}), make(chan struct{})
+	e.media.setHold(func() { close(entered); <-release })
+	bot := dial(t, e)
+	send(t, bot, `{"type":"join","room":"ops","name":"Заметки","role":"notes"}`)
+	<-entered
+	e.media.setHold(nil)
+	notesOn(t, ca, false)
+	close(release)
+	expect(t, bot, "joined")
+	expect(t, bot, "stop")
+	expectClosed(t, bot)
 }

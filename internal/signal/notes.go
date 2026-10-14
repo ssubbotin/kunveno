@@ -74,34 +74,25 @@ func (h *Handler) switchNotes(s *session, on bool) {
 	h.broadcast(lr)
 }
 
-// stopNotes asks the room's notes bot to finish: it sends its last phrases and leaves. A bot still
-// there after stopGrace is closed. Without a bot the transcript ends at once.
+// stopNotes asks the room's notes bots to finish: each sends its last phrases and leaves. A bot
+// still there after stopGrace is closed. Without a bot the transcript ends at once.
 func (h *Handler) stopNotes(lr *liveRoom) {
 	h.mu.Lock()
 	var stop []*session
-	present := false
 	for _, o := range lr.members {
-		if o.botKind != RoleNotes {
-			continue
-		}
-		present = true
-		if o.stopping {
+		if o.botKind != RoleNotes || o.stopping {
 			continue
 		}
 		o.stopping = true
 		b := o
 		b.stopTimer = time.AfterFunc(h.stopGrace, func() {
 			b.log.Warn("notes bot did not leave in time; closing it")
+			b.cancel() // ends its session at once; Close would wait for the bot's answer
 			_ = b.conn.Close(websocket.StatusNormalClosure, "notes off")
-			b.cancel()
 		})
 		stop = append(stop, b)
 	}
 	h.mu.Unlock()
-	if !present {
-		h.finishNotes(lr)
-		return
-	}
 	for _, b := range stop {
 		b.log.Info("notes stop")
 		if err := b.write(Stop()); err != nil {
@@ -109,52 +100,61 @@ func (h *Handler) stopNotes(lr *liveRoom) {
 			b.cancel()
 		}
 	}
+	h.finishNotes(lr) // does nothing while a bot of the transcript's meeting is still there
 }
 
-// notesBotLeft runs when a notes bot's session ends. Once no notes bot is left and the room does
-// not want notes, the transcript is finished. A bot that dropped while notes are wanted rejoins.
+// notesBotLeft runs when a notes bot's session ends; finishNotes decides whether the transcript is
+// done. A bot that dropped while notes are wanted rejoins.
 func (h *Handler) notesBotLeft(lr *liveRoom, s *session) {
 	h.mu.Lock()
 	if s.stopTimer != nil {
 		s.stopTimer.Stop()
 	}
-	others := false
-	for _, o := range lr.members {
-		if o.botKind == RoleNotes {
-			others = true
-		}
-	}
 	h.mu.Unlock()
-	if !lr.room.Notes() && !others {
-		h.finishNotes(lr)
-	}
+	h.finishNotes(lr)
 }
 
-// finishNotes ends the stored transcript of the meeting and tells the people in the room that it
-// is ready.
+// finishNotes ends the open transcript once no notes bot of its meeting is left to write to it and
+// that meeting no longer wants notes. The transcript of the current meeting is announced to the
+// people in the room; one of an earlier meeting (its bot flushed while a new meeting began) is
+// ended quietly, since its people are gone.
 func (h *Handler) finishNotes(lr *liveRoom) {
 	if h.notes == nil {
 		return
 	}
 	h.notesMu.Lock()
 	n := &lr.notes
+	meeting, active := lr.room.Meeting()
+	current := n.meeting.Equal(meeting)
 	ready := false
-	if n.open {
+	if n.open && !h.hasNotesBot(lr, n.meeting) && (!current || !lr.room.Notes()) {
 		if err := h.notes.End(lr.room.Slug(), time.Now()); err != nil {
 			h.log.Error("notes end", "room", lr.room.Slug(), "err", err)
 		} else {
-			ready = true
+			ready = current
 		}
 		n.open = false
 	}
-	if _, active := lr.room.Meeting(); !active {
-		n.departed = nil
+	if !active && !n.open && !h.hasNotesBot(lr, meeting) {
+		n.departed = nil // the meeting is over and no bot will send its late phrases
 	}
 	h.notesMu.Unlock()
 	if ready {
 		h.log.Info("notes ready", "room", lr.room.Slug())
 		h.sendPeople(lr, NotesReady())
 	}
+}
+
+// hasNotesBot reports whether a notes bot that joined during meeting is in the room.
+func (h *Handler) hasNotesBot(lr *liveRoom, meeting time.Time) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, o := range lr.members {
+		if o.botKind == RoleNotes && o.meeting.Equal(meeting) {
+			return true
+		}
+	}
+	return false
 }
 
 // phrase takes one phrase from the notes bot. An invalid phrase, or one whose speaker the server
@@ -173,12 +173,24 @@ func (h *Handler) phrase(s *session, m ClientMessage) {
 	}
 	h.mu.Unlock()
 	h.notesMu.Lock()
+	n := &lr.notes
 	if name == "" {
-		name = lr.notes.departed[m.Speaker]
+		name = n.departed[m.Speaker]
 	}
+	meeting, _ := lr.room.Meeting()
+	earlier := !s.meeting.Equal(meeting) // the bot flushes a meeting that has ended since
+	p := notes.Phrase{Name: name, Start: start, End: end, Text: text}
 	var err error
-	if name != "" {
-		err = h.appendPhrase(lr, notes.Phrase{Name: name, Start: start, End: end, Text: text})
+	stored := false
+	switch {
+	case name == "":
+	case !earlier:
+		err = h.appendPhrase(lr, p)
+		stored = err == nil
+	case n.open && n.meeting.Equal(s.meeting):
+		// Into its own meeting's transcript; never the start of one for the new meeting.
+		err = h.notes.Phrase(lr.room.Slug(), p)
+		stored = err == nil
 	}
 	h.notesMu.Unlock()
 	switch {
@@ -188,8 +200,11 @@ func (h *Handler) phrase(s *session, m ClientMessage) {
 	case err != nil:
 		s.log.Error("notes phrase", "err", err)
 		return
+	case !stored:
+		s.log.Info("phrase of an earlier meeting without open notes dropped")
+		return
 	}
-	if h.notesLive {
+	if h.notesLive && !earlier {
 		h.sendPeople(lr, LivePhrase(name, start.UnixMilli(), text))
 	}
 }

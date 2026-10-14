@@ -27,6 +27,13 @@ import (
 type fakeMedia struct {
 	mu    sync.Mutex
 	peers map[string]*fakePeer
+	hold  func() // when set, NewPeer calls it first: a test holds a join inside media setup
+}
+
+func (m *fakeMedia) setHold(f func()) {
+	m.mu.Lock()
+	m.hold = f
+	m.mu.Unlock()
 }
 
 type fakePeer struct {
@@ -46,6 +53,12 @@ type fakePeer struct {
 func newFakeMedia() *fakeMedia { return &fakeMedia{peers: map[string]*fakePeer{}} }
 
 func (m *fakeMedia) NewPeer(id string, sig sfu.Signaler, h sfu.Handlers) (MediaPeer, error) {
+	m.mu.Lock()
+	hold := m.hold
+	m.mu.Unlock()
+	if hold != nil {
+		hold()
+	}
 	p := &fakePeer{id: id, sig: sig, m: m, tcpOnly: h.TCPOnly, tracks: map[sfu.Kind]*webrtc.TrackLocalStaticRTP{}, subs: map[string]int{}}
 	m.mu.Lock()
 	m.peers[id] = p

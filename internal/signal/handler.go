@@ -79,6 +79,7 @@ type session struct {
 	noVideo        bool        // declined other participants' cameras; guarded by Handler.mu
 	stopping       bool        // notes bot told to stop; guarded by Handler.mu
 	stopTimer      *time.Timer // closes a stopped notes bot that does not leave; guarded by Handler.mu
+	meeting        time.Time   // notes bot: start of the meeting it joined to take notes of
 	client         string      // the page's id from join, if it sent one
 	lastReaction   time.Time   // for the reaction rate limit; only the session's read loop uses it
 	joined         time.Time
@@ -320,6 +321,9 @@ func (h *Handler) join(conn *websocket.Conn, cancel context.CancelFunc, m Client
 		return nil, CodeBadMessage, err.Error()
 	}
 	s := &session{id: id, name: m.Name, slug: m.Room, bot: bot, botKind: m.Role, client: m.Client, joined: time.Now(), conn: conn, cancel: cancel, log: h.log.With("room", m.Room, "participant", id)}
+	if m.Role == RoleNotes {
+		s.meeting, _ = lr.room.Meeting()
+	}
 	peer, err := h.media.NewPeer(id, s, sfu.Handlers{OnPublisher: h.onPublisher, OnFailed: h.onFailed, TCPOnly: m.Media == MediaTCP})
 	if err != nil {
 		lr.room.Leave(id)
@@ -358,6 +362,9 @@ func (h *Handler) join(conn *websocket.Conn, cancel context.CancelFunc, m Client
 	s.log.Info("joined", "name", m.Name)
 	h.broadcast(lr)
 	peer.Negotiate()
+	if s.botKind == RoleNotes && !lr.room.Notes() {
+		h.stopNotes(lr) // switched off while this bot was joining, before it was a member to stop
+	}
 	return s, "", ""
 }
 
@@ -373,6 +380,11 @@ func (lr *liveRoom) membersExcept(id string) []*session {
 
 func (h *Handler) leave(s *session) {
 	lr, _ := h.lookup(s.slug)
+	wasNotes := lr.room.Notes()
+	if !s.bot {
+		// Before leaving the members, so a phrase of this person is never without a name.
+		h.rememberSpeaker(lr, s, wasNotes)
+	}
 	h.mu.Lock()
 	if _, ok := lr.members[s.id]; !ok {
 		h.mu.Unlock()
@@ -381,11 +393,7 @@ func (h *Handler) leave(s *session) {
 	delete(lr.members, s.id)
 	others := lr.membersExcept(s.id)
 	h.mu.Unlock()
-	wasNotes := lr.room.Notes()
 	lr.room.Leave(s.id)
-	if !s.bot {
-		h.rememberSpeaker(lr, s, wasNotes)
-	}
 	for _, o := range others {
 		_ = o.peer.Unsubscribe(s.peer, sfu.KindAudio)
 		_ = o.peer.Unsubscribe(s.peer, sfu.KindScreen)
