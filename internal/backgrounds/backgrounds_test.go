@@ -14,6 +14,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -167,5 +169,106 @@ func TestBrokenPreviewIsNotCached(t *testing.T) {
 	}
 	if n := bytes.Count(logs.Bytes(), []byte("background preview failed")); n != 1 {
 		t.Fatalf("logged %d times: %s", n, logs.String())
+	}
+}
+
+// Requests for the same uncached preview share one decode.
+func TestConcurrentPreviewsDecodeOnce(t *testing.T) {
+	dir := t.TempDir()
+	writeJPEG(t, dir, "x.jpg", 640, 360)
+	d := New(dir, quiet())
+	const n = 8
+	var decodes atomic.Int32
+	release := make(chan struct{})
+	var waiting sync.WaitGroup
+	waiting.Add(n - 1)
+	d.decoding = func() {
+		decodes.Add(1)
+		<-release
+	}
+	d.joined = func() { waiting.Done() }
+	var done sync.WaitGroup
+	results := make([][]byte, n)
+	for i := 0; i < n; i++ {
+		done.Add(1)
+		go func() {
+			defer done.Done()
+			b, err := d.preview("x.jpg")
+			if err != nil {
+				t.Error(err)
+			}
+			results[i] = b
+		}()
+	}
+	// Without sharing, every request decodes on its own and the joins never come; let them all
+	// through after a while so the test fails instead of hanging.
+	joinedAll := make(chan struct{})
+	go func() { waiting.Wait(); close(joinedAll) }()
+	select {
+	case <-joinedAll:
+	case <-time.After(2 * time.Second):
+	}
+	close(release)
+	done.Wait()
+	if got := decodes.Load(); got != 1 {
+		t.Fatalf("decoded %d times", got)
+	}
+	for i, b := range results {
+		if len(b) == 0 || !bytes.Equal(b, results[0]) {
+			t.Fatalf("result %d differs", i)
+		}
+	}
+}
+
+// At most MaxDecodes previews are decoded at the same time.
+func TestPreviewDecodesAreLimited(t *testing.T) {
+	dir := t.TempDir()
+	const files = 6
+	for i := 0; i < files; i++ {
+		writeJPEG(t, dir, fmt.Sprintf("p%d.jpg", i), 64, 36)
+	}
+	d := New(dir, quiet())
+	var active, most, decodes atomic.Int32
+	entered := make(chan struct{}, files)
+	release := make(chan struct{})
+	d.decoding = func() {
+		now := active.Add(1)
+		for {
+			m := most.Load()
+			if now <= m || most.CompareAndSwap(m, now) {
+				break
+			}
+		}
+		decodes.Add(1)
+		entered <- struct{}{}
+		<-release
+		active.Add(-1)
+	}
+	var done sync.WaitGroup
+	for i := 0; i < files; i++ {
+		done.Add(1)
+		go func() {
+			defer done.Done()
+			if _, err := d.preview(fmt.Sprintf("p%d.jpg", i)); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	for i := 0; i < MaxDecodes; i++ {
+		<-entered
+	}
+	// The slots are full: no further decode may start until one finishes.
+	select {
+	case <-entered:
+		t.Error("a decode started beyond the limit")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	done.Wait()
+	if m := most.Load(); m > MaxDecodes {
+		t.Fatalf("%d decodes at once, limit %d", m, MaxDecodes)
+	}
+	if got := decodes.Load(); got != files {
+		t.Fatalf("decoded %d of %d", got, files)
 	}
 }

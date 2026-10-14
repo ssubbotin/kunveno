@@ -28,6 +28,9 @@ const (
 	MaxItems  = 50
 	PreviewW  = 320
 	PreviewH  = 180
+	// MaxDecodes is how many previews are decoded at once; a full decode of a 4K image holds
+	// tens of megabytes.
+	MaxDecodes = 2
 )
 
 var types = map[string]string{".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}
@@ -37,6 +40,13 @@ type Item struct {
 	Name   string `json:"name"`
 	Width  int    `json:"width"`
 	Height int    `json:"height"`
+}
+
+// making is a preview being made; requests for the same file wait for it.
+type making struct {
+	wg   sync.WaitGroup
+	jpeg []byte
+	err  error
 }
 
 type cached struct {
@@ -52,11 +62,19 @@ type Dir struct {
 
 	mu       sync.Mutex
 	previews map[string]cached
+	making   map[string]*making
+	slots    chan struct{}   // one per decode under way, at most MaxDecodes
 	warned   map[string]bool // files already reported as skipped
+
+	// Test hooks: decoding runs before each full decode, joined when a request waits for a
+	// decode of the same file already under way.
+	decoding func()
+	joined   func()
 }
 
 func New(path string, log *slog.Logger) *Dir {
-	return &Dir{path: path, log: log, previews: map[string]cached{}, warned: map[string]bool{}}
+	return &Dir{path: path, log: log, previews: map[string]cached{}, making: map[string]*making{},
+		slots: make(chan struct{}, MaxDecodes), warned: map[string]bool{}}
 }
 
 // List returns the usable images, sorted by name, at most MaxItems.
@@ -129,6 +147,8 @@ func (d *Dir) find(name string) (Item, bool) {
 }
 
 // preview returns a PreviewW x PreviewH JPEG crop (cover), cached until the file changes.
+// Requests for a file whose preview is being made wait for that one decode, and at most
+// MaxDecodes files are decoded at once.
 func (d *Dir) preview(name string) ([]byte, error) {
 	p := filepath.Join(d.path, name)
 	info, err := os.Stat(p)
@@ -136,16 +156,46 @@ func (d *Dir) preview(name string) ([]byte, error) {
 		return nil, err
 	}
 	d.mu.Lock()
-	c, ok := d.previews[name]
-	d.mu.Unlock()
-	if ok && c.size == info.Size() && c.mod.Equal(info.ModTime()) {
+	if c, ok := d.previews[name]; ok && c.size == info.Size() && c.mod.Equal(info.ModTime()) {
+		d.mu.Unlock()
 		return c.jpeg, nil
 	}
+	if c, ok := d.making[name]; ok {
+		d.mu.Unlock()
+		if d.joined != nil {
+			d.joined()
+		}
+		c.wg.Wait()
+		return c.jpeg, c.err
+	}
+	c := &making{}
+	c.wg.Add(1)
+	d.making[name] = c
+	d.mu.Unlock()
+
+	c.jpeg, c.err = d.render(p)
+	d.mu.Lock()
+	delete(d.making, name)
+	if c.err == nil {
+		d.previews[name] = cached{size: info.Size(), mod: info.ModTime(), jpeg: c.jpeg}
+	}
+	d.mu.Unlock()
+	c.wg.Done()
+	return c.jpeg, c.err
+}
+
+// render decodes the file and scales its centred crop, holding one of the decode slots.
+func (d *Dir) render(p string) ([]byte, error) {
+	d.slots <- struct{}{}
+	defer func() { <-d.slots }()
 	f, err := os.Open(p)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
+	if d.decoding != nil {
+		d.decoding()
+	}
 	src, _, err := image.Decode(f)
 	if err != nil {
 		return nil, err
@@ -164,9 +214,6 @@ func (d *Dir) preview(name string) ([]byte, error) {
 	if err := jpeg.Encode(&out, dst, &jpeg.Options{Quality: 80}); err != nil {
 		return nil, err
 	}
-	d.mu.Lock()
-	d.previews[name] = cached{size: info.Size(), mod: info.ModTime(), jpeg: out.Bytes()}
-	d.mu.Unlock()
 	return out.Bytes(), nil
 }
 
