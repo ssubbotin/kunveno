@@ -93,12 +93,12 @@ vídeo).
 **Actualizar** a una nueva versión, dentro del directorio:
 
 ```bash
-curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz --strip-components=1 kunveno/docker-compose.yml kunveno/grafana
 docker compose pull && docker compose up -d
 ```
 
-Solo cambian `docker-compose.yml` y `grafana/`; `.env`, `config.yaml` y los demás directorios se
-conservan.
+La pila usa las imágenes `latest`, así que esto descarga la nueva versión y reinicia solo los
+contenedores cuya imagen cambió; `.env`, `config.yaml` y los datos se conservan. Para quedarte en
+una versión, pon por ejemplo `KUNVENO_VERSION=0.2.4` en `.env`.
 
 ### Si algo no funciona
 

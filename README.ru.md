@@ -90,12 +90,12 @@ docker compose pull && docker compose up -d
 **Обновление** до нового выпуска, в каталоге установки:
 
 ```bash
-curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz --strip-components=1 kunveno/docker-compose.yml kunveno/grafana
 docker compose pull && docker compose up -d
 ```
 
-Меняются только `docker-compose.yml` и `grafana/`; `.env`, `config.yaml` и остальные каталоги
-остаются.
+Стек работает на образах `latest`, поэтому команда скачивает новый выпуск и перезапускает только
+контейнеры, у которых сменился образ; `.env`, `config.yaml` и данные остаются. Чтобы остаться на
+одном выпуске, задайте в `.env`, например, `KUNVENO_VERSION=0.2.4`.
 
 ### Если что-то не работает
 

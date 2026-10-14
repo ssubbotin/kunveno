@@ -33,7 +33,6 @@ deploy-bundle:
 	rm -rf dist/kunveno dist/kunveno.tgz && mkdir -p dist
 	cp -r deploy/kunveno dist/kunveno
 	find dist/kunveno -name .gitkeep -delete
-	sed 's/__KUNVENO_RELEASE__/$(VERSION)/' deploy/kunveno/docker-compose.yml > dist/kunveno/docker-compose.yml
 	chmod 600 dist/kunveno/.env dist/kunveno/config.yaml
 	tar --owner=0 --group=0 --numeric-owner -czf dist/kunveno.tgz -C dist kunveno
 
