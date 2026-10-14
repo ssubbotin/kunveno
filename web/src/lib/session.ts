@@ -46,7 +46,10 @@ export class Session {
   private screenAttached = false;
   private stopSelfLevel: (() => void) | null = null;
   private cam: CameraInput | null = null;
+  // Set while the camera opens or switches; a background change meanwhile is ignored.
   private switchingCam = false;
+  // Counts camera switch-offs and leaves, so an open that finishes after one is thrown away.
+  private camEpoch = 0;
   // The chosen camera background, from the preferences.
   private background: BackgroundChoice = NONE;
   // Set after our media connection failed, and remembered for a day; joins then ask the server
@@ -77,7 +80,7 @@ export class Session {
     await this.loadBackground();
     if (prefs.cameraOn && this.state.hasCamera && !this.cam) {
       try {
-        this.cam = await this.openCam();
+        this.cam = await this.openFreshCam();
       } catch (e) {
         console.warn('camera', e); // join without it; the button stays available
       }
@@ -128,6 +131,24 @@ export class Session {
     }
   }
 
+  // openFreshCam opens the camera for setCamera and join. The open includes the effect's worker and
+  // model, which take seconds: a background change meanwhile is ignored, and an input that finishes
+  // opening after the camera was switched off or the session left is stopped.
+  private async openFreshCam(): Promise<CameraInput | null> {
+    const epoch = this.camEpoch;
+    this.switchingCam = true;
+    try {
+      const c = await this.openCam();
+      if (c && this.camEpoch !== epoch) {
+        c.stop();
+        return null;
+      }
+      return c;
+    } finally {
+      this.switchingCam = false;
+    }
+  }
+
   // setBackground remembers the choice; with the camera open it switches inside the effect, or
   // reopens the camera when the effect starts or stops. A call during a switch is ignored, the
   // stored choice included, so the choice and the camera agree.
@@ -154,7 +175,13 @@ export class Session {
         this.state.backgroundError = false;
         return;
       }
-      const next = await this.openCam();
+      let next: CameraInput | null;
+      try {
+        next = await this.openCam();
+      } catch (e) {
+        this.useBackground(before); // the running camera stays
+        throw e;
+      }
       if (!next) {
         this.useBackground(before); // keep what is running
         return;
@@ -378,6 +405,7 @@ export class Session {
     this.micIn?.stop();
     this.micIn = null;
     this.state.noiseFilter = 'off';
+    this.camEpoch++;
     this.cam?.stop();
     this.cam = null;
     this.state.backgroundFps = 0;
@@ -398,6 +426,7 @@ export class Session {
 
   // setCamera turns our camera on or off and remembers the choice for the next visit.
   async setCamera(on: boolean): Promise<void> {
+    if (on && !this.cam && this.switchingCam) return; // already opening
     const prefs = loadPrefs(localStorage);
     savePrefs(localStorage, { ...prefs, cameraOn: on });
     if (!on) {
@@ -406,14 +435,18 @@ export class Session {
       return;
     }
     if (!this.cam) {
+      const epoch = this.camEpoch;
       let opened: CameraInput | null;
       try {
-        opened = await this.openCam();
+        opened = await this.openFreshCam();
       } catch (e) {
         console.warn('camera', e);
-        this.state.cameraError = 'camera.unavailable'; // a message key; the room translates it
+        // A message key; the room translates it. Not shown when the camera was switched off or the
+        // session left meanwhile.
+        if (this.camEpoch === epoch) this.state.cameraError = 'camera.unavailable';
         opened = null;
       }
+      if (this.camEpoch !== epoch) return; // switched off or left meanwhile; the input is stopped
       if (!opened) {
         // No camera, or its background cannot start (state.backgroundError): it stays off.
         savePrefs(localStorage, { ...loadPrefs(localStorage), cameraOn: false });
@@ -449,6 +482,7 @@ export class Session {
   }
 
   private dropCamera(): void {
+    this.camEpoch++;
     this.cam?.stop();
     this.cam = null;
     this.state.backgroundFps = 0;

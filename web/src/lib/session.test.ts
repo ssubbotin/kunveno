@@ -23,13 +23,17 @@ vi.mock('./micInput', () => ({
 
 // Camera inputs the session opened, in order; the background can be made to fail.
 type FakeCam = { track: { id: string; stop(): void }; deviceId: string; effect: { mode: unknown; setMode(m: unknown): void; stop(): void } | null; stopped: boolean; stop(): void };
-const cam = vi.hoisted(() => ({ opened: [] as FakeCam[], unavailable: false }));
+// gate holds an open until released (worker start-up and model load take seconds); fail makes the
+// next open reject with a plain error (the device busy).
+const cam = vi.hoisted(() => ({ opened: [] as FakeCam[], unavailable: false, gate: null as Promise<void> | null, fail: null as Error | null }));
 vi.mock('./cameraInput', () => {
   class BackgroundUnavailable extends Error {}
   return {
     BackgroundUnavailable,
     modeFor: async (c: { kind: string }) => (c.kind === 'none' ? null : { kind: c.kind }),
     openCamera: async (_id: string, choice: { kind: string }) => {
+      if (cam.gate) await cam.gate;
+      if (cam.fail) throw cam.fail;
       if (choice.kind !== 'none' && cam.unavailable) throw new BackgroundUnavailable('no');
       const c: FakeCam = {
         track: { id: `cam${cam.opened.length}`, stop() {} },
@@ -126,6 +130,8 @@ describe('Session', () => {
     mic.filterWorks = true;
     cam.opened.length = 0;
     cam.unavailable = false;
+    cam.gate = null;
+    cam.fail = null;
     const track = { enabled: true, stop() {} };
     vi.stubGlobal('WebSocket', FakeSocket);
     vi.stubGlobal('RTCPeerConnection', FakePeerConnection);
@@ -356,5 +362,85 @@ describe('Session', () => {
     expect(s.state.background).toBe('none');
     expect(cam.opened[0].effect).toBeNull();
     expect(JSON.parse(localStorage.getItem('kunveno.prefs') ?? '{}').background).toEqual({ kind: 'none' });
+  });
+
+  // slowOpen makes the next camera opens wait until the returned function is called.
+  function slowOpen(): () => void {
+    let release = () => {};
+    cam.gate = new Promise<void>((r) => (release = r));
+    return () => {
+      cam.gate = null;
+      release();
+    };
+  }
+
+  it('stops a camera that finished opening after the participant left', async () => {
+    const start = vi.spyOn(Rtc.prototype, 'startCamera').mockResolvedValue();
+    const s = await joined();
+    const release = slowOpen();
+    const turning = s.setCamera(true);
+    await flush();
+    s.leave();
+    release();
+    await turning;
+    expect(cam.opened).toHaveLength(1);
+    expect(cam.opened[0].stopped).toBe(true);
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it('stops a camera that finished opening after it was switched off', async () => {
+    const start = vi.spyOn(Rtc.prototype, 'startCamera').mockResolvedValue();
+    const s = await joined();
+    const release = slowOpen();
+    const turning = s.setCamera(true);
+    await flush();
+    await s.setCamera(false);
+    release();
+    await turning;
+    expect(cam.opened[0].stopped).toBe(true);
+    expect(start).not.toHaveBeenCalled();
+    expect(s.state.cameraOn).toBe(false);
+  });
+
+  it('stops a camera opened at join when the participant left meanwhile', async () => {
+    localStorage.setItem('kunveno.prefs', JSON.stringify({ cameraOn: true }));
+    const release = slowOpen();
+    const s = new Session();
+    const joining = s.join('ops', '1234', 'Ann');
+    await flush();
+    s.leave();
+    release();
+    await joining;
+    expect(cam.opened).toHaveLength(1);
+    expect(cam.opened[0].stopped).toBe(true);
+  });
+
+  it('ignores a background change while the camera is opening', async () => {
+    vi.spyOn(Rtc.prototype, 'startCamera').mockResolvedValue();
+    const s = await joined();
+    const release = slowOpen();
+    const turning = s.setCamera(true);
+    await flush();
+    await s.setBackground({ kind: 'blur' });
+    release();
+    await turning;
+    expect(s.state.cameraOn).toBe(true);
+    expect(cam.opened).toHaveLength(1);
+    expect(cam.opened[0].effect).toBeNull();
+    expect(s.state.background).toBe('none');
+    expect(JSON.parse(localStorage.getItem('kunveno.prefs') ?? '{}').background).toEqual({ kind: 'none' });
+  });
+
+  it('keeps the running camera and its background when reopening fails', async () => {
+    vi.spyOn(Rtc.prototype, 'startCamera').mockResolvedValue();
+    const replace = vi.spyOn(Rtc.prototype, 'replaceCamera').mockResolvedValue();
+    const s = await joined();
+    await s.setCamera(true);
+    cam.fail = new Error('NotReadableError');
+    await expect(s.setBackground({ kind: 'blur' })).rejects.toThrow('NotReadableError');
+    expect(s.state.background).toBe('none');
+    expect(cam.opened[0].stopped).toBe(false);
+    expect(replace).not.toHaveBeenCalled();
+    expect(s.state.cameraOn).toBe(true);
   });
 });
