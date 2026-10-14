@@ -33,6 +33,9 @@ Licencia GNU Affero General Public License v3.0 only; hay disponible una licenci
   variación del retardo, medidos en el servidor).
 - Una prueba de eco por sala, salas que reproducen un archivo de vídeo en bucle y salas que
   muestran una cámara RTSP en directo.
+- Notas de la reunión con el complemento comercial `kunveno-notes`: el habla de cada participante se
+  reconoce en el servidor y el texto de la última reunión de la sala se descarga en Markdown (véase
+  [Notas de la reunión](#notas-de-la-reunión)).
 - Funciona en redes difíciles: si a un participante le falla UDP, el navegador pasa a ICE sobre
   TCP en el mismo puerto.
 - Interfaz en ruso (por defecto), inglés y español; el título de la instalación es configurable.
@@ -155,6 +158,29 @@ da a esos usuarios el camino rápido.
 **Compartir pantalla** es una función propia del navegador (`getDisplayMedia`); no se instala nada
 en los equipos de los usuarios. Funciona en Chrome y Firefox en Linux y Windows.
 
+## Notas de la reunión
+
+Un participante puede activar las notas en una sala (Más → Tomar notas). El bot de notas entra
+entonces en la sala como un participante llamado «Notas», escucha el micrófono de cada persona por
+separado y envía las frases reconocidas al servidor, que guarda el texto: quién dijo qué y cuándo.
+Todos ven «● Tomando notas» en la cabecera de la sala. Cuando se desactivan las notas o sale la
+última persona, quienes siguen en la sala reciben «Las notas están listas» con un botón
+«Descargar»; en la página de inicio el mismo archivo está disponible como «Notas de la última
+reunión», con el PIN de la sala. El archivo es Markdown: la sala, la fecha y la hora, quién habló y
+las frases en orden, con las pausas de la grabación marcadas.
+
+- El bot es el complemento comercial `kunveno-notes` (reconocimiento de voz en el procesador del
+  servidor, sin servicios externos y sin guardar el audio). No forma parte de este repositorio; para
+  una licencia escribe a ssubbotin@gmail.com. La guía de instalación acompaña a la licencia.
+- Sin el complemento deja `notes.enabled: false` (por defecto): las salas y la página de inicio no
+  muestran nada de las notas.
+- Solo se guardan las notas de la última reunión de cada sala, durante `notes.keep` desde que las
+  notas terminan (una desactivación o el final de la reunión; un día por defecto); la primera frase
+  de la reunión siguiente las sustituye. Eliminar una sala elimina sus notas. Descargarlas exige el
+  PIN de la sala, y los PIN erróneos cuentan para el mismo bloqueo que al entrar.
+- `notes.live: true` muestra las frases en la sala a medida que se reconocen (un panel lateral),
+  para comprobar el reconocimiento.
+
 ## Cómo funciona
 
 ![Cómo encaja kunveno](docs/images/architecture.svg)
@@ -232,6 +258,10 @@ repasa las comprobaciones manuales de [docs/test-matrix.md](docs/test-matrix.md)
 | `rooms[]` | `slug`, `name`, `pin`, `max_participants` y, opcionalmente, `player: {file, name}` para un vídeo en bucle del directorio media o `player: {url, name}` para una cámara en directo (`rtsp://` o `rtsps://`; las credenciales de la URL se ocultan en los registros) |
 | `rooms_file` | dónde se guardan las salas creadas desde la página de inicio (`/var/lib/kunveno/rooms.json`) |
 | `backgrounds_dir` | carpeta con las imágenes de fondo virtual (`/var/lib/kunveno/backgrounds`; el stack monta ahí `backgrounds/`) |
+| `notes.enabled` | `true` ofrece notas de la reunión en las salas; necesita el complemento `kunveno-notes` (por defecto `false`, que oculta todo lo relativo a las notas) |
+| `notes.keep` | cuánto se guardan las notas tras terminar: un número entero y `m`, `h` o `d` (`90m`, `12h`, `1d`, `2d`; por defecto `1d`) |
+| `notes.live` | `true` muestra las frases en la sala a medida que se reconocen, para comprobar el reconocimiento (por defecto `false`) |
+| `notes.dir` | dónde se guardan las notas (`/var/lib/kunveno/notes`, que en el stack es `data/notes`) |
 
 `.env`, junto al archivo compose, fija la versión (`KUNVENO_VERSION`), los puertos, el nombre
 público del equipo para Grafana y su contraseña de administrador.

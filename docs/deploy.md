@@ -126,6 +126,51 @@ TCP. When the camera is unreachable the player stays in the room and retries eve
 password is masked in the logs; `config.yaml` keeps it, so keep the file readable by you alone. The
 player container uses the host network, so it reaches cameras the host can reach.
 
+## Meeting notes
+
+Notes need the commercial `kunveno-notes` add-on, which ships its own image and a compose overlay
+with an installation guide. With the add-on installed, set `notes.enabled: true` in `config.yaml`
+and run `docker compose restart server`; with `false` (the default) the server ignores the notes
+switch, refuses the notes bot, lists no rooms at `/internal/notes`, leaves `notes_until` out of
+`/api/rooms`, answers downloads with 404, and the client shows nothing about notes.
+
+- **Storage.** The server writes `data/notes/<room>.jsonl` (mode 0600), one line per phrase plus
+  the meeting's header, pauses and end; a restart loses nothing already written, and a file cut off
+  by a restart ends at its last line. Markdown is built on every download, in the server's time
+  zone (the stack mounts the host's `/etc/localtime`). Notes expire `notes.keep` after the notes
+  end (a switch-off or the end of the meeting) and are swept every minute, also while
+  `notes.enabled` is off; deleting a room deletes them, also while notes are disabled.
+- **Access.** Downloading needs the room PIN (`POST /api/rooms/<room>/notes` with
+  `{"pin":"…","lang":"ru|en|es"}`), and wrong PINs count toward the same block as joins.
+  `/api/rooms` shows only until when a room's notes are kept.
+- **Debugging the recognition.** `notes.live: true` sends each phrase to the room as it arrives; the
+  client shows it in a side panel.
+
+**The notes bot contract.** The add-on depends on this interface of the server; it changes only
+together with the add-on (the same text is the package comment of `internal/signal/protocol.go`):
+
+1. `GET /internal/notes` on loopback (never proxied by nginx) returns a JSON list of the slugs of
+   rooms that want notes; the bot polls it every 2 s.
+2. The bot joins each listed room over loopback with `{"type":"join","room":…,"name":…,"role":"notes"}`
+   (no PIN, through `pkg/botclient`); the join is refused unless the room wants notes. It sends no
+   media and receives every person's audio track (stream id = participant id); no video, no other
+   helper's audio.
+3. Each recognised phrase goes to the server as
+   `{"type":"phrase","speaker":<participant id>,"start":<unix ms>,"end":<unix ms>,"text":…}`. A
+   malformed frame (wrong field types, a missing speaker, start or end) gets `bad_message` and the
+   server closes the socket. A well-formed phrase that fails the content checks is ignored and the
+   socket stays open: text 1..2000 characters after every whitespace run is collapsed to one space
+   and the ends are trimmed, start positive and not after end, end at most 60 s ahead of the
+   server's clock, a known speaker. The server drops a phrase of an unknown speaker; people who
+   left during the meeting stay known.
+4. When the room no longer wants notes (switched off, or the last person left) the server sends
+   `{"type":"stop"}`; the bot finishes its pending phrases, sends them, then `{"type":"leave"}`. A bot
+   still there 10 s after the stop is closed. Only then are the notes ready.
+5. A bot that loses its socket while the room still wants notes rejoins and sends what it recognised
+   meanwhile. A bot is bound to the meeting it joined: it cannot write into a later one.
+
+The Debian packages have no notes add-on; with them leave `notes.enabled` off.
+
 ## Monitoring (Prometheus and Grafana)
 
 `kunveno-server` exposes Prometheus metrics at `/metrics` to loopback clients only (nginx does not

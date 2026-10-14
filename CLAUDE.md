@@ -62,6 +62,10 @@ Go packages are separated so each is tested alone:
 - `internal/config`: YAML at `/etc/kunveno/config.yaml`, with `KUNVENO_LISTEN` and
   `KUNVENO_ADVERTISE_IP` filling gaps; configured rooms need a restart to change, rooms created in
   the lobby are kept in `rooms_file`.
+- `internal/notes`: meeting notes: the append-only transcript store, Markdown rendering, expiry.
+  The notes bot itself is the closed `kunveno-notes` add-on (another repository); it depends on the
+  bot contract documented in `internal/signal/protocol.go` and on `pkg/botclient`, so change those
+  only together with it. `notes.enabled` (default false) hides every notes control.
 
 Media model, which explains most design choices:
 
@@ -77,7 +81,7 @@ Media model, which explains most design choices:
   as `sharer` in a `participants` snapshot. A disconnect releases the lock and unsubscribes everyone.
 - Keyframes: PLI to the sharer whenever a subscriber attaches to the screen track; subscriber PLIs
   are forwarded to the sharer.
-- Reconnection is always a fresh `join` (the client keeps name and PIN in `sessionStorage`).
+- Reconnection is always a fresh `join` (the client keeps the name and the PINs of rooms it entered in `localStorage`, `kunveno.name` and `kunveno.pins`; the room and PIN of the current session stay in memory).
 
 Web client logic lives in `web/src/lib/` (`protocol.ts` validating parser, `state.svelte.ts` rune
 state, `signaling.ts` reconnect with 1 to 10 s backoff, `rtc.ts`, `levels.ts`, `session.ts`,
