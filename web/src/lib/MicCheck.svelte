@@ -10,6 +10,7 @@
   import BackgroundPicker from './BackgroundPicker.svelte';
   import { openCamera, BackgroundUnavailable, type CameraInput } from './cameraInput';
   import { NONE, type BackgroundChoice } from './background/choice';
+  import { isLost } from './background/stored';
 
   let { name = '' }: { name?: string } = $props();
 
@@ -51,12 +52,30 @@
   let bgError = $state(false);
   let showPicker = $state(false);
   let unavailableDialog: HTMLDialogElement | undefined = $state();
+  // The stored image is gone (as the room checks it at join): the camera stays off until the person
+  // chooses again, and the picker says so. Checked once, before the camera first opens.
+  let lost = $state(false);
+  let lostCheck: Promise<boolean> | null = null;
+  function checkLost(): Promise<boolean> {
+    lostCheck ??= isLost(prefs.background ?? NONE).then((l) => (lost = l));
+    return lostCheck;
+  }
+  function chosen() {
+    lost = false;
+    lostCheck = Promise.resolve(false);
+  }
 
   async function startCamera() {
     stopCamera();
     camError = '';
     bgError = false;
     const mine = camGeneration;
+    if (await checkLost()) {
+      if (mine !== camGeneration) return;
+      bgError = true;
+      setPref({ cameraOn: false });
+      return;
+    }
     let opened: CameraInput;
     try {
       opened = await openCamera(prefs.cameraId, prefs.background ?? NONE, (f) => (bgFps = f));
@@ -91,11 +110,13 @@
   }
 
   function chooseBg(c: BackgroundChoice) {
+    chosen();
     setPref({ background: c });
     if (prefs.cameraOn) void startCamera();
   }
 
   function withoutBackground() {
+    chosen();
     setPref({ background: NONE, cameraOn: true });
     unavailableDialog?.close();
     void startCamera();
@@ -194,6 +215,7 @@
   }
 
   onMount(() => {
+    void checkLost(); // so the picker shows the notice even with the camera off
     // Start right away when the browser already allows the microphone; otherwise wait for a click.
     void navigator.permissions?.query({ name: 'microphone' as PermissionName })
       .then((p) => { if (p.state === 'granted') void start(); })
@@ -248,17 +270,18 @@
       <button type="button" class="btn quiet" aria-expanded={showPicker} aria-controls="bg-panel" onclick={() => (showPicker = !showPicker)}>{t('bg.title')}</button>
       {#if showPicker}
         <div id="bg-panel">
-          <BackgroundPicker current={prefs.background ?? NONE} fps={bgFps} lost={false} onchoose={chooseBg} />
+          <BackgroundPicker current={prefs.background ?? NONE} fps={bgFps} {lost} onchoose={chooseBg} />
         </div>
       {/if}
     </div>
   {/if}
   {#if bgError}
     <dialog bind:this={unavailableDialog} aria-labelledby="bg-unavailable" oncancel={cancelBackground}>
-      <p id="bg-unavailable">{t('bg.unavailable')}</p>
+      <!-- Cancel comes first and takes the focus, so Enter keeps the camera off. -->
+      <p id="bg-unavailable">{lost ? t('bg.lost') : t('bg.unavailable')}</p>
       <div class="actions">
-        <button type="button" class="btn" onclick={withoutBackground}>{t('bg.withoutBg')}</button>
-        <button type="button" class="btn quiet" onclick={cancelBackground}>{t('bg.cancel')}</button>
+        <button type="button" class="btn" onclick={cancelBackground}>{t('bg.cancel')}</button>
+        <button type="button" class="btn quiet" onclick={withoutBackground}>{t('bg.withoutBg')}</button>
       </div>
     </dialog>
   {/if}

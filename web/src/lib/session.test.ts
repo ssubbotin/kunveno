@@ -25,12 +25,19 @@ vi.mock('./micInput', () => ({
 type FakeCam = { track: { id: string; stop(): void }; deviceId: string; effect: { mode: unknown; setMode(m: unknown): void; stop(): void } | null; stopped: boolean; stop(): void };
 // gate holds an open until released (worker start-up and model load take seconds); fail makes the
 // next open reject with a plain error (the device busy).
-const cam = vi.hoisted(() => ({ opened: [] as FakeCam[], unavailable: false, gate: null as Promise<void> | null, fail: null as Error | null }));
+// imageFails makes an image unloadable while blur still works.
+const cam = vi.hoisted(() => ({ opened: [] as FakeCam[], unavailable: false, imageFails: false, gate: null as Promise<void> | null, fail: null as Error | null }));
+// Whether this browser holds an own image: null when its storage cannot be read.
+const own = vi.hoisted(() => ({ has: true as boolean | null }));
+vi.mock('./background/ownImage', () => ({ hasOwn: async () => own.has }));
 vi.mock('./cameraInput', () => {
   class BackgroundUnavailable extends Error {}
   return {
     BackgroundUnavailable,
-    modeFor: async (c: { kind: string }) => (c.kind === 'none' ? null : { kind: c.kind }),
+    modeFor: async (c: { kind: string }) => {
+      if (c.kind === 'image' && cam.imageFails) throw new BackgroundUnavailable('image');
+      return c.kind === 'none' ? null : { kind: c.kind };
+    },
     openCamera: async (_id: string, choice: { kind: string }) => {
       if (cam.gate) await cam.gate;
       if (cam.fail) throw cam.fail;
@@ -130,6 +137,8 @@ describe('Session', () => {
     mic.filterWorks = true;
     cam.opened.length = 0;
     cam.unavailable = false;
+    cam.imageFails = false;
+    own.has = true;
     cam.gate = null;
     cam.fail = null;
     const track = { enabled: true, stop() {} };
@@ -354,14 +363,91 @@ describe('Session', () => {
     expect(cam.opened[0].effect).not.toBeNull();
   });
 
-  it('drops a stored server image that is gone and says so', async () => {
+  const presets = (...names: string[]) => async () => ({ ok: true, json: async () => names.map((name) => ({ name, width: 1920, height: 1080 })) });
+  const prefs = () => JSON.parse(localStorage.getItem('kunveno.prefs') ?? '{}');
+
+  it('keeps the camera off at join when the stored server image is gone, and says so at once', async () => {
+    const start = vi.spyOn(Rtc.prototype, 'startCamera').mockResolvedValue();
     localStorage.setItem('kunveno.prefs', JSON.stringify({ cameraOn: true, background: { kind: 'image', source: 'server', name: 'gone.jpg' } }));
-    vi.stubGlobal('fetch', async () => ({ json: async () => [{ name: 'beach.jpg', width: 1920, height: 1080 }] }));
+    vi.stubGlobal('fetch', presets('beach.jpg'));
+    const s = await joined();
+    expect(cam.opened).toHaveLength(0);
+    expect(s.state.cameraOn).toBe(false);
+    expect(s.state.backgroundLost).toBe(true);
+    expect(s.state.backgroundError).toBe(true); // the dialog opens at once
+    // Pressing the camera button again does not show the room either.
+    s.state.backgroundError = false; // the dialog was cancelled
+    await s.setCamera(true);
+    expect(cam.opened).toHaveLength(0);
+    expect(s.state.backgroundError).toBe(true);
+    expect(start).not.toHaveBeenCalled();
+    // Only the explicit answer turns the camera on without a background.
+    await s.cameraWithoutBackground();
+    expect(cam.opened).toHaveLength(1);
+    expect(cam.opened[0].effect).toBeNull();
+    expect(s.state.cameraOn).toBe(true);
+    expect(s.state.backgroundLost).toBe(false);
+    expect(prefs().background).toEqual({ kind: 'none' });
+  });
+
+  it('keeps the camera off at join when the own image was deleted', async () => {
+    localStorage.setItem('kunveno.prefs', JSON.stringify({ cameraOn: true, background: { kind: 'image', source: 'own' } }));
+    own.has = false;
+    const s = await joined();
+    expect(cam.opened).toHaveLength(0);
+    expect(s.state.backgroundLost).toBe(true);
+    expect(s.state.backgroundError).toBe(true);
+  });
+
+  it('a chosen background ends the lost state', async () => {
+    vi.spyOn(Rtc.prototype, 'startCamera').mockResolvedValue();
+    localStorage.setItem('kunveno.prefs', JSON.stringify({ cameraOn: false, background: { kind: 'image', source: 'server', name: 'gone.jpg' } }));
+    vi.stubGlobal('fetch', presets());
     const s = await joined();
     expect(s.state.backgroundLost).toBe(true);
-    expect(s.state.background).toBe('none');
-    expect(cam.opened[0].effect).toBeNull();
-    expect(JSON.parse(localStorage.getItem('kunveno.prefs') ?? '{}').background).toEqual({ kind: 'none' });
+    expect(s.state.backgroundError).toBe(false); // the camera was not wanted: nothing to say yet
+    await s.setBackground({ kind: 'blur' });
+    expect(s.state.backgroundLost).toBe(false);
+    await s.setCamera(true);
+    expect(cam.opened).toHaveLength(1);
+    expect(cam.opened[0].effect).not.toBeNull();
+  });
+
+  it('keeps the stored image when the presets cannot be fetched', async () => {
+    localStorage.setItem('kunveno.prefs', JSON.stringify({ cameraOn: true, background: { kind: 'image', source: 'server', name: 'beach.jpg' } }));
+    vi.stubGlobal('fetch', async () => ({ ok: false, status: 502, json: async () => [] }));
+    const s = await joined();
+    expect(s.state.backgroundLost).toBe(false);
+    expect(s.state.background).toBe('image');
+    expect(prefs().background).toEqual({ kind: 'image', source: 'server', name: 'beach.jpg' });
+    expect(cam.opened).toHaveLength(1);
+    expect(cam.opened[0].effect).not.toBeNull();
+  });
+
+  it('keeps the stored own image when this browser storage cannot be read', async () => {
+    localStorage.setItem('kunveno.prefs', JSON.stringify({ cameraOn: true, background: { kind: 'image', source: 'own' } }));
+    own.has = null;
+    const s = await joined();
+    expect(s.state.backgroundLost).toBe(false);
+    expect(cam.opened).toHaveLength(1);
+    expect(cam.opened[0].effect).not.toBeNull();
+  });
+
+  it('keeps blur running and reports in the picker when an image cannot load', async () => {
+    vi.spyOn(Rtc.prototype, 'startCamera').mockResolvedValue();
+    const s = await joined();
+    await s.setBackground({ kind: 'blur' });
+    await s.setCamera(true);
+    cam.imageFails = true;
+    await s.setBackground({ kind: 'image', source: 'server', name: 'beach.jpg' });
+    expect(s.state.backgroundError).toBe(false); // no dialog that offers the camera without a background
+    expect(s.state.backgroundImageError).toBe(true);
+    expect(s.state.background).toBe('blur');
+    expect(cam.opened[0].effect?.mode).toEqual({ kind: 'blur' });
+    expect(s.state.cameraOn).toBe(true);
+    cam.imageFails = false;
+    await s.setBackground({ kind: 'image', source: 'own' });
+    expect(s.state.backgroundImageError).toBe(false);
   });
 
   // slowOpen makes the next camera opens wait until the returned function is called.

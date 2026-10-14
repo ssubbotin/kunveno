@@ -7,11 +7,15 @@ export function presetsFrom(v: unknown): Preset[] {
     !!p && typeof p.name === 'string' && p.name !== '' && Number.isInteger(p.width) && Number.isInteger(p.height));
 }
 
-export async function fetchPresets(): Promise<Preset[]> {
+// fetchPresets returns the server's presets, or null when the list could not be fetched: a failed
+// request says nothing about which presets exist.
+export async function fetchPresets(): Promise<Preset[] | null> {
   try {
-    return presetsFrom(await (await fetch('/api/backgrounds')).json());
+    const res = await fetch('/api/backgrounds');
+    if (!res.ok) return null;
+    return presetsFrom(await res.json());
   } catch {
-    return [];
+    return null;
   }
 }
 

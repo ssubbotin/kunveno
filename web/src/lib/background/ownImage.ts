@@ -49,6 +49,12 @@ export async function deleteOwn(): Promise<void> {
   await tx('readwrite', (s) => s.delete(KEY));
 }
 
-export async function hasOwn(): Promise<boolean> {
-  return (await loadOwn()) !== null;
+// hasOwn tells whether this browser holds an own image, or null when its storage cannot be read
+// (blocked, or a private window that refuses IndexedDB).
+export async function hasOwn(): Promise<boolean | null> {
+  try {
+    return ((await tx('readonly', (s) => s.get(KEY))) ?? null) !== null;
+  } catch {
+    return null;
+  }
 }

@@ -170,9 +170,11 @@
       await new Promise((r) => setTimeout(r, 50));
     }
   }
+  // The lost notice stays until another choice; the note about an image that failed to load is
+  // for the switch just made.
   function closedBackground() {
     bgOpen = false;
-    rs.backgroundLost = false;
+    rs.backgroundImageError = false;
   }
   async function chooseBg(c: BackgroundChoice) {
     try {
@@ -223,15 +225,16 @@
   <dialog class="bg-dialog" id="bg-dialog" bind:this={bgDialog} aria-labelledby="bg-title" onclose={closedBackground}>
     <h2 id="bg-title">{t('bg.title')}</h2>
     {#if bgOpen}
-      <BackgroundPicker current={currentChoice} fps={rs.cameraOn ? rs.backgroundFps : null} lost={rs.backgroundLost} onchoose={chooseBg} />
+      <BackgroundPicker current={currentChoice} fps={rs.cameraOn ? rs.backgroundFps : null} lost={rs.backgroundLost} imageError={rs.backgroundImageError} onchoose={chooseBg} />
     {/if}
     <form method="dialog"><button class="btn">{t('bg.close')}</button></form>
   </dialog>
+  <!-- The camera stays off: cancel comes first and takes the focus, so Enter never shows the room. -->
   <dialog class="bg-dialog" bind:this={unavailableDialog} aria-labelledby="bg-unavailable" oncancel={cancelBackground}>
-    <p id="bg-unavailable">{t('bg.unavailable')}</p>
+    <p id="bg-unavailable">{rs.backgroundLost ? t('bg.lost') : t('bg.unavailable')}</p>
     <div class="actions">
-      <button type="button" class="btn" onclick={withoutBackground}>{t('bg.withoutBg')}</button>
-      <button type="button" class="btn quiet" onclick={cancelBackground}>{t('bg.cancel')}</button>
+      <button type="button" class="btn" onclick={cancelBackground}>{t('bg.cancel')}</button>
+      <button type="button" class="btn quiet" onclick={withoutBackground}>{t('bg.withoutBg')}</button>
     </div>
   </dialog>
   <header class="bar">

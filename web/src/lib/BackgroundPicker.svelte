@@ -7,7 +7,10 @@
   import { nextIndex } from './roving';
 
   // The background choices: none, blur, the server's presets and the participant's own image.
-  let { current, fps, lost, onchoose }: { current: BackgroundChoice; fps: number | null; lost: boolean; onchoose: (c: BackgroundChoice) => void } = $props();
+  // lost: the stored image is gone; imageError: an image could not replace the running effect.
+  let { current, fps, lost, imageError = false, onchoose }: {
+    current: BackgroundChoice; fps: number | null; lost: boolean; imageError?: boolean; onchoose: (c: BackgroundChoice) => void;
+  } = $props();
 
   let presets = $state<Preset[]>([]);
   let ownUrl = $state<string | null>(null);
@@ -20,7 +23,7 @@
     ownUrl = b ? URL.createObjectURL(b) : null;
   }
   onMount(() => {
-    void fetchPresets().then((p) => (presets = p));
+    void fetchPresets().then((p) => (presets = p ?? []));
     void refreshOwn();
     return () => { if (ownUrl) URL.revokeObjectURL(ownUrl); };
   });
@@ -34,6 +37,9 @@
   ]);
   const keyOf = (c: BackgroundChoice) => (c.kind === 'image' ? (c.source === 'own' ? 'own' : 'p:' + c.name) : c.kind);
   const selected = $derived(keyOf(current));
+  // The option reached by Tab: the selected one, or the first when the choice is not listed (a
+  // preset that is gone, or a list that failed to load).
+  const tabKey = $derived(options.some((o) => o.key === selected) ? selected : options[0]?.key);
 
   function onKey(ev: KeyboardEvent, i: number) {
     const n = nextIndex(i, options.length, ev.key);
@@ -68,7 +74,7 @@
 <div class="picker">
   <div class="grid" role="radiogroup" aria-label={t('bg.title')}>
     {#each options as o, i (o.key)}
-      <button type="button" role="radio" class="opt" aria-checked={selected === o.key} tabindex={selected === o.key ? 0 : -1}
+      <button type="button" role="radio" class="opt" aria-checked={selected === o.key} tabindex={tabKey === o.key ? 0 : -1}
         onclick={() => onchoose(o.choice)} onkeydown={(e) => onKey(e, i)}>
         {#if o.thumb}<img src={o.thumb} alt="" />{:else}<span class="swatch {o.key}" aria-hidden="true"></span>{/if}
         <span class="label">{o.label}</span>
@@ -82,7 +88,7 @@
     <small>{t('bg.privacy')}</small>
   </div>
   <p class="status" role="status">
-    {#if error}{error}{:else if lost}{t('bg.lost')}{:else if current.kind !== 'none' && fps !== null}{fps < 12 ? t('bg.slow', { fps }) : t('bg.status', { fps })}{/if}
+    {#if error}{error}{:else if imageError}{t('bg.imageError')}{:else if lost}{t('bg.lost')}{:else if current.kind !== 'none' && fps !== null}{fps < 12 ? t('bg.slow', { fps }) : t('bg.status', { fps })}{/if}
   </p>
 </div>
 

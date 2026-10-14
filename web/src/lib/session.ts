@@ -11,9 +11,8 @@ import { Reconnector, newClientId } from './reconnect';
 import { forgetPin, rememberPin } from './pins';
 import { loadPrefs, savePrefs, splitStream } from './media';
 import { BackgroundUnavailable, modeFor, openCamera, type CameraInput } from './cameraInput';
-import { NONE, resolveChoice, sameEffect, type BackgroundChoice } from './background/choice';
-import { fetchPresets } from './background/presets';
-import { hasOwn } from './background/ownImage';
+import { NONE, sameEffect, type BackgroundChoice } from './background/choice';
+import { isLost } from './background/stored';
 
 // How long a reaction stays on the sender's tile.
 const REACTION_MS = 4000;
@@ -52,6 +51,8 @@ export class Session {
   private camEpoch = 0;
   // The chosen camera background, from the preferences.
   private background: BackgroundChoice = NONE;
+  // Set when the stored image was gone at join: the camera stays off until another choice.
+  private lost = false;
   // Set after our media connection failed, and remembered for a day; joins then ask the server
   // for ICE over TCP only, since a UDP path that broke once tends to break again (NAT or
   // firewall on a gateway).
@@ -95,21 +96,14 @@ export class Session {
     await this.connect();
   }
 
-  // loadBackground takes the stored choice; an image that is gone (removed from the server, or the
-  // own image deleted) falls back to none, and the picker is told. Blur and none are never lost.
+  // loadBackground takes the stored choice. An image that is gone (removed from the server, or the
+  // own image deleted) stays chosen but keeps the camera off until the person chooses again, so the
+  // room is never shown by accident; the picker and the camera button say so.
   private async loadBackground(): Promise<void> {
     const stored = loadPrefs(localStorage).background ?? NONE;
-    if (stored.kind !== 'image') {
-      this.useBackground(stored);
-      return;
-    }
-    const presets = stored.source === 'server' ? (await fetchPresets()).map((p) => p.name) : [];
-    const { choice, lost } = resolveChoice(stored, presets, stored.source === 'own' && (await hasOwn()));
-    if (lost) {
-      savePrefs(localStorage, { ...loadPrefs(localStorage), background: NONE });
-      this.state.backgroundLost = true;
-    }
-    this.useBackground(choice);
+    this.useBackground(stored);
+    this.lost = await isLost(stored);
+    this.state.backgroundLost = this.lost;
   }
 
   private onFps = (fps: number) => (this.state.backgroundFps = fps);
@@ -117,6 +111,10 @@ export class Session {
   // openCam opens the camera with the current background; when the background cannot start it
   // reports so and leaves the camera off. Other camera errors are thrown.
   private async openCam(): Promise<CameraInput | null> {
+    if (this.lost) {
+      this.state.backgroundError = true; // the dialog says the image is gone
+      return null;
+    }
     try {
       const c = await openCamera(loadPrefs(localStorage).cameraId, this.background, this.onFps);
       this.state.backgroundError = false;
@@ -157,6 +155,9 @@ export class Session {
     savePrefs(localStorage, { ...loadPrefs(localStorage), background: choice });
     const before = this.background;
     this.useBackground(choice);
+    this.lost = false;
+    this.state.backgroundLost = false;
+    this.state.backgroundImageError = false;
     if (!this.cam) return;
     this.switchingCam = true;
     try {
@@ -166,13 +167,14 @@ export class Session {
           mode = await modeFor(choice);
         } catch (e) {
           if (!(e instanceof BackgroundUnavailable)) throw e;
+          // The image cannot load; the running effect stays as it was, and the picker says so.
+          // The camera works, so this is no reason to offer it without a background.
           console.warn('background', e);
-          this.state.backgroundError = true;
-          this.useBackground(before); // the running effect stays as it was
+          this.state.backgroundImageError = true;
+          this.useBackground(before);
           return;
         }
         if (mode && this.cam?.effect) this.cam.effect.setMode(mode);
-        this.state.backgroundError = false;
         return;
       }
       let next: CameraInput | null;
@@ -217,7 +219,8 @@ export class Session {
     }
   }
 
-  // cameraWithoutBackground answers the "background unavailable" notice: camera on, no background.
+  // cameraWithoutBackground answers the "background unavailable" or "background gone" notice:
+  // camera on, no background.
   async cameraWithoutBackground(): Promise<void> {
     this.state.backgroundError = false;
     await this.setBackground(NONE);
@@ -448,7 +451,7 @@ export class Session {
       }
       if (this.camEpoch !== epoch) return; // switched off or left meanwhile; the input is stopped
       if (!opened) {
-        // No camera, or its background cannot start (state.backgroundError): it stays off.
+        // No camera, or its background cannot start or is gone (state.backgroundError): it stays off.
         savePrefs(localStorage, { ...loadPrefs(localStorage), cameraOn: false });
         return;
       }
