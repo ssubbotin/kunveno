@@ -29,8 +29,8 @@ What the stack does on its own:
   `certs/` when it is empty, owned by the directory's owner.
 
 **Trying a pull request on the host.** Add `KUNVENO_VERSION=pr-<number>` to `.env`, run
-`docker compose pull && docker compose up -d`, and remove the line afterwards to return to the
-release pinned in `docker-compose.yml`.
+`docker compose pull && docker compose up -d`, and remove the line afterwards (then pull and up
+again) to return to the latest release.
 
 **Logs** go to the host's systemd journal (Docker `journald` driver), so they survive container
 recreation and reboots; retention follows the journal. Last week of server logs:

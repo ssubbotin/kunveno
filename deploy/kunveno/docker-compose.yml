@@ -26,7 +26,7 @@ services:
       <<: *journald
       options:
         tag: kunveno-server
-    image: ghcr.io/ssubbotin/kunveno-server:${KUNVENO_VERSION:-__KUNVENO_RELEASE__}
+    image: ghcr.io/ssubbotin/kunveno-server:${KUNVENO_VERSION:-latest}
     network_mode: host
     restart: unless-stopped
     environment:
@@ -43,7 +43,7 @@ services:
       <<: *journald
       options:
         tag: kunveno-web
-    image: ghcr.io/ssubbotin/kunveno-web:${KUNVENO_VERSION:-__KUNVENO_RELEASE__}
+    image: ghcr.io/ssubbotin/kunveno-web:${KUNVENO_VERSION:-latest}
     network_mode: host
     restart: unless-stopped
     depends_on:
@@ -67,7 +67,7 @@ services:
       <<: *journald
       options:
         tag: kunveno-echo
-    image: ghcr.io/ssubbotin/kunveno-echo:${KUNVENO_VERSION:-__KUNVENO_RELEASE__}
+    image: ghcr.io/ssubbotin/kunveno-echo:${KUNVENO_VERSION:-latest}
     network_mode: host
     restart: unless-stopped
     depends_on:
@@ -83,7 +83,7 @@ services:
       <<: *journald
       options:
         tag: kunveno-player
-    image: ghcr.io/ssubbotin/kunveno-player:${KUNVENO_VERSION:-__KUNVENO_RELEASE__}
+    image: ghcr.io/ssubbotin/kunveno-player:${KUNVENO_VERSION:-latest}
     network_mode: host
     restart: unless-stopped
     depends_on:

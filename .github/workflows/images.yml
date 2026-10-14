@@ -141,8 +141,8 @@ jobs:
         with:
           fetch-depth: 0 # tags, for the version
       - run: make deploy-bundle
-      - name: the compose file pins this release
-        run: grep -q "kunveno-server:\${KUNVENO_VERSION:-${GITHUB_REF_NAME#v}}" dist/kunveno/docker-compose.yml
+      - name: the compose file follows the latest release
+        run: grep -qF 'kunveno-server:${KUNVENO_VERSION:-latest}' dist/kunveno/docker-compose.yml
       - env:
           GH_TOKEN: ${{ github.token }}
         # A re-run (for example after re-pushing a tag) refreshes the archive of an existing release.

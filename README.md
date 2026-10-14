@@ -91,11 +91,12 @@ video).
 **Upgrade** to a new release, in the directory:
 
 ```bash
-curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz --strip-components=1 kunveno/docker-compose.yml kunveno/grafana
 docker compose pull && docker compose up -d
 ```
 
-Only `docker-compose.yml` and `grafana/` change; `.env`, `config.yaml` and the other directories stay.
+The stack runs the `latest` images, so this fetches the new release and restarts only the
+containers whose image changed; `.env`, `config.yaml` and the data stay. To stay on one release,
+set `KUNVENO_VERSION=0.2.4` (for example) in `.env`.
 
 ### If something does not work
 
