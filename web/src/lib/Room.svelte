@@ -69,6 +69,11 @@
     announce(on && !rs.cameraOn ? t('camera.unavailable') : rs.cameraOn ? t('camera.on') : t('camera.off'));
   }
 
+  async function toggleNoise() {
+    await session.setNoiseFilter(rs.noiseFilter !== 'on');
+    announce(rs.noiseFilter === 'on' ? t('noise.on') : rs.noiseFilter === 'unavailable' ? t('noise.unavailableSaid') : t('noise.off'));
+  }
+
   function onKey(ev: KeyboardEvent) {
     const action = matchShortcut(ev, mac);
     if (action) {
@@ -170,7 +175,9 @@
        and aria-pressed carry the state. Below 1024 px only the icons remain. -->
   <footer class="controls">
     <div class="main">
-      <button class="btn mic" class:off={rs.muted} aria-pressed={!rs.muted} title={withKeys(t('control.mic'), 'mic')} aria-keyshortcuts={ariaShortcut('mic', mac)} onclick={() => session.setMuted(!rs.muted)}>
+      <button class="btn mic" class:off={rs.muted} aria-pressed={!rs.muted} aria-keyshortcuts={ariaShortcut('mic', mac)}
+        title={rs.noiseFilter === 'on' ? t('noise.withMic', { label: withKeys(t('control.mic'), 'mic') }) : withKeys(t('control.mic'), 'mic')}
+        aria-describedby={rs.noiseFilter === 'on' ? 'mic-noise' : undefined} onclick={() => session.setMuted(!rs.muted)}>
         {#if rs.muted}
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5a3 3 0 0 1 6 0v6M5 11a7 7 0 0 0 11.5 5.4M12 18v3M4 4l16 16" /></svg>
         {:else}
@@ -178,6 +185,7 @@
         {/if}
         <span class="label">{t('control.mic')}</span>
         {#if !rs.muted}<span class="level" class:on={rs.selfSpeaking} aria-hidden="true"></span>{/if}
+        {#if rs.noiseFilter === 'on'}<span class="nf" aria-hidden="true"></span>{/if}
       </button>
 
       <button class="btn" class:off={rs.hasCamera && !rs.cameraOn} aria-pressed={rs.cameraOn} aria-disabled={cameraReason !== ''}
@@ -234,6 +242,12 @@
               <span class="text">{t('control.noVideo')}<small id="novideo-hint">{t('control.noVideoHint')}</small></span>
               <span class="switch" aria-hidden="true"></span>
             </button>
+            <button type="button" class="row" role="switch" aria-checked={rs.noiseFilter === 'on'} aria-label={t('noise.label')}
+              aria-describedby="noise-room-hint" onclick={toggleNoise}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h2M7 8v8M11 5v14M15 8v8M19 11v2" /></svg>
+              <span class="text">{t('noise.label')}<small id="noise-room-hint">{rs.noiseFilter === 'unavailable' ? t('noise.unavailable') : t('noise.roomHint')}</small></span>
+              <span class="switch" aria-hidden="true"></span>
+            </button>
             <button type="button" class="row" aria-keyshortcuts={ariaShortcut('help', mac)} onclick={openShortcuts}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2" /><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" /></svg>
               <span class="text">{t('control.shortcuts')}</span>
@@ -244,6 +258,7 @@
       </div>
     </div>
     <span id="camera-reason" class="sr">{cameraReason}</span>
+    <span id="mic-noise" hidden>{t('noise.on')}</span>
     <span id="share-reason" class="sr">{shareReason}</span>
 
     <button class="btn danger leave" title={t('control.leave')} onclick={() => session.leave()}>
@@ -286,6 +301,8 @@
   .btn.active { border-color: var(--live); background: var(--live-soft); }
   .btn.off { border-color: var(--caution); background: rgba(227, 161, 59, .15); color: #f3cf92; }
   .btn.flag { box-shadow: inset 0 -2px 0 var(--live); }
+  .btn.mic { position: relative; }
+  .nf { position: absolute; right: .3rem; bottom: .3rem; width: .5rem; height: .5rem; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 2px var(--panel); }
   .level { width: .55rem; height: .55rem; border-radius: 50%; background: var(--line); transition: background .1s, box-shadow .1s; }
   .level.on { background: var(--live); box-shadow: 0 0 0 4px var(--live-soft); }
   .popover-anchor { position: relative; }

@@ -217,6 +217,7 @@ through the manual checks in [docs/test-matrix.md](docs/test-matrix.md).
 | `media.share_max_kbps` | bitrate cap for screen sharing |
 | `ui.title` | title shown in the lobby and the browser tab |
 | `ui.reactions` | emoji participants can send as reactions (1..16; ten by default) |
+| `ui.noise_suppression` | `true` turns the client's noise filter (GTCRN) on for participants who have not chosen themselves (default `false`) |
 | `rooms[]` | `slug`, `name`, `pin`, `max_participants`, and optionally `player: {file, name}` for a video loop from the media directory or `player: {url, name}` for a live camera (`rtsp://` or `rtsps://`, credentials in the URL are masked in logs) |
 | `rooms_file` | where rooms created in the lobby are saved (`/var/lib/kunveno/rooms.json`) |
 

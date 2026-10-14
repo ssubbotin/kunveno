@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { audioConstraints, dbfs, meterPercent } from './micLevel';
+import { audioConstraints, dbfs, meterPercent, noiseFilterOn } from './micLevel';
 
 describe('mic level', () => {
   it('converts RMS to dBFS', () => {
@@ -23,5 +23,18 @@ describe('audioConstraints', () => {
   });
   it('lets the browser choose when nothing was picked', () => {
     expect(audioConstraints('')).toEqual({ echoCancellation: true, noiseSuppression: true, autoGainControl: true });
+  });
+});
+
+describe('noise filter', () => {
+  it('lets the participant choice win over the site default', () => {
+    expect(noiseFilterOn(undefined, false)).toBe(false);
+    expect(noiseFilterOn(undefined, true)).toBe(true);
+    expect(noiseFilterOn(true, false)).toBe(true);
+    expect(noiseFilterOn(false, true)).toBe(false);
+  });
+  it('drops the browser noise suppression when the filter does the job', () => {
+    expect(audioConstraints('', true)).toEqual({ echoCancellation: true, noiseSuppression: false, autoGainControl: true });
+    expect(audioConstraints('mic1')).toEqual({ echoCancellation: true, noiseSuppression: true, autoGainControl: true, deviceId: { exact: 'mic1' } });
   });
 });

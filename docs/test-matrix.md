@@ -35,3 +35,11 @@ pull request.
     reason is read; Reaction and More open with Enter, focus lands on the first item, arrows move,
     Escape closes and returns to the button.
 19. At 320 px width (devtools) the room controls fit without horizontal scrolling.
+20. Noise suppression in the microphone check: with the switch on, typing barely moves the meter
+    while speech does; off, typing moves it. The choice survives a reload; with
+    `ui.noise_suppression: true` and no choice made, it starts on.
+21. In a room, More → Noise suppression during a call: no drop for others, the echo test sounds
+    cleaner with it on; muted stays muted across the switch; the microphone button shows the mark.
+22. Turn the filter off and on twice in a row, and reload with it on: it still works each time.
+23. In a browser without AudioWorklet (or with the WebAssembly blocked in devtools), the switch
+    reads "Not available in this browser" and the microphone still works.

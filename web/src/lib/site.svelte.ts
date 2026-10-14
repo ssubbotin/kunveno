@@ -1,24 +1,26 @@
-// Installation details from GET /api/info, set per installation in config.yaml: the title and
-// the reactions participants can send. Reactive, so the lobby and the room follow them.
+// Installation details from GET /api/info, set per installation in config.yaml: the title, the
+// reactions participants can send and the default of the noise filter. Reactive, so the lobby and
+// the room follow them.
 
 export const DEFAULT_TITLE = 'kunveno';
 // Must match config.DefaultReactions on the server.
 export const DEFAULT_REACTIONS = ['👍', '👎', '👏', '😂', '❤️', '🎉', '😮', '🤔', '☕', '👋'];
 
-export type Info = { title: string; reactions: string[] };
+export type Info = { title: string; reactions: string[]; noiseSuppression: boolean };
 
 export function infoFrom(info: unknown): Info {
-  const v = (info ?? {}) as { title?: unknown; reactions?: unknown };
+  const v = (info ?? {}) as { title?: unknown; reactions?: unknown; noise_suppression?: unknown };
   const title = typeof v.title === 'string' && v.title.trim() !== '' ? v.title.trim() : DEFAULT_TITLE;
   const list = Array.isArray(v.reactions)
     ? v.reactions.filter((e): e is string => typeof e === 'string' && e !== '' && new TextEncoder().encode(e).length <= 16)
     : [];
-  return { title, reactions: list.length > 0 ? list : DEFAULT_REACTIONS };
+  return { title, reactions: list.length > 0 ? list : DEFAULT_REACTIONS, noiseSuppression: v.noise_suppression === true };
 }
 
 class Site {
   title = $state(DEFAULT_TITLE);
   reactions = $state<string[]>(DEFAULT_REACTIONS);
+  noiseSuppression = $state(false);
 }
 
 export const site = new Site();
@@ -30,6 +32,7 @@ export async function loadInfo(): Promise<void> {
     const info = infoFrom(await (await fetch('/api/info')).json());
     site.title = info.title;
     site.reactions = info.reactions;
+    site.noiseSuppression = info.noiseSuppression;
   } catch {
     // keep the defaults
   }

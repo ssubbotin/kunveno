@@ -177,10 +177,10 @@ func local(r *http.Request) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// Info serves GET /api/info: installation details the client shows: the title and the
-// reactions participants can send.
-func Info(title string, reactions []string) http.Handler {
-	body := map[string]any{"title": title, "reactions": reactions}
+// Info serves GET /api/info: installation details the client shows: the title, the reactions
+// participants can send, and whether the noise filter is on by default.
+func Info(title string, reactions []string, noiseSuppression bool) http.Handler {
+	body := map[string]any{"title": title, "reactions": reactions, "noise_suppression": noiseSuppression}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)

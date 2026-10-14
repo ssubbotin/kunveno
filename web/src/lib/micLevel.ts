@@ -21,10 +21,16 @@ export function rmsOf(buf: Float32Array): number {
 
 export const MIC_KEY = 'kunveno.micId';
 
-// audioConstraints asks for the chosen input, or the browser default when none was picked,
-// with the browser's voice processing on.
-export function audioConstraints(deviceId: string): MediaTrackConstraints {
-  const c: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+// audioConstraints asks for the chosen input, or the browser default when none was picked, with
+// the browser's voice processing on. With our noise filter the browser's own noise suppression is
+// off, so the sound is not cleaned twice; echo cancellation and gain control stay.
+export function audioConstraints(deviceId: string, filter = false): MediaTrackConstraints {
+  const c: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: !filter, autoGainControl: true };
   if (deviceId) c.deviceId = { exact: deviceId };
   return c;
+}
+
+// noiseFilterOn: the participant's own choice, or the installation's default when they never chose.
+export function noiseFilterOn(pref: boolean | undefined, siteDefault: boolean): boolean {
+  return pref ?? siteDefault;
 }
