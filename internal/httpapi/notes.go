@@ -39,14 +39,14 @@ type notesRequest struct {
 // NotesDownload serves POST /api/rooms/{slug}/notes with {"pin","lang"}: the notes of the room's
 // last meeting as Markdown, times in loc. A wrong PIN is 403 and counts toward the same per-address
 // limit as joins (pins, may be nil); 404 when the room or its notes do not exist, have expired, are
-// still being written, or notes are off (store nil).
-func NotesDownload(reg *room.Registry, store *notes.Store, pins *ratelimit.Limiter, loc *time.Location) http.Handler {
+// still being written, or notes are off (enabled false).
+func NotesDownload(reg *room.Registry, store *notes.Store, enabled bool, pins *ratelimit.Limiter, loc *time.Location) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		if store == nil {
+		if !enabled || store == nil {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "no notes"})
 			return
 		}

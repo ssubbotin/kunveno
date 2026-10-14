@@ -4,6 +4,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -133,8 +134,10 @@ func remove(w http.ResponseWriter, r *http.Request, reg *room.Registry, persist 
 	default:
 		metrics.RoomsDeleted.Inc()
 		if store != nil {
-			// A failure leaves the file to the expiry sweep; the room itself is gone.
-			_ = store.Delete(slug)
+			// The store forgets the notes even when the file stays; the expiry sweep retries it.
+			if err := store.Delete(slug); err != nil {
+				slog.Warn("cannot delete the notes file of a deleted room", "room", slug, "err", err)
+			}
 		}
 		if save(w, persist) {
 			w.WriteHeader(http.StatusNoContent)

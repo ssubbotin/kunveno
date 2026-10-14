@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -58,7 +59,7 @@ func TestNotesDownload(t *testing.T) {
 	if err := store.Begin("dev", "Разработка", meetingAt(10, 0)); err != nil { // still being written
 		t.Fatal(err)
 	}
-	h := NotesDownload(reg, store, ratelimit.New(5, 10*time.Minute, time.Minute), msk)
+	h := NotesDownload(reg, store, true, ratelimit.New(5, 10*time.Minute, time.Minute), msk)
 
 	rec := post(h, "/api/rooms/ops/notes", `{"pin":"1234","lang":"en"}`, "10.0.0.1")
 	if rec.Code != 200 {
@@ -99,7 +100,7 @@ func TestNotesDownload(t *testing.T) {
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("GET: %d", rec.Code)
 	}
-	if rec := post(NotesDownload(reg, nil, nil, msk), "/api/rooms/ops/notes", `{"pin":"1234"}`, "10.0.0.4"); rec.Code != http.StatusNotFound {
+	if rec := post(NotesDownload(reg, nil, false, nil, msk), "/api/rooms/ops/notes", `{"pin":"1234"}`, "10.0.0.4"); rec.Code != http.StatusNotFound {
 		t.Fatalf("notes disabled: %d", rec.Code)
 	}
 }
@@ -109,7 +110,10 @@ func TestNotesDownloadDisabledAnswers404First(t *testing.T) {
 	reg := room.NewRegistry()
 	reg.Add(room.New("ops", "Операции", "1234", 15))
 	pins := ratelimit.New(1, 10*time.Minute, time.Minute)
-	h := NotesDownload(reg, nil, pins, msk)
+	now := meetingAt(10, 5)
+	store := notesStore(t, &now)
+	recordMeeting(t, store, "ops")
+	h := NotesDownload(reg, store, false, pins, msk)
 	for i, body := range []string{`{"pin":"0000"}`, `not json`, `{"pin":"0000"}`} {
 		if rec := post(h, "/api/rooms/ops/notes", body, "10.0.0.9"); rec.Code != http.StatusNotFound {
 			t.Fatalf("attempt %d: %d, want 404", i, rec.Code)
@@ -132,7 +136,7 @@ func TestNotesDownloadSharesThePINLimit(t *testing.T) {
 	reg.Add(room.New("ops", "Операции", "1234", 15))
 	recordMeeting(t, store, "ops")
 	pins := ratelimit.New(5, 10*time.Minute, time.Minute)
-	h := NotesDownload(reg, store, pins, msk)
+	h := NotesDownload(reg, store, true, pins, msk)
 	for i := 0; i < 5; i++ {
 		if rec := post(h, "/api/rooms/ops/notes", `{"pin":"0000"}`, "10.0.0.66"); rec.Code != http.StatusForbidden {
 			t.Fatalf("attempt %d: %d", i, rec.Code)
@@ -246,5 +250,44 @@ func TestNotesRoomsIsLocalOnly(t *testing.T) {
 		if rec.Code != c.code || (c.body != "" && strings.TrimSpace(rec.Body.String()) != c.body) {
 			t.Errorf("addr=%s xff=%q enabled=%v: %d %s", c.addr, c.xff, c.enabled, rec.Code, rec.Body)
 		}
+	}
+}
+
+func TestInfoNotesLiveNeedsNotes(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Info("T", nil, false, false, true).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
+	if !strings.Contains(rec.Body.String(), `"notes":false`) || !strings.Contains(rec.Body.String(), `"notes_live":false`) {
+		t.Fatalf("%s", rec.Body)
+	}
+}
+
+func TestDeletingARoomForgetsNotesEvenIfTheFileStays(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	dir := t.TempDir()
+	now := meetingAt(10, 5)
+	store, err := notes.Open(dir, 24*time.Hour, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := room.NewRegistry()
+	if _, err := reg.Create("Retro", "432100"); err != nil {
+		t.Fatal(err)
+	}
+	recordMeeting(t, store, "retro")
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(dir, 0o700)
+	h := Rooms(reg, nil, nil, store, true)
+	if rec := do(t, h, "DELETE", "/api/rooms/retro", `{"pin":"432100"}`); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, h, "POST", "/api/rooms", `{"name":"Retro","pin":"654321"}`); rec.Code != http.StatusCreated {
+		t.Fatalf("create again: %d", rec.Code)
+	}
+	if rec := do(t, h, "GET", "/api/rooms", ""); strings.Contains(rec.Body.String(), "notes_until") {
+		t.Fatalf("the new room lists the old notes: %s", rec.Body)
 	}
 }
