@@ -217,3 +217,55 @@ func TestStoreDeleteForgetsNotesWhenRemoveFails(t *testing.T) {
 		t.Fatalf("Load after a failed removal = %v", err)
 	}
 }
+
+// One damaged notes file (unreadable, or a line over the reader's limit) does not stop the store
+// from opening: the file is skipped and left as it is, the other rooms' notes load.
+func TestOpenSkipsAFileItCannotRead(t *testing.T) {
+	dir := t.TempDir()
+	now := at(40, 0)
+	clock := func() time.Time { return now }
+	s, err := Open(dir, time.Hour, clock)
+	must(t, err)
+	must(t, s.Begin("ops", "Планёрка", at(37, 0)))
+	must(t, s.Phrase("ops", Phrase{Name: "Сергей", Start: at(37, 5), End: at(37, 12), Text: "Начнём."}))
+	must(t, s.End("ops", at(38, 0)))
+
+	header := `{"type":"header","room":"Big","at":1760424000000}` + "\n"
+	big := header + `{"type":"phrase","at":1760424001000,"text":"` + strings.Repeat("a", 2<<20) + `"}` + "\n"
+	must(t, os.WriteFile(filepath.Join(dir, "big.jsonl"), []byte(big), 0o600))
+	locked := filepath.Join(dir, "locked.jsonl")
+	asRoot := os.Getuid() == 0 // root reads a 0000 file; that half of the test needs another user
+	if !asRoot {
+		must(t, os.WriteFile(locked, []byte(header), 0o600))
+		must(t, os.Chmod(locked, 0))
+	}
+
+	s2, err := Open(dir, time.Hour, clock)
+	if err != nil {
+		t.Fatalf("Open with a damaged file: %v", err)
+	}
+	tr, err := s2.Load("ops")
+	must(t, err)
+	if len(tr.Phrases) != 1 || tr.Phrases[0].Text != "Начнём." {
+		t.Fatalf("good transcript = %+v", tr)
+	}
+	if _, ok := s2.Until("big"); ok {
+		t.Fatal("the oversized file was adopted")
+	}
+	if _, ok := s2.Until("locked"); ok && !asRoot {
+		t.Fatal("the unreadable file was adopted")
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "big.jsonl"))
+	must(t, err)
+	if string(data) != big {
+		t.Fatal("the oversized file was changed")
+	}
+	if asRoot {
+		return
+	}
+	fi, err := os.Stat(locked)
+	must(t, err)
+	if fi.Mode().Perm() != 0 || fi.Size() != int64(len(header)) {
+		t.Fatalf("the unreadable file was changed: mode %v, size %d", fi.Mode().Perm(), fi.Size())
+	}
+}

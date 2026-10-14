@@ -134,7 +134,8 @@ func remove(w http.ResponseWriter, r *http.Request, reg *room.Registry, persist 
 	default:
 		metrics.RoomsDeleted.Inc()
 		if store != nil {
-			// The store forgets the notes even when the file stays; the expiry sweep retries it.
+			// The store forgets the notes even when the file stays. A file left behind is ignored
+			// until a restart, when the store reads it again and it expires by its own end time.
 			if err := store.Delete(slug); err != nil {
 				slog.Warn("cannot delete the notes file of a deleted room", "room", slug, "err", err)
 			}

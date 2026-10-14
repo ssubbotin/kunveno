@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -75,7 +76,8 @@ type Store struct {
 }
 
 // Open reads the transcripts in dir (a missing dir holds none). A file without an end line was cut
-// off by a restart: it gets one at the time of its last line.
+// off by a restart: it gets one at the time of its last line. A file that cannot be read is logged
+// and skipped, left on disk as it is; only a failure to list dir is an error.
 func Open(dir string, keep time.Duration, now func() time.Time) (*Store, error) {
 	if now == nil {
 		now = time.Now
@@ -92,7 +94,8 @@ func Open(dir string, keep time.Duration, now func() time.Time) (*Store, error) 
 		}
 		lines, err := readLines(path)
 		if err != nil {
-			return nil, err
+			slog.Warn("cannot read a notes file; skipped", "file", path, "err", err)
+			continue
 		}
 		if len(lines) == 0 || lines[0].Type != KindHeader {
 			continue // not a transcript; left alone
@@ -101,7 +104,8 @@ func Open(dir string, keep time.Duration, now func() time.Time) (*Store, error) 
 		if last.Type != KindEnd {
 			last = line{Type: KindEnd, At: lineTime(last)}
 			if err := appendLine(path, last); err != nil {
-				return nil, err
+				slog.Warn("cannot end a notes file cut off by a restart; skipped", "file", path, "err", err)
+				continue
 			}
 		}
 		s.ended[slug] = time.UnixMilli(last.At)
@@ -228,8 +232,10 @@ func (s *Store) Load(slug string) (Transcript, error) {
 }
 
 // Delete removes the room's notes, for a deleted room. The room is forgotten even when the file
-// cannot be removed (the error is returned; the expiry sweep may clean the file later), so a room
-// created again under the same slug never inherits the old notes.
+// cannot be removed (the error is returned), so a room created again under the same slug never
+// inherits the old notes while the server runs. Such a file stays on disk and is ignored, the
+// expiry sweep included, until a restart: then Open reads it again and it expires by its own end
+// time.
 func (s *Store) Delete(slug string) error {
 	if !slugRe.MatchString(slug) {
 		return ErrBadSlug
