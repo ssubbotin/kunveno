@@ -26,7 +26,7 @@ describe('startEffect', () => {
       srcObject: null as unknown,
       play: () => Promise.reject(new Error('play refused')),
     };
-    const canvas = { width: 0, height: 0, transferControlToOffscreen: () => ({}) };
+    const canvas = { width: 0, height: 0, getContext: () => ({ transferFromImageBitmap() {} }) };
     vi.stubGlobal('Worker', FakeWorker);
     vi.stubGlobal('MediaStream', class {});
     vi.stubGlobal('document', { createElement: (tag: string) => (tag === 'video' ? video : canvas) });

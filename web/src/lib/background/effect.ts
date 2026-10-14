@@ -32,6 +32,8 @@ export async function startEffect(raw: MediaStreamTrack, mode: EffectMode, onSta
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
+  // The worker sends each finished frame as a bitmap; showing it here makes the canvas's track.
+  const view = canvas.getContext('bitmaprenderer');
   const worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
   const send = (m: ToWorker, transfer: Transferable[] = []) => worker.postMessage(m, transfer);
   let video: HTMLVideoElement | null = null;
@@ -42,18 +44,17 @@ export async function startEffect(raw: MediaStreamTrack, mode: EffectMode, onSta
   // the effect keeps running, since the background is never turned off by itself.
   let ready = false;
   try {
-    const offscreen = canvas.transferControlToOffscreen();
     const MSTP = (globalThis as { MediaStreamTrackProcessor?: Processor }).MediaStreamTrackProcessor;
     if (MSTP) {
       const frames = new MSTP({ track: raw }).readable;
-      send({ type: 'init', canvas: offscreen, width, height, delegate: delegate(), debug: dbg, frames }, [offscreen, frames]);
+      send({ type: 'init', width, height, delegate: delegate(), debug: dbg, frames }, [frames]);
     } else {
       video = document.createElement('video');
       video.muted = true;
       video.playsInline = true;
       video.srcObject = new MediaStream([raw]);
       await video.play();
-      send({ type: 'init', canvas: offscreen, width, height, delegate: delegate(), debug: dbg }, [offscreen]);
+      send({ type: 'init', width, height, delegate: delegate(), debug: dbg });
     }
 
     await new Promise<void>((resolve, reject) => {
@@ -79,6 +80,9 @@ export async function startEffect(raw: MediaStreamTrack, mode: EffectMode, onSta
           const frame = await createImageBitmap(video);
           if (dbg) debug.page.add('bitmap', performance.now() - t);
           send({ type: 'frame', frame }, [frame]);
+        } else if (m.type === 'out') {
+          if (view) view.transferFromImageBitmap(m.frame);
+          else m.frame.close();
         } else if (m.type === 'debug') {
           debug.workerSample(m.sample);
         } else if (m.type === 'stats') {

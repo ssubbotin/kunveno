@@ -3,7 +3,7 @@
 // second. Compositing still happens for every frame.
 export class Pace {
   every = 1;
-  private avg = 0;
+  private recent: number[] = [];
   private count = 0;
   private frames: number[] = [];
 
@@ -14,11 +14,16 @@ export class Pace {
     return this.count % this.every === 0;
   }
 
-  // record takes the time one recognition took, smoothed over about a second of samples.
+  // record takes the time one recognition took. The pace follows the median of the last nine, so
+  // one stall (the first recognition in a new worker can take seconds) does not slow recognition
+  // down for long, while a computer that is slow all the time is still noticed within nine samples.
   record(segmentMs: number): void {
-    this.avg = this.avg === 0 ? segmentMs : this.avg * 0.9 + segmentMs * 0.1;
+    this.recent.push(segmentMs);
+    if (this.recent.length > 9) this.recent.shift();
+    const sorted = [...this.recent].sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
     const budget = 1000 / this.targetFps;
-    this.every = Math.min(this.targetFps, Math.max(1, Math.ceil(this.avg / budget)));
+    this.every = Math.min(this.targetFps, Math.max(1, Math.ceil(median / budget)));
   }
 
   // frame notes one composited frame at time now (ms).

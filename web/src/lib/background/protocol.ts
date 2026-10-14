@@ -2,7 +2,7 @@
 export type EffectMode = { kind: 'blur' } | { kind: 'image'; image: ImageBitmap };
 
 export type ToWorker =
-  | { type: 'init'; canvas: OffscreenCanvas; width: number; height: number; delegate: 'GPU' | 'CPU'; debug: boolean; frames?: ReadableStream<VideoFrame> }
+  | { type: 'init'; width: number; height: number; delegate: 'GPU' | 'CPU'; debug: boolean; frames?: ReadableStream<VideoFrame> }
   | { type: 'frame'; frame: ImageBitmap }
   | { type: 'mode'; mode: EffectMode }
   | { type: 'stop' };
@@ -11,6 +11,7 @@ export type FromWorker =
   | { type: 'ready'; delegate: 'GPU' | 'CPU'; initMs: { compositor: number; segmenter: number } }
   | { type: 'error'; message: string }
   | { type: 'want' }
+  | { type: 'out'; frame: ImageBitmap }
   | { type: 'stats'; fps: number; every: number }
   | { type: 'debug'; sample: WorkerSample };
 

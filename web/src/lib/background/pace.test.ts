@@ -32,3 +32,13 @@ describe('Pace', () => {
     expect(p.fps()).toBe(10);
   });
 });
+
+describe('Pace and outliers', () => {
+  it('is not thrown off by one very slow recognition', () => {
+    const p = new Pace(15);
+    for (let i = 0; i < 5; i++) p.record(17);
+    p.record(10000); // the first recognition in a new worker can stall
+    for (let i = 0; i < 3; i++) p.record(17);
+    expect(p.every).toBe(1);
+  });
+});

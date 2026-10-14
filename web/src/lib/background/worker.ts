@@ -13,6 +13,10 @@ const FPS = 15;
 const SEG_W = 256;
 const SEG_H = 144;
 let comp: Compositor | null = null;
+// The compositor draws into the worker's own canvas and every finished frame goes to the page as a
+// bitmap. Drawing into a canvas transferred from the page instead made Firefox hold MediaPipe's
+// first WebGL call, and the whole page, for ten seconds.
+let surface: OffscreenCanvas | null = null;
 let seg: Segmenter | null = null;
 let mode: EffectMode = { kind: 'blur' };
 const pace = new Pace(FPS);
@@ -96,6 +100,10 @@ async function process(frame: VideoFrame | ImageBitmap): Promise<void> {
     const d = performance.now();
     comp.draw(frame, mode.kind);
     probe?.add('draw', performance.now() - d);
+    const p = performance.now();
+    const out = surface!.transferToImageBitmap();
+    postMessage({ type: 'out', frame: out } satisfies FromWorker, { transfer: [out] });
+    probe?.add('present', performance.now() - p);
     pace.frame(performance.now());
     probe?.add('frame', performance.now() - start);
   } catch (err) {
@@ -136,9 +144,10 @@ self.onmessage = async (e: MessageEvent<ToWorker>) => {
       try {
         if (m.debug) {
           probe = new Timings();
-          m.canvas.addEventListener('webglcontextlost', () => counts.contextLost++);
         }
-        comp = new Compositor(m.canvas, m.width, m.height);
+        surface = new OffscreenCanvas(m.width, m.height);
+        if (m.debug) surface.addEventListener('webglcontextlost', () => counts.contextLost++);
+        comp = new Compositor(surface, m.width, m.height);
         t1 = performance.now();
         seg = await createSegmenter(m.delegate === 'CPU' ? 'CPU' : undefined, probe);
       } catch (err) {

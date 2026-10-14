@@ -15,7 +15,7 @@ describe('background worker', () => {
     vi.stubGlobal('postMessage', (m: { type: string }) => posted.push(m));
     await import('./worker');
     const cancel = vi.fn(async () => {});
-    await scope.onmessage!({ data: { type: 'init', canvas: {}, width: 640, height: 360, frames: { cancel } } });
+    await scope.onmessage!({ data: { type: 'init', width: 640, height: 360, frames: { cancel } } });
     expect(posted.map((m) => m.type)).toEqual(['error']);
     expect(cancel).toHaveBeenCalledTimes(1);
   });
