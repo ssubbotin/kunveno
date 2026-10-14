@@ -20,8 +20,8 @@ import (
 
 	"github.com/pion/webrtc/v4"
 
-	"github.com/ssubbotin/kunveno/internal/botclient"
 	"github.com/ssubbotin/kunveno/internal/echo"
+	"github.com/ssubbotin/kunveno/pkg/botclient"
 )
 
 var version = "dev"

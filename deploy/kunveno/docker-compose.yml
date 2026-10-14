@@ -39,6 +39,8 @@ services:
       - ./config.yaml:/etc/kunveno/config.yaml:ro
       - ./data:/var/lib/kunveno
       - ./backgrounds:/var/lib/kunveno/backgrounds:ro
+      # The host's time zone: meeting notes show times and name files in it.
+      - /etc/localtime:/etc/localtime:ro
 
   web:
     logging:

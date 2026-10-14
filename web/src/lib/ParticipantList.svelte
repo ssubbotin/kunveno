@@ -2,10 +2,14 @@
   import { initials } from './initials';
   import { t } from './i18n/i18n.svelte';
   import Video from './Video.svelte';
+  import NotesFeed from './NotesFeed.svelte';
   import type { Participant } from './protocol';
-  let { participants, selfId, sharer, speaking, videos = {}, reactions = {}, compact = false }: {
+  import type { LivePhrase } from './state.svelte';
+  // phrases: set with notes.live; the notes bot's tile then shows them in place of a picture.
+  let { participants, selfId, sharer, speaking, videos = {}, reactions = {}, compact = false, phrases }: {
     participants: Participant[]; selfId: string; sharer: string; speaking: Record<string, boolean>;
     videos?: Record<string, MediaStreamTrack>; reactions?: Record<string, { emoji: string; seq: number }>; compact?: boolean;
+    phrases?: LivePhrase[];
   } = $props();
 
 
@@ -19,22 +23,32 @@
   style:--rows={Math.max(1, Math.ceil(participants.length / Math.max(1, Math.ceil(Math.sqrt(participants.length)))))}>
   {#each participants as p (p.id)}
     {@const video = !compact && p.camera ? videos[p.id] : undefined}
-    <li class="tile" class:speaking={speaking[p.id]} class:bot={p.bot} class:me={p.id === selfId} class:has-video={video}>
+    {@const feed = p.botKind === 'notes' && phrases !== undefined}
+    <li class="tile" class:speaking={speaking[p.id]} class:bot={p.bot} class:me={p.id === selfId} class:has-video={video || (feed && !compact)}>
       {#if video}
         <div class="video"><Video track={video} mirror={p.id === selfId} /></div>
+      {:else if feed && !compact}
+        <NotesFeed {phrases} />
       {/if}
       <span class="avatar" aria-hidden="true">
-        {#if p.bot}
+        {#if p.botKind === 'notes'}
+          <svg viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6zM9 9h6M9 13h6M9 17h4" /></svg>
+        {:else if p.bot}
           <svg viewBox="0 0 24 24"><path d="M4 12h2l2-5 3 10 3-8 2 3h4" /></svg>
         {:else}
           {initials(p.name)}
         {/if}
       </span>
       <span class="who">
-        <span class="name">{p.botKind === 'echo' ? t('people.echoName') : p.name}</span>
+        <span class="name">{p.botKind === 'echo' ? t('people.echoName') : p.botKind === 'notes' ? t('people.notesName') : p.name}</span>
         <span class="tags">
           {#if p.id === selfId}<span>{t('people.you')}</span>{/if}
           {#if p.botKind === 'echo'}<span>{t('people.echoTag')}</span>{/if}
+          {#if p.botKind === 'notes'}
+            {#if feed && compact && phrases?.length}
+              <span class="last-phrase">{phrases[phrases.length - 1].name}: {phrases[phrases.length - 1].text}</span>
+            {:else}<span>{t('people.notesTag')}</span>{/if}
+          {/if}
           {#if p.botKind === 'player'}<span>{t('people.playerTag')}</span>{/if}
           {#if p.botKind === 'camera'}<span class="live-tag">{t('people.cameraTag')}</span>{/if}
           {#if p.id === sharer}<span class="share">{t('people.sharing')}</span>{/if}
@@ -144,5 +158,7 @@
   .compact .avatar { width: 2.5rem; height: 2.5rem; font-size: .95rem; }
   .compact .speaking .avatar { box-shadow: 0 0 0 2px var(--live), 0 0 0 6px var(--live-soft); }
   .compact .tags { justify-content: start; }
+  /* In the narrow column during a share the notes tile shows only the latest phrase. */
+  .last-phrase { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--text); }
   .compact .muted { top: 50%; transform: translateY(-50%); }
 </style>

@@ -18,6 +18,7 @@ import (
 	"github.com/ssubbotin/kunveno/internal/config"
 	"github.com/ssubbotin/kunveno/internal/httpapi"
 	"github.com/ssubbotin/kunveno/internal/metrics"
+	"github.com/ssubbotin/kunveno/internal/notes"
 	"github.com/ssubbotin/kunveno/internal/room"
 	"github.com/ssubbotin/kunveno/internal/roomstore"
 	"github.com/ssubbotin/kunveno/internal/sfu"
@@ -88,28 +89,39 @@ func run(cfgPath string, log *slog.Logger) error {
 		defer saveMu.Unlock()
 		return roomstore.Save(cfg.RoomsFile, reg.CreatedSpecs())
 	}
+	store, err := notes.Open(cfg.Notes.Dir, cfg.Notes.KeepFor, nil)
+	if err != nil {
+		return fmt.Errorf("notes %s: %w", cfg.Notes.Dir, err)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	go sweepNotes(ctx, store, log) // stored notes expire whether or not notes are enabled
+
 	mux := http.NewServeMux()
 	ws := sig.New(reg, engineMedia{engine}, cfg.HTTP.AllowedOrigins, log)
 	ws.SetReactions(cfg.UI.Reactions)
+	if cfg.Notes.Enabled {
+		ws.SetNotes(store, cfg.Notes.Live)
+	}
 	mux.Handle("/ws", ws)
-	rooms := httpapi.Rooms(reg, persist, ws.PINLimiter())
+	rooms := httpapi.Rooms(reg, persist, ws.PINLimiter(), store, cfg.Notes.Enabled)
 	mux.Handle("/api/rooms", rooms)
 	mux.Handle("/api/rooms/", rooms)
+	mux.Handle("POST /api/rooms/{slug}/notes", httpapi.NotesDownload(reg, store, cfg.Notes.Enabled, ws.PINLimiter(), time.Local))
 	bg := backgrounds.New(cfg.BackgroundsDir, log).Handler()
 	mux.Handle("/api/backgrounds", bg)
 	mux.Handle("/api/backgrounds/", bg)
 	mux.Handle("/healthz", httpapi.Health())
-	mux.Handle("/api/info", httpapi.Info(cfg.UI.Title, cfg.UI.Reactions, cfg.UI.NoiseSuppression))
+	mux.Handle("/api/info", httpapi.Info(cfg.UI.Title, cfg.UI.Reactions, cfg.UI.NoiseSuppression, cfg.Notes.Enabled, cfg.Notes.Live))
 	mux.Handle("/internal/echo", httpapi.EchoRooms(reg))                       // never proxied by nginx
+	mux.Handle("/internal/notes", httpapi.NotesRooms(reg, cfg.Notes.Enabled))  // never proxied by nginx
 	mux.Handle("/metrics", metrics.Handler(metrics.NewRegistry(reg, version))) // local scrapers only
 
 	srv := &http.Server{Addr: cfg.HTTP.Listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
-	log.Info("kunveno-server started", "version", version, "listen", cfg.HTTP.Listen, "udp_port", engine.Port(), "tcp_port", engine.TCPPort(), "advertise_ip", cfg.Media.AdvertiseIP, "rooms", len(reg.All()), "rooms_file", cfg.RoomsFile, "backgrounds", cfg.BackgroundsDir)
+	log.Info("kunveno-server started", "version", version, "listen", cfg.HTTP.Listen, "udp_port", engine.Port(), "tcp_port", engine.TCPPort(), "advertise_ip", cfg.Media.AdvertiseIP, "rooms", len(reg.All()), "rooms_file", cfg.RoomsFile, "backgrounds", cfg.BackgroundsDir, "notes", cfg.Notes.Enabled)
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 	select {
 	case err := <-errc:
 		return err
@@ -122,4 +134,20 @@ func run(cfgPath string, log *slog.Logger) error {
 		return err
 	}
 	return nil
+}
+
+// sweepNotes deletes expired meeting notes every minute.
+func sweepNotes(ctx context.Context, store *notes.Store, log *slog.Logger) {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		for _, slug := range store.Sweep() {
+			log.Info("notes expired", "room", slug)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
 }

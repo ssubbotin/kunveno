@@ -31,6 +31,9 @@ Licensed under the GNU Affero General Public License v3.0 only; a commercial lic
   on the server).
 - An echo sound check per room, rooms that play a video file in a loop, and rooms that show a
   live RTSP camera.
+- Meeting notes with the commercial `kunveno-notes` add-on: each participant's speech is recognised
+  on the server, and the text of a room's last meeting is downloaded as Markdown (see
+  [Meeting notes](#meeting-notes)).
 - Works behind awkward networks: when a participant's UDP path fails, the browser falls back to
   ICE over TCP on the same port.
 - Interface in Russian (default), English and Spanish; the installation title is configurable.
@@ -152,6 +155,28 @@ users the faster path.
 **Screen sharing** is the browser's own feature (`getDisplayMedia`); nothing is installed on
 users' computers. It works in Chrome and Firefox on Linux and Windows.
 
+## Meeting notes
+
+A participant can switch on notes in a room (More → Take notes). The notes bot then joins the room
+as a participant named "Notes", listens to each person's microphone separately and sends the
+recognised phrases to the server, which keeps the text: who said what, and when. Everyone in the
+room sees "● Taking notes" in the header. When the notes are switched off, or the last person
+leaves, everyone still in the room gets "Notes are ready" with a download button; the lobby offers
+the same file as "Notes of the last meeting", with the room PIN. The file is Markdown: the room,
+the date and time, who spoke, and the phrases in order, with pauses of the recording marked.
+
+- The bot is the commercial add-on `kunveno-notes` (speech recognition on the server's processor,
+  no external service, no audio stored). It is not part of this repository; for a licence write to
+  ssubbotin@gmail.com. Its installation guide comes with the licence.
+- Without the add-on keep `notes.enabled: false` (the default): rooms and the lobby show nothing
+  about notes.
+- Only the last meeting of each room is kept, for `notes.keep` (one day by default) after its notes
+  end (a switch-off or the end of the meeting); the first phrase of the next meeting replaces it.
+  Deleting a room deletes its notes. Downloading needs the room PIN, and wrong PINs count toward
+  the same block as joins.
+- `notes.live: true` shows the phrases in the room as they are recognised, in the tile of the
+  "Notes" participant, for checking the recognition.
+
 ## How it works
 
 ![How kunveno fits together](docs/images/architecture.svg)
@@ -182,7 +207,7 @@ Certificates, the firewall, troubleshooting and the helpers in detail: [docs/dep
 | `internal/room`, `internal/signal`, `internal/sfu` | room state, WebSocket signaling, the SFU |
 | `internal/config`, `internal/httpapi`, `internal/metrics` | configuration, HTTP API, Prometheus metrics |
 | `internal/quality`, `internal/ratelimit`, `internal/roomstore` | connection grades, PIN limits, saved rooms |
-| `internal/echo`, `internal/player`, `internal/botclient` | helper internals |
+| `internal/echo`, `internal/player`, `pkg/botclient` | helper internals |
 | `web/` | the browser client |
 | `deploy/` | Docker images and compose stack, nginx, systemd unit, deb packaging, example configuration |
 | `tools/loadgen` | synthetic participants for load and end-to-end checks |
@@ -225,6 +250,10 @@ through the manual checks in [docs/test-matrix.md](docs/test-matrix.md).
 | `rooms[]` | `slug`, `name`, `pin`, `max_participants`, and optionally `player: {file, name}` for a video loop from the media directory or `player: {url, name}` for a live camera (`rtsp://` or `rtsps://`, credentials in the URL are masked in logs) |
 | `rooms_file` | where rooms created in the lobby are saved (`/var/lib/kunveno/rooms.json`) |
 | `backgrounds_dir` | folder with the virtual background images (`/var/lib/kunveno/backgrounds`; the stack mounts `backgrounds/` there) |
+| `notes.enabled` | `true` offers meeting notes in rooms; needs the `kunveno-notes` add-on (default `false`, which hides every notes control) |
+| `notes.keep` | how long notes stay after they end: a whole number and `m`, `h` or `d` (`90m`, `12h`, `1d`, `2d`; default `1d`) |
+| `notes.live` | `true` shows phrases in the room as they are recognised, for checking the recognition (default `false`) |
+| `notes.dir` | where the notes are kept (`/var/lib/kunveno/notes`, which is `data/notes` in the stack) |
 
 `.env` next to the compose file sets the release (`KUNVENO_VERSION`), ports, the public host name
 for Grafana and its admin password.

@@ -9,6 +9,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
+COPY pkg ./pkg
 ARG APP
 ARG VERSION=dev
 # -trimpath drops build paths, -s -w drops the symbol table and DWARF debug data.

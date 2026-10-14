@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RoomState } from './state.svelte';
+import { MAX_PHRASES, RoomState } from './state.svelte';
 
 describe('RoomState', () => {
   it('tracks self, participants and sharer', () => {
@@ -7,10 +7,10 @@ describe('RoomState', () => {
     s.apply({ type: 'joined', self: { id: 'a', name: 'Ann', muted: false }, room: { slug: 'ops', name: 'Operations' } });
     expect(s.selfId).toBe('a');
     expect(s.roomName).toBe('Operations');
-    s.apply({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: false }, { id: 'b', name: 'Bob', muted: true }], sharer: 'b', echo: false });
+    s.apply({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: false }, { id: 'b', name: 'Bob', muted: true }], sharer: 'b', echo: false, notes: false });
     expect(s.others.map((p) => p.id)).toEqual(['b']);
     expect(s.isSharing).toBe(false);
-    s.apply({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: false }], sharer: 'a', echo: false });
+    s.apply({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: false }], sharer: 'a', echo: false, notes: false });
     expect(s.isSharing).toBe(true);
   });
 
@@ -37,7 +37,7 @@ describe('RoomState', () => {
   });
   it('tracks the echo flag and keeps bots out of the people count', () => {
     const s = new RoomState();
-    s.apply({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: false, bot: false }, { id: 'e', name: 'Echo', muted: false, bot: true }], sharer: '', echo: true });
+    s.apply({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: false, bot: false }, { id: 'e', name: 'Echo', muted: false, bot: true }], sharer: '', echo: true, notes: false });
     expect(s.echo).toBe(true);
     expect(s.peopleCount).toBe(1);
     s.reset();
@@ -53,5 +53,20 @@ describe('RoomState', () => {
     expect(s.reactions.a?.emoji).toBe('🎉');
     s.clearReaction('a', s.reactions.a.seq);
     expect(s.reactions.a).toBeUndefined();
+  });
+
+  it('follows the notes flag, the ready notice and live phrases', () => {
+    const s = new RoomState();
+    s.apply({ type: 'notes_ready' });
+    expect(s.notesReady).toBe(true);
+    s.apply({ type: 'participants', participants: [], sharer: '', echo: false, notes: true });
+    expect(s.notes).toBe(true);
+    expect(s.notesReady).toBe(false); // a new recording hides the old notice
+    for (let i = 0; i < MAX_PHRASES + 5; i++) s.apply({ type: 'phrase', name: 'Анна', start: i, text: `фраза ${i}` });
+    expect(s.phrases.length).toBe(MAX_PHRASES);
+    expect(s.phrases.at(-1)?.text).toBe(`фраза ${MAX_PHRASES + 4}`);
+    expect(new Set(s.phrases.map((p) => p.seq)).size).toBe(MAX_PHRASES);
+    s.reset();
+    expect([s.notes, s.notesReady, s.phrases.length]).toEqual([false, false, 0]);
   });
 });

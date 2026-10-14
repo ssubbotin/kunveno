@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 const good = `
@@ -290,5 +291,31 @@ func TestBackgroundsDir(t *testing.T) {
 	cfg, err = Parse([]byte("backgrounds_dir: /srv/bg\n" + base))
 	if err != nil || cfg.BackgroundsDir != "/srv/bg" {
 		t.Fatalf("set = %q, %v", cfg.BackgroundsDir, err)
+	}
+}
+
+func TestNotes(t *testing.T) {
+	base := "media: {advertise_ip: 10.8.0.1}\nrooms: [{slug: a, name: A, pin: \"1234\"}]\n"
+	cfg, err := Parse([]byte(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := cfg.Notes; n.Enabled || n.Live || n.KeepFor != 24*time.Hour || n.Dir != DefaultNotesDir {
+		t.Fatalf("defaults: enabled=%v live=%v keep=%v dir=%q", n.Enabled, n.Live, n.KeepFor, n.Dir)
+	}
+	cfg, err = Parse([]byte("notes: {enabled: true, keep: 90m, live: true, dir: /srv/notes}\n" + base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := cfg.Notes; !n.Enabled || !n.Live || n.KeepFor != 90*time.Minute || n.Dir != "/srv/notes" {
+		t.Fatalf("set: enabled=%v live=%v keep=%v dir=%q", n.Enabled, n.Live, n.KeepFor, n.Dir)
+	}
+	for _, bad := range []string{"2d12h", "1w", "0d", "1.5h", `""`} {
+		if _, err := Parse([]byte("notes: {keep: " + bad + "}\n" + base)); err == nil || !strings.Contains(err.Error(), "notes.keep") {
+			t.Errorf("keep %s: err = %v, want a notes.keep error", bad, err)
+		}
+	}
+	if _, err := Parse([]byte("notes: {colour: red}\n" + base)); err == nil {
+		t.Error("unknown key under notes accepted")
 	}
 }

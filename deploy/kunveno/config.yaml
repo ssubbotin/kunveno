@@ -16,6 +16,13 @@ ui:
   # noise_suppression: false     # true: the noise filter starts on for participants who have not chosen
 # rooms_file: /var/lib/kunveno/rooms.json   # rooms created in the lobby; default shown
 # backgrounds_dir: /var/lib/kunveno/backgrounds   # virtual background presets; the stack mounts ./backgrounds here
+# Meeting notes need the commercial kunveno-notes add-on (licensing: ssubbotin@gmail.com). Install
+# it first, then switch them on here and run: docker compose restart server
+# notes:
+#   enabled: false            # true offers "Take notes" in rooms; false hides every notes control
+#   keep: 1d                  # how long notes stay after they end: 90m, 12h, 1d, 2d
+#   live: false               # debug: show phrases in the room as they are recognised
+#   dir: /var/lib/kunveno/notes
 rooms:
   - slug: ops
     name: Operations
