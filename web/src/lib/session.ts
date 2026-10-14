@@ -433,10 +433,22 @@ export class Session {
     const prefs = loadPrefs(localStorage);
     savePrefs(localStorage, { ...prefs, cameraOn: on });
     if (!on) {
+      this.state.cameraStarting = false; // a click while it starts cancels the start
       this.dropCamera();
       this.sig?.send({ type: 'camera', on: false });
       return;
     }
+    const startEpoch = this.camEpoch;
+    this.state.cameraStarting = true;
+    try {
+      await this.startCamera();
+    } finally {
+      if (this.camEpoch === startEpoch) this.state.cameraStarting = false;
+    }
+  }
+
+  // startCamera opens the camera (with the background, if one is chosen) and sends it.
+  private async startCamera(): Promise<void> {
     if (!this.cam) {
       const epoch = this.camEpoch;
       let opened: CameraInput | null;

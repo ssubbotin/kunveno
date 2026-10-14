@@ -52,8 +52,11 @@
   // Opening a camera takes a moment; a second switch meanwhile would open another track and leave
   // it running, so it is ignored.
   let cameraBusy = false;
+  // The camera counts as on from the click: starting it with a background takes about a second, and
+  // a click meanwhile switches it off again (cancels the start).
+  const cameraWanted = $derived(rs.cameraOn || rs.cameraStarting);
   async function switchCamera(on: boolean): Promise<boolean> {
-    if (cameraBusy) return false;
+    if (cameraBusy && on) return false;
     cameraBusy = true;
     try {
       await session.setCamera(on);
@@ -67,7 +70,7 @@
       announce(cameraReason);
       return;
     }
-    const on = !rs.cameraOn;
+    const on = !cameraWanted;
     if (!(await switchCamera(on))) return;
     // Read the result: opening the camera can fail (another app holds it).
     announce(on && !rs.cameraOn ? t('camera.unavailable') : rs.cameraOn ? t('camera.on') : t('camera.off'));
@@ -276,11 +279,12 @@
         {#if rs.noiseFilter === 'on'}<span class="nf" aria-hidden="true"></span>{/if}
       </button>
 
-      <button class="btn" class:off={rs.hasCamera && !rs.cameraOn} aria-pressed={rs.cameraOn} aria-disabled={cameraReason !== ''}
+      <button class="btn" class:off={rs.hasCamera && !cameraWanted} class:starting={rs.cameraStarting} aria-pressed={cameraWanted}
+        aria-busy={rs.cameraStarting} aria-disabled={cameraReason !== ''}
         aria-describedby={cameraReason ? 'camera-reason' : undefined}
-        title={cameraReason || (rs.cameraError ? t('camera.unavailable') : withKeys(t('control.camera'), 'camera'))} aria-keyshortcuts={ariaShortcut('camera', mac)}
-        onclick={() => { if (!cameraReason) void switchCamera(!rs.cameraOn); }}>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2" /><path d="m16 10 5-3v10l-5-3" />{#if !rs.cameraOn}<path d="M3 3l18 18" />{/if}</svg>
+        title={cameraReason || (rs.cameraStarting ? t('camera.starting') : rs.cameraError ? t('camera.unavailable') : withKeys(t('control.camera'), 'camera'))} aria-keyshortcuts={ariaShortcut('camera', mac)}
+        onclick={() => { if (!cameraReason) void switchCamera(!cameraWanted); }}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="13" height="12" rx="2" /><path d="m16 10 5-3v10l-5-3" />{#if !cameraWanted}<path d="M3 3l18 18" />{/if}</svg>
         <span class="label">{t('control.camera')}</span>
       </button>
 
@@ -396,6 +400,9 @@
   .btn.off { border-color: var(--caution); background: rgba(227, 161, 59, .15); color: #f3cf92; }
   .btn.flag { box-shadow: inset 0 -2px 0 var(--live); }
   .btn.mic { position: relative; }
+  .btn.starting svg { animation: starting 1s ease-in-out infinite; }
+  @keyframes starting { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { .btn.starting svg { animation: none; opacity: .6; } }
   .nf { position: absolute; right: .3rem; bottom: .3rem; width: .5rem; height: .5rem; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 2px var(--panel); }
   .level { width: .55rem; height: .55rem; border-radius: 50%; background: var(--line); transition: background .1s, box-shadow .1s; }
   .level.on { background: var(--live); box-shadow: 0 0 0 4px var(--live-soft); }

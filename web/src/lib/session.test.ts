@@ -560,4 +560,25 @@ describe('Session', () => {
     expect(replace).not.toHaveBeenCalled();
     expect(s.state.cameraOn).toBe(true);
   });
+
+  it('shows the camera as starting from the click until it is sent, and a second click cancels', async () => {
+    vi.spyOn(Rtc.prototype, 'startCamera').mockResolvedValue();
+    const s = await joined();
+    let open = () => {};
+    cam.gate = new Promise<void>((r) => (open = r));
+    const starting = s.setCamera(true);
+    await flush();
+    expect(s.state.cameraStarting).toBe(true);
+    await s.setCamera(false); // the second click, while the effect is still loading
+    expect(s.state.cameraStarting).toBe(false);
+    open();
+    await starting;
+    expect(s.state.cameraOn).toBe(false);
+    expect(s.state.cameraStarting).toBe(false);
+    expect(cam.opened.every((c) => c.stopped)).toBe(true);
+    cam.gate = null;
+    await s.setCamera(true);
+    expect(s.state.cameraOn).toBe(true);
+    expect(s.state.cameraStarting).toBe(false);
+  });
 });

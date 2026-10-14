@@ -100,6 +100,7 @@ const ru = {
   'camera.joinWith': 'Войти с камерой',
   'camera.on': 'Камера включена',
   'camera.off': 'Камера выключена',
+  'camera.starting': 'Камера включается…',
   'camera.unavailable': 'Камера недоступна: браузер не дал доступ или её занимает другая программа.',
 
   'status.connected': 'на связи',
@@ -258,6 +259,7 @@ const en: Messages = {
   'camera.joinWith': 'Join with camera',
   'camera.on': 'Camera on',
   'camera.off': 'Camera off',
+  'camera.starting': 'Turning the camera on…',
   'camera.unavailable': "Camera unavailable: the browser didn't allow it or another app is using it.",
 
   'status.connected': 'connected',
@@ -413,6 +415,7 @@ const es: Messages = {
   'camera.joinWith': 'Entrar con cámara',
   'camera.on': 'Cámara encendida',
   'camera.off': 'Cámara apagada',
+  'camera.starting': 'Encendiendo la cámara…',
   'camera.unavailable': 'Cámara no disponible: el navegador no la ha permitido o la está usando otra aplicación.',
 
   'status.connected': 'conectado',
