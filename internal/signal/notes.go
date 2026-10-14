@@ -157,8 +157,9 @@ func (h *Handler) hasNotesBot(lr *liveRoom, meeting time.Time) bool {
 	return false
 }
 
-// phrase takes one phrase from the notes bot. An invalid phrase, or one whose speaker the server
-// does not know, is dropped; the bot's socket stays open.
+// phrase takes one phrase from the notes bot. An invalid phrase, one whose speaker the server does
+// not know, or one from a bot stopped in its own join once the transcript has ended is dropped; the
+// bot's socket stays open.
 func (h *Handler) phrase(s *session, m ClientMessage) {
 	text, start, end, ok := validPhrase(m, time.Now())
 	if !ok {
@@ -171,6 +172,7 @@ func (h *Handler) phrase(s *session, m ClientMessage) {
 	if o, here := lr.members[m.Speaker]; here && !o.bot {
 		name = o.name
 	}
+	late := s.stoppedAtJoin
 	h.mu.Unlock()
 	h.notesMu.Lock()
 	n := &lr.notes
@@ -184,6 +186,9 @@ func (h *Handler) phrase(s *session, m ClientMessage) {
 	stored := false
 	switch {
 	case name == "":
+	case late && !n.open:
+		// The bot joined while the notes were being switched off: the transcript has ended and the
+		// room was told; what it heard afterwards must not reopen it.
 	case !earlier:
 		err = h.appendPhrase(lr, p)
 		stored = err == nil
@@ -201,7 +206,7 @@ func (h *Handler) phrase(s *session, m ClientMessage) {
 		s.log.Error("notes phrase", "err", err)
 		return
 	case !stored:
-		s.log.Info("phrase of an earlier meeting without open notes dropped")
+		s.log.Info("phrase without open notes dropped")
 		return
 	}
 	if h.notesLive && !earlier {

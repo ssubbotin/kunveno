@@ -316,6 +316,10 @@ func TestNewMeetingReplacesNotes(t *testing.T) {
 	notesOn(t, cb, true)
 	bot2, _ := joinNotesBot(t, e)
 	send(t, bot2, phrase(idb, "Вторая встреча.", 0))
+	waitFor(t, func() bool { // stored before the switch-off, as a bot's phrases are once it has joined
+		data, _ := os.ReadFile(filepath.Join(e.notesDir, "ops.jsonl"))
+		return strings.Contains(string(data), "Вторая встреча.")
+	})
 	notesOn(t, cb, false)
 	expect(t, bot2, "stop")
 	send(t, bot2, `{"type":"leave"}`)
@@ -570,4 +574,65 @@ func TestNotesOffWhileTheBotJoins(t *testing.T) {
 	expect(t, bot, "joined")
 	expect(t, bot, "stop")
 	expectClosed(t, bot)
+}
+
+// Final review: a notes bot that joined while the notes were being switched off is told to stop at
+// once. Its phrases arrive after the transcript has ended; they must not reopen it (a resumed mark
+// before the pause) nor cause a second notes_ready.
+func TestStoppingBotCannotReopenEndedNotes(t *testing.T) {
+	e, store := newNotesEnv(t, false)
+	ca, ida := join(t, e, "Ann")
+	notesOn(t, ca, true)
+	bot1, _ := joinNotesBot(t, e)
+	send(t, bot1, phrase(ida, "Первая фраза.", 3*time.Second))
+	waitPhrases(t, e, 1)
+
+	entered, release := make(chan struct{}), make(chan struct{})
+	e.media.setHold(func() { close(entered); <-release })
+	bot2 := dial(t, e)
+	send(t, bot2, `{"type":"join","room":"ops","name":"Заметки","role":"notes"}`)
+	<-entered
+	e.media.setHold(nil)
+	notesOn(t, ca, false)
+	expect(t, bot1, "stop")
+	send(t, bot1, `{"type":"leave"}`)
+	expect(t, ca, "notes_ready")
+
+	close(release)
+	id2 := expect(t, bot2, "joined").Self.ID
+	expect(t, bot2, "stop")
+	has := func(m anyMsg, id string) bool {
+		return slices.ContainsFunc(m.Participants, func(p ParticipantInfo) bool { return p.ID == id })
+	}
+	until(t, ca, "notes_ready", func(m anyMsg) bool { return m.Type == "participants" && has(m, id2) })
+	send(t, bot2, phrase(ida, "Поздняя фраза.", time.Second))
+	send(t, bot2, `{"type":"leave"}`)
+	until(t, ca, "notes_ready", func(m anyMsg) bool { return m.Type == "participants" && !has(m, id2) })
+
+	tr := waitReady(t, store)
+	if len(tr.Phrases) != 1 || kinds(tr.Events) != notes.KindPaused {
+		t.Fatalf("phrases = %+v, events = %s", tr.Phrases, kinds(tr.Events))
+	}
+}
+
+// The bot that recorded the meeting may deliver its first phrase only after the stop (recognition
+// lags the speech): that phrase still begins the transcript.
+func TestFirstPhraseAfterTheStopIsKept(t *testing.T) {
+	e, store := newNotesEnv(t, false)
+	ca, ida := join(t, e, "Ann")
+	notesOn(t, ca, true)
+	bot, idb := joinNotesBot(t, e)
+	// The bot's read loop answers only once its join is over: the switch-off below comes after it.
+	send(t, bot, `{"type":"mute","muted":true}`)
+	until(t, ca, "notes_ready", func(m anyMsg) bool {
+		return m.Type == "participants" && slices.ContainsFunc(m.Participants, func(p ParticipantInfo) bool { return p.ID == idb && p.Muted })
+	})
+	notesOn(t, ca, false)
+	expect(t, bot, "stop")
+	send(t, bot, phrase(ida, "Единственная фраза.", time.Second))
+	send(t, bot, `{"type":"leave"}`)
+	expect(t, ca, "notes_ready")
+	if tr := waitReady(t, store); len(tr.Phrases) != 1 {
+		t.Fatalf("phrases = %+v", tr.Phrases)
+	}
 }

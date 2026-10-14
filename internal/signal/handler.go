@@ -78,6 +78,7 @@ type session struct {
 	botKind        string      // RoleEcho, RolePlayer, RoleCamera or RoleNotes
 	noVideo        bool        // declined other participants' cameras; guarded by Handler.mu
 	stopping       bool        // notes bot told to stop; guarded by Handler.mu
+	stoppedAtJoin  bool        // notes bot whose notes were switched off while it joined; guarded by Handler.mu
 	stopTimer      *time.Timer // closes a stopped notes bot that does not leave; guarded by Handler.mu
 	meeting        time.Time   // notes bot: start of the meeting it joined to take notes of
 	client         string      // the page's id from join, if it sent one
@@ -363,6 +364,9 @@ func (h *Handler) join(conn *websocket.Conn, cancel context.CancelFunc, m Client
 	h.broadcast(lr)
 	peer.Negotiate()
 	if s.botKind == RoleNotes && !lr.room.Notes() {
+		h.mu.Lock()
+		s.stoppedAtJoin = true // it heard nothing while the notes were on
+		h.mu.Unlock()
 		h.stopNotes(lr) // switched off while this bot was joining, before it was a member to stop
 	}
 	return s, "", ""
