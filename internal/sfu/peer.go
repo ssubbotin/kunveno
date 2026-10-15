@@ -66,7 +66,12 @@ type Peer struct {
 }
 
 func (e *Engine) NewPeer(id string, sig Signaler, h Handlers) (*Peer, error) {
-	pc, err := e.api.NewPeerConnection(webrtc.Configuration{})
+	// One API per peer: pion takes its loggers from the API, and this way they carry the peer id.
+	// Each PeerConnection copies the media engine and builds its own interceptors anyway.
+	se := e.se
+	se.LoggerFactory = newPionLogs(e.log.With("peer", id))
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(e.media), webrtc.WithInterceptorRegistry(e.reg), webrtc.WithSettingEngine(se))
+	pc, err := api.NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		return nil, err
 	}
