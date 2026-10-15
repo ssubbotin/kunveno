@@ -56,12 +56,14 @@ type EngineConfig struct {
 	IncludeLoopback bool // tests only
 }
 
-// Engine owns the pion API and the shared UDP socket.
+// Engine owns the pion settings and the shared UDP socket.
 type Engine struct {
-	api  *webrtc.API
-	conn *net.UDPConn
-	tcp  net.Listener // nil without ICE-TCP
-	log  *slog.Logger
+	media *webrtc.MediaEngine
+	reg   *interceptor.Registry
+	se    webrtc.SettingEngine
+	conn  *net.UDPConn
+	tcp   net.Listener // nil without ICE-TCP
+	log   *slog.Logger
 }
 
 func NewEngine(cfg EngineConfig, log *slog.Logger) (*Engine, error) {
@@ -107,8 +109,7 @@ func NewEngine(cfg EngineConfig, log *slog.Logger) (*Engine, error) {
 	if cfg.IncludeLoopback {
 		se.SetIncludeLoopbackCandidate(true)
 	}
-	api := webrtc.NewAPI(webrtc.WithMediaEngine(m), webrtc.WithInterceptorRegistry(reg), webrtc.WithSettingEngine(se))
-	return &Engine{api: api, conn: conn, tcp: tcp, log: log}, nil
+	return &Engine{media: m, reg: reg, se: se, conn: conn, tcp: tcp, log: log}, nil
 }
 
 // Port is the bound UDP port (useful when 0 was requested).
