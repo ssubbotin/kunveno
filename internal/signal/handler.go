@@ -379,6 +379,10 @@ func (h *Handler) join(conn *websocket.Conn, cancel context.CancelFunc, m Client
 		return nil, CodeMediaFailed, "write failed"
 	}
 	s.log.Info("joined", "name", m.Name)
+	if r := m.Restart; r != nil && !bot {
+		s.log.Info("rejoin", "name", m.Name, "reason", r.Reason, "after", r.After, "transport", r.Transport)
+		metrics.ClientRestarts.WithLabelValues(r.Reason).Inc()
+	}
 	h.broadcast(lr)
 	peer.Negotiate()
 	if s.botKind == RoleNotes && !lr.room.Notes() {

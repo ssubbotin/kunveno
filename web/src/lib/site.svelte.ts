@@ -6,16 +6,23 @@ export const DEFAULT_TITLE = 'kunveno';
 // Must match config.DefaultReactions on the server.
 export const DEFAULT_REACTIONS = ['👍', '👎', '👏', '😂', '❤️', '🎉', '😮', '🤔', '☕', '👋'];
 
-export type Info = { title: string; reactions: string[]; noiseSuppression: boolean; notesEnabled: boolean; notesLive: boolean; recordingEnabled: boolean };
+export type Info = { title: string; reactions: string[]; noiseSuppression: boolean; notesEnabled: boolean; notesLive: boolean; recordingEnabled: boolean; reconnectGrace: number };
+
+// Seconds a disconnected peer connection may stay so before the session restarts; must match
+// config.DefaultReconnectGrace on the server (media.reconnect_grace, 3..120).
+export const DEFAULT_RECONNECT_GRACE = 15;
 
 export function infoFrom(info: unknown): Info {
-  const v = (info ?? {}) as { title?: unknown; reactions?: unknown; noise_suppression?: unknown; notes?: unknown; notes_live?: unknown; recording?: unknown };
+  const v = (info ?? {}) as { title?: unknown; reactions?: unknown; noise_suppression?: unknown; notes?: unknown; notes_live?: unknown; recording?: unknown; reconnect_grace?: unknown };
   const title = typeof v.title === 'string' && v.title.trim() !== '' ? v.title.trim() : DEFAULT_TITLE;
   const list = Array.isArray(v.reactions)
     ? v.reactions.filter((e): e is string => typeof e === 'string' && e !== '' && new TextEncoder().encode(e).length <= 16)
     : [];
   const notesEnabled = v.notes === true;
+  const g = v.reconnect_grace;
+  const reconnectGrace = typeof g === 'number' && Number.isInteger(g) && g >= 3 && g <= 120 ? g : DEFAULT_RECONNECT_GRACE;
   return {
+    reconnectGrace,
     title, reactions: list.length > 0 ? list : DEFAULT_REACTIONS, noiseSuppression: v.noise_suppression === true,
     notesEnabled, notesLive: notesEnabled && v.notes_live === true, recordingEnabled: v.recording === true,
   };
@@ -30,6 +37,8 @@ class Site {
   notesLive = $state(false);
   // Meeting recording (recording.enabled; the kunveno-recorder add-on)
   recordingEnabled = $state(false);
+  // Seconds before a disconnected media connection restarts the session (media.reconnect_grace).
+  reconnectGrace = $state(DEFAULT_RECONNECT_GRACE);
 }
 
 export const site = new Site();
@@ -45,6 +54,7 @@ export async function loadInfo(): Promise<void> {
     site.notesEnabled = info.notesEnabled;
     site.notesLive = info.notesLive;
     site.recordingEnabled = info.recordingEnabled;
+    site.reconnectGrace = info.reconnectGrace;
   } catch {
     // keep the defaults
   }

@@ -170,16 +170,16 @@ func TestDeleteGuessingIsBlocked(t *testing.T) {
 
 func TestInfo(t *testing.T) {
 	rec := httptest.NewRecorder()
-	Info("Конференц связь", []string{"👍", "☕"}, true, true, false, false).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
-	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != `{"noise_suppression":true,"notes":true,"notes_live":false,"reactions":["👍","☕"],"recording":false,"title":"Конференц связь"}` {
+	Info("Конференц связь", []string{"👍", "☕"}, true, true, false, false, 15).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
+	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != `{"noise_suppression":true,"notes":true,"notes_live":false,"reactions":["👍","☕"],"reconnect_grace":15,"recording":false,"title":"Конференц связь"}` {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
 }
 
 func TestInfoRecording(t *testing.T) {
 	rec := httptest.NewRecorder()
-	Info("T", nil, false, false, false, true).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
-	if !strings.Contains(rec.Body.String(), `"recording":true`) {
+	Info("T", nil, false, false, false, true, 30).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
+	if !strings.Contains(rec.Body.String(), `"recording":true`) || !strings.Contains(rec.Body.String(), `"reconnect_grace":30`) {
 		t.Fatalf("%s", rec.Body)
 	}
 }

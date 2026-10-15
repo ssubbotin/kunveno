@@ -98,6 +98,9 @@ var (
 	Reactions = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "kunveno_reactions_total", Help: "Reactions sent in rooms, by emoji (a fixed set of eight).",
 	}, []string{"emoji"})
+	ClientRestarts = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "kunveno_client_restarts_total", Help: "Rejoins after a page dropped its own session, by the reason the page reports (ws_closed, media_disconnected, media_failed, connect_timeout, media_error, rtc_error).",
+	}, []string{"reason"})
 	RoomsCreated = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "kunveno_rooms_created_total", Help: "Rooms created from the lobby.",
 	})
@@ -121,7 +124,7 @@ func NewRegistry(rooms *room.Registry, version string) *prometheus.Registry {
 		RTTSeconds, LossRatio, JitterSeconds,
 		RTPPackets, RTPBytes, RTPSentPackets, RTPSentBytes, ActiveConnections, ConnectSeconds,
 		PeerStates, Transports, Offers, NegotiationErrors, KeyframeRequests, ViewerPLIs, NACKedPackets,
-		PINFailures, PINBlocks, Reactions, RoomsCreated, RoomsDeleted,
+		PINFailures, PINBlocks, Reactions, ClientRestarts, RoomsCreated, RoomsDeleted,
 	)
 	return r
 }

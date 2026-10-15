@@ -17,8 +17,12 @@ export type ServerMessage =
   // notes.live: a recognised phrase; start is Unix milliseconds.
   | { type: 'phrase'; name: string; start: number; text: string };
 
+// RestartReason says why a page dropped its previous session; sent with the next join.
+export type RestartReason = 'ws_closed' | 'media_disconnected' | 'media_failed' | 'connect_timeout' | 'media_error' | 'rtc_error';
+export type Restart = { reason: RestartReason; after: number; transport: 'udp' | 'tcp' | '' };
+
 export type ClientMessage =
-  | { type: 'join'; room: string; pin: string; name: string; media?: 'tcp'; client?: string }
+  | { type: 'join'; room: string; pin: string; name: string; media?: 'tcp'; client?: string; restart?: Restart }
   | { type: 'answer'; sdp: string }
   | { type: 'candidate'; candidate: RTCIceCandidateInit }
   | { type: 'mute'; muted: boolean }

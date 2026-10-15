@@ -8,6 +8,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/ssubbotin/kunveno/internal/metrics"
 	"github.com/ssubbotin/kunveno/internal/quality"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -143,6 +144,25 @@ type env struct {
 	h     *Handler
 
 	notesDir string // the notes store's directory, for tests with notes
+	logs     *lockedBuf
+}
+
+// lockedBuf collects the server log for tests that assert on log lines.
+type lockedBuf struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (l *lockedBuf) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuf) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
 }
 
 func newEnv(t *testing.T, capacity int) *env {
@@ -152,11 +172,12 @@ func newEnv(t *testing.T, capacity int) *env {
 	media := newFakeMedia()
 	tw := &testWriter{t: t}
 	t.Cleanup(tw.stop)
-	h := New(reg, media, nil, slog.New(slog.NewTextHandler(tw, nil)))
+	logs := &lockedBuf{}
+	h := New(reg, media, nil, slog.New(slog.NewTextHandler(io.MultiWriter(tw, logs), nil)))
 	h.qualityEvery = 20 * time.Millisecond
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return &env{srv: srv, media: media, h: h}
+	return &env{srv: srv, media: media, h: h, logs: logs}
 }
 
 // testWriter routes server logs to t.Log until the test ends; session goroutines
@@ -789,4 +810,65 @@ func TestCameraRoleNeedsAPlayerRoom(t *testing.T) {
 			break
 		}
 	}
+}
+
+func TestRejoinLogsAndCountsTheRestartReason(t *testing.T) {
+	val := func(reason string) float64 { return testutil.ToFloat64(metrics.ClientRestarts.WithLabelValues(reason)) }
+	before := val("media_disconnected")
+	e := newEnv(t, 15)
+	c := dial(t, e)
+	send(t, c, `{"type":"join","room":"ops","pin":"1234","name":"Ann","restart":{"reason":"media_disconnected","after":27,"transport":"udp"}}`)
+	expect(t, c, "joined")
+	// The joined frame goes out just before the log line and the counter.
+	for deadline := time.Now().Add(3 * time.Second); val("media_disconnected") == before && time.Now().Before(deadline); {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := val("media_disconnected") - before; got != 1 {
+		t.Errorf("counter delta = %v, want 1", got)
+	}
+	logs := e.logs.String()
+	for _, want := range []string{"msg=rejoin", "room=ops", "name=Ann", "reason=media_disconnected", "after=27", "transport=udp"} {
+		if !strings.Contains(logs, want) {
+			t.Errorf("log lacks %q:\n%s", want, logs)
+		}
+	}
+}
+
+func TestJoinWithoutOrWithInvalidRestartIsNotCountedAndNotRefused(t *testing.T) {
+	count := func() (n float64) {
+		for r := range ptrSet("ws_closed", "media_disconnected", "media_failed", "connect_timeout", "media_error", "rtc_error") {
+			n += testutil.ToFloat64(metrics.ClientRestarts.WithLabelValues(r))
+		}
+		return
+	}
+	before := count()
+	e := newEnv(t, 15)
+	for _, extra := range []string{
+		``,
+		`,"restart":{"reason":"boredom","after":1,"transport":"udp"}`,
+		`,"restart":{"reason":"ws_closed","after":-1,"transport":"udp"}`,
+		`,"restart":{"reason":"ws_closed","after":86401,"transport":"udp"}`,
+		`,"restart":{"reason":"ws_closed","after":1.5,"transport":"udp"}`,
+		`,"restart":{"reason":"ws_closed","after":"x","transport":"udp"}`,
+		`,"restart":{"reason":"ws_closed","after":1,"transport":"quic"}`,
+		`,"restart":"ws_closed"`,
+	} {
+		c := dial(t, e)
+		send(t, c, `{"type":"join","room":"ops","pin":"1234","name":"Ann"`+extra+`}`)
+		expect(t, c, "joined")
+	}
+	if got := count() - before; got != 0 {
+		t.Errorf("restarts counted = %v, want 0", got)
+	}
+	if strings.Contains(e.logs.String(), "msg=rejoin") {
+		t.Errorf("rejoin logged:\n%s", e.logs.String())
+	}
+}
+
+func ptrSet(v ...string) map[string]struct{} {
+	m := map[string]struct{}{}
+	for _, s := range v {
+		m[s] = struct{}{}
+	}
+	return m
 }

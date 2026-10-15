@@ -46,6 +46,18 @@ describe('watchConnection', () => {
     expect(onFailed).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
     expect(onFailed).toHaveBeenCalledTimes(1);
+    expect(onFailed).toHaveBeenCalledWith('media_disconnected');
+  });
+
+  it('waits 15 s by default, so outages of a few seconds pass', () => {
+    const onFailed = vi.fn();
+    const w = watchConnection(onFailed);
+    w('connected');
+    w('disconnected');
+    vi.advanceTimersByTime(14_999);
+    expect(onFailed).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onFailed).toHaveBeenCalledWith('media_disconnected');
   });
 
   it('does nothing when the connection recovers in time', () => {
@@ -67,6 +79,7 @@ describe('watchConnection', () => {
     expect(onFailed).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
     expect(onFailed).toHaveBeenCalledTimes(1);
+    expect(onFailed).toHaveBeenCalledWith('connect_timeout');
   });
 
   it('a connection that comes up in time cancels the connect window', () => {
@@ -86,6 +99,7 @@ describe('watchConnection', () => {
     w('failed');
     vi.advanceTimersByTime(10_000);
     expect(onFailed).toHaveBeenCalledTimes(1);
+    expect(onFailed).toHaveBeenCalledWith('media_failed');
   });
 });
 

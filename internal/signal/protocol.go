@@ -98,6 +98,54 @@ var (
 	clientRe = regexp.MustCompile(`^[A-Za-z0-9_-]{8,64}$`)
 )
 
+// RestartReasons are the reasons a page may give for dropping its previous session.
+var RestartReasons = map[string]bool{
+	"ws_closed": true, "media_disconnected": true, "media_failed": true,
+	"connect_timeout": true, "media_error": true, "rtc_error": true,
+}
+
+// MaxRestartAfter is the longest session length (seconds) a restart report may claim.
+const MaxRestartAfter = 86400
+
+// Restart says why a page dropped its previous session; see ClientMessage.Restart.
+type Restart struct {
+	Reason    string `json:"reason"`
+	After     int    `json:"after"`
+	Transport string `json:"transport"`
+}
+
+// UnmarshalJSON never fails: a malformed object (wrong types, not an object) becomes an invalid
+// Restart, which ParseClient drops, so a bad report cannot refuse the join.
+func (r *Restart) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Reason    any `json:"reason"`
+		After     any `json:"after"`
+		Transport any `json:"transport"`
+	}
+	*r = Restart{After: -1, Transport: "?"}
+	if json.Unmarshal(data, &raw) != nil {
+		return nil
+	}
+	if v, ok := raw.Reason.(string); ok {
+		r.Reason = v
+	}
+	if v, ok := raw.After.(float64); ok && v == float64(int(v)) && v >= 0 && v <= MaxRestartAfter {
+		r.After = int(v)
+	}
+	if v, ok := raw.Transport.(string); ok {
+		r.Transport = v
+	}
+	if raw.Transport == nil {
+		r.Transport = ""
+	}
+	return nil
+}
+
+func (r *Restart) valid() bool {
+	return r != nil && RestartReasons[r.Reason] && r.After >= 0 && r.After <= MaxRestartAfter &&
+		(r.Transport == "" || r.Transport == "udp" || r.Transport == "tcp")
+}
+
 // ClientMessage is the union of every client-to-server message.
 type ClientMessage struct {
 	Type      string                   `json:"type"`
@@ -110,6 +158,16 @@ type ClientMessage struct {
 	Action    string                   `json:"action,omitempty"`
 	Role      string                   `json:"role,omitempty"`  // "echo" for the local echo helper
 	Media     string                   `json:"media,omitempty"` // "tcp" after a failed UDP path
+	// Restart is sent by a page that rejoins after its own connection dropped (never on a plain
+	// first join or after the person left; also after a failed first attempt): {"restart":{"reason":"media_disconnected","after":27,
+	// "transport":"udp"}}. reason is one of RestartReasons (ws_closed: the signaling socket closed;
+	// media_disconnected, media_failed: the peer connection stayed disconnected past the grace or
+	// failed; connect_timeout: it never connected; media_error: the server sent media_failed;
+	// rtc_error: the peer connection could not be created), after is how many seconds the dropped
+	// session lived (0..86400) and transport is its media path ("", "udp" or "tcp"). The server logs
+	// it and counts it; an invalid object is dropped without refusing the join (ParseClient sets
+	// Restart to nil).
+	Restart *Restart `json:"restart,omitempty"`
 	// Client identifies the page: a join with the same client id replaces that page's earlier
 	// session, so a page never shows up twice.
 	Client  string `json:"client,omitempty"`
@@ -133,6 +191,9 @@ func ParseClient(data []byte) (ClientMessage, error) {
 	switch m.Type {
 	case "join":
 		m.Name = strings.TrimSpace(m.Name)
+		if !m.Restart.valid() {
+			m.Restart = nil
+		}
 		switch {
 		case !slugRe.MatchString(m.Room):
 			return m, fmt.Errorf("%w: join.room", ErrBadMessage)

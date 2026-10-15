@@ -255,10 +255,11 @@ func local(r *http.Request) bool {
 // Info serves GET /api/info: installation details the client shows: the title, the reactions
 // participants can send, whether the noise filter is on by default, whether meeting notes are
 // offered (notes.enabled), whether phrases are shown live (notes.live) and whether meeting
-// recording is offered (recording.enabled).
-func Info(title string, reactions []string, noiseSuppression, notesEnabled, notesLive, recordingEnabled bool) http.Handler {
+// recording is offered (recording.enabled) and how many seconds a client waits on a disconnected
+// media connection before restarting (media.reconnect_grace).
+func Info(title string, reactions []string, noiseSuppression, notesEnabled, notesLive, recordingEnabled bool, reconnectGrace int) http.Handler {
 	body := map[string]any{"title": title, "reactions": reactions, "noise_suppression": noiseSuppression,
-		"notes": notesEnabled, "notes_live": notesEnabled && notesLive, "recording": recordingEnabled}
+		"notes": notesEnabled, "notes_live": notesEnabled && notesLive, "recording": recordingEnabled, "reconnect_grace": reconnectGrace}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)

@@ -183,3 +183,45 @@ func TestJoinedRecorderCarriesTheMeeting(t *testing.T) {
 		t.Fatal(string(b))
 	}
 }
+
+func TestParseClientJoinRestart(t *testing.T) {
+	join := func(restart string) ClientMessage {
+		t.Helper()
+		m, err := ParseClient([]byte(`{"type":"join","room":"ops","pin":"1234","name":"Ann"` + restart + `}`))
+		if err != nil {
+			t.Fatalf("%s: %v", restart, err)
+		}
+		return m
+	}
+	m := join(`,"restart":{"reason":"media_disconnected","after":27,"transport":"udp"}`)
+	if m.Restart == nil || *m.Restart != (Restart{Reason: "media_disconnected", After: 27, Transport: "udp"}) {
+		t.Fatalf("restart = %+v", m.Restart)
+	}
+	if m := join(`,"restart":{"reason":"rtc_error","after":0,"transport":""}`); m.Restart == nil || m.Restart.Transport != "" {
+		t.Errorf("empty transport: %+v", m.Restart)
+	}
+	if m := join(`,"restart":{"reason":"ws_closed","after":86400}`); m.Restart == nil {
+		t.Error("missing transport is allowed")
+	}
+	if m := join(``); m.Restart != nil {
+		t.Errorf("no restart: %+v", m.Restart)
+	}
+	for _, bad := range []string{
+		`,"restart":{"reason":"boredom","after":1,"transport":"udp"}`,
+		`,"restart":{"after":1,"transport":"udp"}`,
+		`,"restart":{"reason":"ws_closed","after":-1}`,
+		`,"restart":{"reason":"ws_closed","after":86401}`,
+		`,"restart":{"reason":"ws_closed","after":1.5}`,
+		`,"restart":{"reason":"ws_closed","after":"1"}`,
+		`,"restart":{"reason":"ws_closed","after":1,"transport":"quic"}`,
+		`,"restart":{"reason":"ws_closed","after":1,"transport":5}`,
+		`,"restart":{"reason":7,"after":1}`,
+		`,"restart":"ws_closed"`,
+		`,"restart":[1]`,
+		`,"restart":null`,
+	} {
+		if m := join(bad); m.Restart != nil {
+			t.Errorf("%s: restart kept: %+v", bad, m.Restart)
+		}
+	}
+}

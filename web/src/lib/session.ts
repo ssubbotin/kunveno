@@ -1,4 +1,4 @@
-import type { ServerMessage } from './protocol';
+import type { Restart, RestartReason, ServerMessage } from './protocol';
 import { RoomState } from './state.svelte';
 import { Signaling } from './signaling';
 import { Rtc } from './rtc';
@@ -39,6 +39,12 @@ export class Session {
     if (this.wanted) void this.connect();
   });
   private everJoined = false;
+  // Why the last session was dropped on our side, until the next join reports it to the server;
+  // the first reason wins (a media failure is followed by the socket closing). Null after the
+  // person's own join or leave.
+  private dropped: { reason: RestartReason; after: number; transport: 'udp' | 'tcp' | '' } | null = null;
+  private connectStarted = 0;
+  private lastTransport: 'udp' | 'tcp' | '' = '';
   private readonly clientId = newClientId();
   private remoteAudio = new Map<string, { el: HTMLAudioElement; stop: () => void }>();
   private screenTrack: MediaStreamTrack | null = null;
@@ -73,6 +79,7 @@ export class Session {
     this.reconnector.cancel();
     this.reconnector.succeeded();
     this.everJoined = false;
+    this.dropped = null;
     // Enter in the state chosen in the lobby.
     const prefs = loadPrefs(localStorage);
     this.state.muted = !prefs.micOn;
@@ -293,6 +300,8 @@ export class Session {
   private async connect(): Promise<void> {
     if (!this.wanted || !this.micIn) return;
     this.state.status = this.everJoined ? 'reconnecting' : 'connecting';
+    this.connectStarted = Date.now();
+    this.lastTransport = '';
     // Events of a connection that is no longer the current one are ignored, so a late close
     // of an old socket cannot start a second session.
     const sig: Signaling = new Signaling(
@@ -316,24 +325,36 @@ export class Session {
         this.micIn.track,
         (m) => sig.send(m),
         (pid, track) => this.onRemoteTrack(pid, track),
-        () => {
+        (reason) => {
           // pc.close() fires no state change, so a closed connection's watch can still go off.
           if (this.sig !== sig) return;
+          this.noteDrop(reason);
           this.useTcp();
           this.restart();
         },
         2500,
-        (t) => (this.state.transport = t),
+        (t) => {
+          if (this.sig === sig) this.state.transport = this.lastTransport = t; // a late answer of a closed connection is stale
+        },
+        site.reconnectGrace * 1000,
       );
     } catch (e) {
       // Chrome refuses to create a peer connection while it believes the network is down, which
       // happens for a moment when the network changes. Retry instead of leaving the socket open
       // without a join until the server gives up on it.
       console.warn('rtc', e);
+      this.noteDrop('rtc_error');
       this.restart();
       return;
     }
-    sig.send({ type: 'join', ...this.wanted, client: this.clientId, ...(this.preferTcp ? { media: 'tcp' as const } : {}) });
+    const restart: Restart | undefined = this.dropped ?? undefined;
+    this.dropped = null;
+    sig.send({ type: 'join', ...this.wanted, client: this.clientId, ...(this.preferTcp ? { media: 'tcp' as const } : {}), ...(restart ? { restart } : {}) });
+  }
+
+  // noteDrop remembers why our session ended, for the next join. The first reason stays.
+  private noteDrop(reason: RestartReason): void {
+    this.dropped ??= { reason, after: Math.min(86400, Math.max(0, Math.round((Date.now() - this.connectStarted) / 1000))), transport: this.lastTransport };
   }
 
   private onMessage(m: ServerMessage): void {
@@ -370,6 +391,7 @@ export class Session {
           this.dropScreen();
           this.state.status = 'connected';
         } else if (m.code === 'media_failed') {
+          this.noteDrop('media_error');
           this.useTcp();
         } else if (FATAL_CODES.has(m.code)) {
           if (m.code === 'bad_pin' && this.wanted) forgetPin(localStorage, this.wanted.room); // it changed
@@ -381,6 +403,7 @@ export class Session {
 
   private onClosed(): void {
     this.teardownMedia();
+    if (this.wanted) this.noteDrop('ws_closed');
     if (this.wanted) this.scheduleReconnect();
     else if (this.state.status !== 'error') this.state.status = 'idle';
   }
@@ -402,6 +425,7 @@ export class Session {
 
   leave(): void {
     this.wanted = null;
+    this.dropped = null;
     this.reconnector.cancel();
     this.sig?.send({ type: 'leave' });
     this.sig?.close();

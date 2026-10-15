@@ -27,7 +27,12 @@ export function forgetTcp(store: Store): void {
 // "failed", after "disconnected" lasts graceMs, or when the connection does not come up within
 // connectMs of starting (a UDP path that never opens leaves it "connecting" until the server
 // gives up, ~40 s). Browsers take ~30 s to reach "failed" on their own, a long silence for a call.
-export function watchConnection(onFailed: () => void, graceMs = 5000, connectMs = 8000): (state: RTCPeerConnectionState) => void {
+// onFailed learns which condition fired. The grace is 15 s by default: over a lossy VPN outages of
+// 3-4 s are common, and the browser notices them only after its own delay, so a shorter grace
+// restarted the session (a new join) for outages that audio survives by freezing and resuming.
+export type FailReason = 'media_disconnected' | 'media_failed' | 'connect_timeout';
+
+export function watchConnection(onFailed: (reason: FailReason) => void, graceMs = 15000, connectMs = 8000): (state: RTCPeerConnectionState) => void {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let connectTimer: ReturnType<typeof setTimeout> | null = null;
   let everConnected = false;
@@ -37,23 +42,23 @@ export function watchConnection(onFailed: () => void, graceMs = 5000, connectMs 
     if (connectTimer) clearTimeout(connectTimer);
     timer = connectTimer = null;
   };
-  const report = () => {
+  const report = (reason: FailReason) => {
     stop();
     if (!reported) {
       reported = true;
-      onFailed();
+      onFailed(reason);
     }
   };
   return (state) => {
     if (state === 'failed') {
-      report();
+      report('media_failed');
     } else if (state === 'connected') {
       everConnected = true;
       stop();
     } else if (state === 'disconnected') {
-      timer ??= setTimeout(report, graceMs);
+      timer ??= setTimeout(() => report('media_disconnected'), graceMs);
     } else if ((state === 'new' || state === 'connecting') && !everConnected) {
-      connectTimer ??= setTimeout(report, connectMs);
+      connectTimer ??= setTimeout(() => report('connect_timeout'), connectMs);
     }
   };
 }

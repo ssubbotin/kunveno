@@ -10,6 +10,7 @@ media:
   # advertise_ip: 10.8.0.1      # the address browsers send media to; default KUNVENO_ADVERTISE_IP
                                 # from .env, else the host's primary IPv4 address
   share_max_kbps: 2500
+  # reconnect_grace: 15        # seconds a dropped media connection may stay down before the client rejoins (3..120)
 ui:
   title: kunveno                # shown in the lobby and the browser tab, e.g. your company's name
   # reactions: ["👍", "👎", "👏", "😂", "❤️", "🎉", "😮", "🤔", "☕", "👋"]   # 1..16 emoji; default shown
