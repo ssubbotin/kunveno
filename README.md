@@ -147,6 +147,8 @@ meeting of the same size needs under 10 Mbit/s.
 
 No STUN, TURN or other external service is involved. The server's own ports (API, metrics,
 Prometheus, Grafana, node-exporter) listen on 127.0.0.1 only; Grafana is reached through 443 at `/grafana/`.
+The dashboard's "Заметки" row (collapsed) belongs to the optional kunveno-notes add-on, which adds its
+Prometheus target through `/etc/prometheus/targets/*.json`; without it there is no target and the row is empty.
 
 **Firewall rule.** Allow from your users' networks to the host: TCP 443 (and 80), UDP 7000 and
 TCP 7000. If a network segment can only use TCP 7000, letting its UDP 7000 through gives those

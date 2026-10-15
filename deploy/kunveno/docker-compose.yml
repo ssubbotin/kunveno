@@ -186,6 +186,12 @@ configs:
         - job_name: host
           static_configs:
             - targets: ["127.0.0.1:${NODE_EXPORTER_PORT:-9105}"]
+        # Add-ons (for example kunveno-notes) drop target files into /etc/prometheus/targets/*.json
+        # (file_sd; the file sets the job label itself). With no files there is no target and
+        # nothing shows as down.
+        - job_name: addons
+          file_sd_configs:
+            - files: ["/etc/prometheus/targets/*.json"]
 
 volumes:
   prometheus-data:

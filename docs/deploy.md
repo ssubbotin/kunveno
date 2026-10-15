@@ -191,6 +191,14 @@ participants lose packets at the same moment, these panels tell load from other 
 host apart from losses in the network: no drops on the host and no CPU pressure point at the
 network between the participants and the host.
 
+The "Заметки" row (collapsed by default) shows the optional kunveno-notes add-on. Prometheus reads
+extra scrape targets from `/etc/prometheus/targets/*.json` (job `addons`, file-based discovery);
+add-ons drop their target file there, and the kunveno-notes file points at `127.0.0.1:9101` (the
+bot's `/metrics`) with `job: kunveno-notes`. The stack ships no target file, so without an add-on
+nothing is scraped and nothing shows as down. The row covers queue delay, recognition speed,
+queue length, rooms and tracks, phrases, errors, rejoins, the loaded model and the add-on version.
+Without the add-on the row has no data.
+
 ## Virtual backgrounds
 
 Participants can replace their camera background with an image. The images are the files in
