@@ -173,3 +173,14 @@ func (g *Registry) NotesRooms() []string {
 	}
 	return out
 }
+
+// RecordingRooms lists the slugs of rooms that want their meeting recorded.
+func (g *Registry) RecordingRooms() []string {
+	out := []string{}
+	for _, r := range g.All() {
+		if r.Recording() {
+			out = append(out, r.slug)
+		}
+	}
+	return out
+}

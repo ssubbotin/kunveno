@@ -22,7 +22,7 @@ type Participant struct {
 	Name  string
 	Muted bool
 	Bot   bool // a server-side helper such as the echo, not a person
-	// BotKind says which helper: BotEcho, BotPlayer, BotCamera or BotNotes.
+	// BotKind says which helper: BotEcho, BotPlayer, BotCamera, BotNotes or BotRecorder.
 	BotKind string
 	// Quality is the connection grade ("good", "fair", "poor"), empty until measured.
 	Quality string
@@ -37,6 +37,7 @@ type Snapshot struct {
 	Sharer       string
 	Echo         bool // someone asked for the echo helper in this room
 	Notes        bool // someone asked for meeting notes in this room
+	Recording    bool // someone asked for a recording of this room's meeting
 }
 
 // Room is safe for concurrent use.
@@ -45,15 +46,16 @@ type Room struct {
 	max             int
 	created         bool // made through the API, not from the config file
 
-	mu      sync.Mutex
-	members map[string]*Participant
-	order   []string
-	sharer  string
-	echo    bool
-	player  bool
-	notes   bool
-	meeting time.Time        // start of the current meeting, or of the last one
-	now     func() time.Time // time.Now; tests replace it
+	mu        sync.Mutex
+	members   map[string]*Participant
+	order     []string
+	sharer    string
+	echo      bool
+	player    bool
+	notes     bool
+	recording bool
+	meeting   time.Time        // start of the current meeting, or of the last one
+	now       func() time.Time // time.Now; tests replace it
 }
 
 func New(slug, name, pin string, max int) *Room {
@@ -92,10 +94,11 @@ func (r *Room) Join(id, name, pin string) error {
 
 // Helper kinds that join rooms as bots.
 const (
-	BotEcho   = "echo"
-	BotPlayer = "player"
-	BotCamera = "camera"
-	BotNotes  = "notes"
+	BotEcho     = "echo"
+	BotPlayer   = "player"
+	BotCamera   = "camera"
+	BotNotes    = "notes"
+	BotRecorder = "recorder"
 )
 
 // JoinBot admits a trusted server-side helper without a PIN; capacity still applies.
@@ -159,6 +162,19 @@ func (r *Room) Notes() bool {
 	return r.notes
 }
 
+// SetRecording records whether the room wants its meeting recorded.
+func (r *Room) SetRecording(on bool) {
+	r.mu.Lock()
+	r.recording = on
+	r.mu.Unlock()
+}
+
+func (r *Room) Recording() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.recording
+}
+
 // Meeting returns the start of the current meeting (from the first person entering a room without
 // people until the last person leaves) and whether it is still going on. After it ends the start
 // stays, so late phrases still find their meeting; zero before the first meeting.
@@ -183,8 +199,9 @@ func (r *Room) Leave(id string) (releasedShare bool) {
 		}
 	}
 	if !r.hasPeopleLocked() {
-		r.echo = false  // nobody left to listen
-		r.notes = false // nor to take notes of
+		r.echo = false      // nobody left to listen
+		r.notes = false     // nor to take notes of
+		r.recording = false // nor to record
 	}
 	if r.sharer == id {
 		r.sharer = ""
@@ -243,7 +260,7 @@ func (r *Room) StopShare(id string) bool {
 func (r *Room) Snapshot() Snapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	s := Snapshot{Sharer: r.sharer, Echo: r.echo, Notes: r.notes, Participants: make([]Participant, 0, len(r.order))}
+	s := Snapshot{Sharer: r.sharer, Echo: r.echo, Notes: r.notes, Recording: r.recording, Participants: make([]Participant, 0, len(r.order))}
 	for _, id := range r.order {
 		s.Participants = append(s.Participants, *r.members[id])
 	}

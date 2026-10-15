@@ -76,3 +76,18 @@ func TestRegistryRestoresCreated(t *testing.T) {
 		t.Fatal("restored room missing or not marked created")
 	}
 }
+
+func TestRegistryRecordingRooms(t *testing.T) {
+	g := NewRegistry()
+	a, b := New("a", "A", "1234", 15), New("b", "B", "1234", 15)
+	g.Add(a)
+	g.Add(b)
+	b.SetRecording(true)
+	if got := g.RecordingRooms(); len(got) != 1 || got[0] != "b" {
+		t.Fatalf("got %v", got)
+	}
+	b.SetRecording(false)
+	if got := g.RecordingRooms(); got == nil || len(got) != 0 {
+		t.Fatalf("got %#v, want an empty list", got)
+	}
+}
