@@ -63,62 +63,72 @@ pull request.
 Meeting notes (with the `kunveno-notes` add-on installed and `notes.enabled: true`; check 30 also
 without it):
 
-30. With `notes.enabled: false` the More menu has no notes item, the lobby shows no notes button,
+30. With `notes.enabled: false` the More menu has no notes item, the lobby never mentions notes,
     and `curl -s 127.0.0.1:8080/internal/notes` on the host prints `[]`.
 31. More → "Take notes": within 10 s the "Notes" participant appears with "writes down the meeting",
-    the header shows "● Taking notes" for everyone, a screen reader announces the change, and the
+    the header shows "Notes" with the sheet icon (no red dot) for everyone, a screen reader announces the change, and the
     "Take notes" switch is on.
 32. Two people speak in turn (Russian with some English terms): with `notes.live: true` the tile of
     the "Notes" participant shows each phrase within about 2 s of its end, with the right name and
     time, and follows new phrases unless scrolled up; during a screen share the tile in the side
     column shows the latest phrase under "Notes".
 33. Switching "Take notes" off: the Notes participant leaves within 10 s and everyone in the room
-    gets "Notes are ready" with "Download"; the file is named `<room>-YYYY-MM-DD-HHMM.md` and shows
+    gets the bar "Ready after the meeting:" with "Notes"; the file is named `<room>-YYYY-MM-DD-HHMM.md` and shows
     the room, the date, the time span, who spoke and the phrases in order. Switching notes off and
     on within one meeting adds "recording paused" and "recording resumed" lines to the same file.
 34. Download with the interface in English and in Spanish: the fixed labels follow the language,
     the phrases stay as spoken.
-35. Lobby: the room shows the notes mark, "Notes of the last meeting" and the time they are kept
-    until; the dialog has the PIN filled in when this browser knows it; a wrong PIN shows "Wrong
-    PIN"; after `notes.keep` passes (try `keep: 2m`) the button disappears, and a dialog still open
-    reports "The notes have already been deleted".
+35. Lobby: the room shows the notes mark, the "Last meeting" button and "Notes, kept until
+    16.10, 14:46" under it (day, month and time; the year only when it is not the current one).
+    The dialog "Last meeting" has the PIN filled in when this browser knows it, a show/hide eye,
+    and a row "Notes" with "kept until …" and "Download"; a wrong PIN shows "Wrong PIN" and puts
+    the focus in the PIN field; after `notes.keep` passes (try `keep: 2m`) the button disappears,
+    and "Download" in a dialog still open reports "The notes have already been deleted".
 36. The last person leaving ends the recording and the file holds the last phrase said before
     leaving; the first phrase of a new meeting in the room replaces the old notes.
-37. Lobby → "Notes of the last meeting" → "Delete": the dialog asks "Delete the notes of the
-    last meeting for good?" with "Delete" and "Cancel" (no browser prompt); "Cancel" returns to the
-    dialog with the notes intact. Keyboard focus: opening the confirmation puts it on "Cancel",
-    "Cancel" returns it to "Delete", an error returns it to "Delete" (to the PIN field
-    after a wrong PIN). With a wrong PIN "Delete" shows "Wrong PIN"; with the right one
-    the dialog closes, the notes mark and the button disappear from the room, and downloading in a
-    second tab with the dialog still open reports "The notes have already been deleted". Recording
-    in progress: with notes switched off in a running meeting, open the lobby dialog and press
-    "Delete"; then in the room switch notes on again and speak one phrase (the recording
-    reopens the same file); now "Delete" in the lobby shows "The notes are still being taken or
-    finished: stop them, or try again in a minute", returns to the dialog, and the file stays (the
-    same answer comes right after a switch-off while the Notes participant is still leaving). Deleting the notes of a
-    meeting still in progress (notes switched off) and switching notes on again starts a fresh file
-    holding only the new phrases.
+37. Lobby → "Last meeting" → "Delete…": the dialog asks "What to delete?" with a choice for each
+    item kept ("Video", "Notes", and "Everything", preselected, when both are there), then "Cancel"
+    and "Delete" (no browser prompt); "Cancel" returns to the dialog with everything intact.
+    Keyboard focus: opening the confirmation puts it on "Cancel", "Cancel" returns it to
+    "Delete…", an error returns it to "Delete…" (to the PIN field after a wrong PIN). With a wrong
+    PIN "Delete" shows "Wrong PIN" once, also for "Everything"; with the right one the dialog
+    closes, the marks and the button update in the room list, and downloading in a second tab with
+    the dialog still open reports "The notes have already been deleted". Notes in progress: with
+    notes switched off in a running meeting, open the lobby dialog and press "Delete…"; then in the
+    room switch notes on again and speak one phrase (the notes reopen the same file); now deleting
+    "Notes" shows "The notes are still being taken or finished: stop them, or try again in a
+    minute", returns to the dialog, and the file stays (the same answer comes right after a
+    switch-off while the Notes participant is still leaving). Deleting the notes of a meeting still
+    in progress (notes switched off) and switching notes on again starts a fresh file holding only
+    the new phrases.
 
 Meeting recording (with the `kunveno-recorder` add-on installed and `recording.enabled: true`; check
 38 also without it):
 
-38. With `recording.enabled: false` the More menu has no recording item, the lobby shows no
-    recording button, and `curl -s 127.0.0.1:8080/internal/recording` on the host prints `[]`.
+38. With `recording.enabled: false` the More menu has no recording item, the lobby never mentions
+    video (the "Last meeting" caption and dialog list the notes only), and
+    `curl -s 127.0.0.1:8080/internal/recording` on the host prints `[]`.
 39. More → "Recording": within 10 s the "Recording" participant (bot) appears, the header shows
     "● Recording" for everyone, a screen reader announces the change, and the switch is on for
     everyone in the room.
 40. Share a screen, speak, stop the share: the recording shows the screen while it is shared and a
     slate with the room name, the date and the speaker's name while nobody shares; no cameras.
 41. Switching recording off: the Recording participant leaves, and within a minute everyone in the
-    room gets "The meeting's recording is ready" with "Download"; the file plays with the screen and
-    the audio of all.
-42. Lobby: the room shows the recording mark and "Recording of the last meeting" with the time it is
-    kept until. The dialog: a wrong PIN shows "Wrong PIN"; the right one downloads the file. A large
-    file (a meeting of an hour or more) downloads with progress, and a download interrupted in
-    devtools (go offline, then online) resumes with a `Range` request instead of starting over.
-43. Lobby → "Delete" with the right PIN and a confirmation removes the file and the button. While
-    the room is being recorded, "Delete" shows "The meeting is still being recorded: switch the
-    recording off or try again in a minute" (409) and the file stays.
+    room gets the bar "Ready after the meeting:" with "Video"; the file plays with the screen and
+    the audio of all. With notes on as well, the bar holds both buttons ("Video" and "Notes", each
+    appearing when it is ready) and one ✕ ("Close") that dismisses both; at 360 px wide it wraps
+    inside the screen, and a failed download shows its error inside the bar.
+42. Lobby: the room shows the recording mark and "Last meeting" with "Video, kept until …" (or
+    "Video and notes, kept until …" with the nearer of the two times). The dialog lists "● Video"
+    and "Notes", each with its own time and "Download": a wrong PIN shows "Wrong PIN"; the right one
+    downloads the file. A large file (a meeting of an hour or more) downloads with progress, and a
+    download interrupted in devtools (go offline, then online) resumes with a `Range` request
+    instead of starting over.
+43. Lobby → "Last meeting" → "Delete…" → "Video" with the right PIN removes the file and the
+    recording mark; "Everything" removes both and the button. While the room is being recorded,
+    deleting "Video" shows "The meeting is still being recorded: switch the recording off or try
+    again in a minute" (409) and the file stays; with "Everything" the notes are still deleted and
+    the video's failure is listed.
 44. The last person leaving ends the recording; the file appears in the lobby within a minute.
 45. Restarting the server during a recording leaves no broken file: after the restart the lobby
     offers no half-written recording, and the data directory has no `*.tmp` files.

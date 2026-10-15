@@ -169,9 +169,9 @@ en los equipos de los usuarios. Funciona en Chrome y Firefox en Linux y Windows.
 Un participante puede activar las notas en una sala (Más → Tomar notas). El bot de notas entra
 entonces en la sala como un participante llamado «Notas», escucha el micrófono de cada persona por
 separado y envía las frases reconocidas al servidor, que guarda el texto: quién dijo qué y cuándo.
-Todos ven «● Tomando notas» en la cabecera de la sala. Cuando se desactivan las notas o sale la
-última persona, quienes siguen en la sala reciben «Las notas están listas» con un botón
-«Descargar»; en la página de inicio el mismo archivo está disponible como «Notas de la última
+Todos ven «Notas» con un icono de hoja en la cabecera de la sala. Cuando se desactivan las notas o
+sale la última persona, quienes siguen en la sala reciben la barra «Listo tras la reunión:» con un
+botón «Notas» que las descarga; en la página de inicio el mismo archivo está disponible en «Última
 reunión», con el PIN de la sala. El archivo es Markdown: la sala, la fecha y la hora, quién habló y
 las frases en orden, con las pausas de la grabación marcadas.
 
@@ -184,8 +184,8 @@ las frases en orden, con las pausas de la grabación marcadas.
   notas terminan (una desactivación o el final de la reunión; un día por defecto); la primera frase
   de la reunión siguiente las sustituye. Eliminar una sala elimina sus notas. Descargarlas exige el
   PIN de la sala, y los PIN erróneos cuentan para el mismo bloqueo que al entrar.
-- Las notas se pueden eliminar antes desde la página de inicio: «Notas de la última reunión» →
-  «Eliminar» con el PIN de la sala y una confirmación. Mientras se toman notas no se pueden
+- Las notas se pueden eliminar antes desde la página de inicio: «Última reunión» → «Eliminar…» con
+  el PIN de la sala, y luego «Notas» (o «Todo») en la confirmación. Mientras se toman notas no se pueden
   eliminar: primero hay que desactivarlas.
 - `notes.live: true` muestra las frases en la sala a medida que se reconocen, en el recuadro del
   participante «Notas», para comprobar el reconocimiento.
@@ -197,10 +197,16 @@ grabación entra entonces en la sala como un participante llamado «Grabación»
 compartida y el audio de todos en un único vídeo (1920x1080, 15 fotogramas por segundo, H.264 y
 AAC). Mientras nadie comparte pantalla, el vídeo muestra una pantalla de espera con el nombre de la
 sala, la fecha y quien está hablando. Las cámaras no se graban. Todos ven «● Grabando» en la
-cabecera de la sala. Cuando se desactiva la grabación o sale la última persona, el bot sube el
-archivo al servidor y quienes siguen en la sala reciben «La grabación de la reunión está lista» con un botón
-«Descargar»; en la página de inicio el mismo archivo está disponible como «Grabación de la última
-reunión», con el PIN de la sala.
+cabecera de la sala; el punto rojo siempre se refiere a este vídeo. Cuando se desactiva la grabación
+o sale la última persona, el bot sube el archivo al servidor y quienes siguen en la sala reciben un
+botón «Vídeo» en la barra «Listo tras la reunión:» (junto a «Notas» si la reunión también tuvo
+notas, con un solo botón de cierre para ambos); en la página de inicio el mismo archivo está
+disponible en «Última reunión», con el PIN de la sala.
+
+La página de inicio muestra «Última reunión» bajo una sala que guarda un vídeo, notas o ambos, con
+lo que hay y el vencimiento más próximo («Vídeo y notas, se guardan hasta 16/10, 14:43»). Su
+ventana pide el PIN de la sala una vez y muestra cada elemento con su propio plazo y un botón
+«Descargar».
 
 - El bot es el complemento comercial `kunveno-recorder`. No forma parte de este repositorio; para
   una licencia escribe a ssubbotin@gmail.com. La guía de instalación acompaña a la licencia.
@@ -212,8 +218,8 @@ reunión», con el PIN de la sala.
   sala elimina su grabación. Descargarla exige el PIN de la sala, y los PIN erróneos cuentan para el
   mismo bloqueo que al entrar. Una descarga interrumpida se puede reanudar mientras el enlace sea
   válido (5 minutos); después hay que empezar la descarga de nuevo desde la sala o la página de inicio.
-- La grabación se puede eliminar antes desde la página de inicio: «Grabación de la última reunión» →
-  «Eliminar» con el PIN de la sala y una confirmación. Una grabación en curso no se puede eliminar:
+- La grabación se puede eliminar antes desde la página de inicio: «Última reunión» → «Eliminar…»
+  con el PIN de la sala, y luego «Vídeo» (o «Todo») en la confirmación. Una grabación en curso no se puede eliminar:
   primero hay que desactivarla.
 - Un archivo mayor que `recording.max_size` (8 GB por defecto) lo rechaza el servidor y el archivo se queda
   en el volumen del complemento;

@@ -166,9 +166,9 @@ users' computers. It works in Chrome and Firefox on Linux and Windows.
 A participant can switch on notes in a room (More → Take notes). The notes bot then joins the room
 as a participant named "Notes", listens to each person's microphone separately and sends the
 recognised phrases to the server, which keeps the text: who said what, and when. Everyone in the
-room sees "● Taking notes" in the header. When the notes are switched off, or the last person
-leaves, everyone still in the room gets "Notes are ready" with a download button; the lobby offers
-the same file as "Notes of the last meeting", with the room PIN. The file is Markdown: the room,
+room sees "Notes" with a sheet icon in the header. When the notes are switched off, or the last
+person leaves, everyone still in the room gets the bar "Ready after the meeting:" with a "Notes"
+button that downloads them; the lobby offers the same file under "Last meeting", with the room PIN. The file is Markdown: the room,
 the date and time, who spoke, and the phrases in order, with pauses of the recording marked.
 
 - The bot is the commercial add-on `kunveno-notes` (speech recognition on the server's processor,
@@ -180,8 +180,8 @@ the date and time, who spoke, and the phrases in order, with pauses of the recor
   end (a switch-off or the end of the meeting); the first phrase of the next meeting replaces it.
   Deleting a room deletes its notes. Downloading needs the room PIN, and wrong PINs count toward
   the same block as joins.
-- The notes can be deleted earlier from the lobby: "Notes of the last meeting" → "Delete"
-  with the room PIN, then a confirmation. Notes still being taken cannot be deleted: switch them
+- The notes can be deleted earlier from the lobby: "Last meeting" → "Delete…" with the room PIN,
+  then "Notes" (or "Everything") in the confirmation. Notes still being taken cannot be deleted: switch them
   off first.
 - `notes.live: true` shows the phrases in the room as they are recognised, in the tile of the
   "Notes" participant, for checking the recognition.
@@ -192,10 +192,15 @@ A participant can switch on recording in a room (More → Recording). The record
 joins the room as a participant named "Recording" and records the shared screen and everyone's audio
 as one video (1920x1080, 15 frames per second, H.264 and AAC). While nobody shares a screen, the
 video shows a slate with the room name, the date and the current speaker. Cameras are not recorded.
-Everyone in the room sees "● Recording" in the header. When recording is switched off, or the last
-person leaves, the bot uploads the file to the server, and everyone still in the room gets "The meeting's
-recording is ready" with a download button; the lobby offers the same file as "Recording of the last
-meeting", with the room PIN.
+Everyone in the room sees "● Recording" in the header; the red dot always means this video. When
+recording is switched off, or the last person leaves, the bot uploads the file to the server, and
+everyone still in the room gets a "Video" button in the bar "Ready after the meeting:" (next to
+"Notes" when the meeting had notes too, with one close button for both); the lobby offers the same
+file under "Last meeting", with the room PIN.
+
+The lobby shows "Last meeting" under a room that keeps a video, notes or both, with what is there
+and the nearest expiry ("Video and notes, kept until 10/16, 02:43 PM"). Its dialog asks for the room
+PIN once and lists each item with its own expiry and a "Download" button.
 
 - The recorder is the commercial add-on `kunveno-recorder`. It is not part of this repository; for a
   licence write to ssubbotin@gmail.com. Its installation guide comes with the licence.
@@ -207,8 +212,8 @@ meeting", with the room PIN.
   its recording. Downloading needs the room PIN, and wrong PINs count toward the same block as
   joins. An interrupted download can be resumed while its link is valid (5 minutes); afterwards start
   the download again from the room or the lobby.
-- The recording can be deleted earlier from the lobby: "Recording of the last meeting" → "Delete" with the room
-  PIN, then a confirmation. A recording in progress cannot be deleted: switch it off first.
+- The recording can be deleted earlier from the lobby: "Last meeting" → "Delete…" with the room
+  PIN, then "Video" (or "Everything") in the confirmation. A recording in progress cannot be deleted: switch it off first.
 - A file larger than `recording.max_size` (8 GB by default) is refused by the server and stays in the
   add-on's volume, so size the limit for the longest meeting and keep free disk space for it.
 
