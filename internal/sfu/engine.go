@@ -95,7 +95,7 @@ func NewEngine(cfg EngineConfig, log *slog.Logger) (*Engine, error) {
 	networks := []webrtc.NetworkType{webrtc.NetworkTypeUDP4}
 	var tcp net.Listener
 	if cfg.TCP {
-		tcp, err = net.ListenTCP("tcp4", &net.TCPAddr{IP: net.IPv4zero, Port: cfg.TCPPort})
+		tcp, err = listenICETCP(cfg.TCPPort)
 		if err != nil {
 			conn.Close()
 			return nil, fmt.Errorf("listen tcp %d: %w", cfg.TCPPort, err)
