@@ -42,7 +42,7 @@ type notesRequest struct {
 // still being written, or notes are off (enabled false).
 func NotesDownload(reg *room.Registry, store *notes.Store, enabled bool, pins *ratelimit.Limiter, loc *time.Location) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		slug, req, ok := notesAccess(w, r, http.MethodPost, reg, enabled && store != nil, pins)
+		slug, req, ok := pinAccess(w, r, http.MethodPost, "/notes", "notes", reg, enabled && store != nil, pins)
 		if !ok {
 			return
 		}
@@ -68,7 +68,7 @@ func NotesDownload(reg *room.Registry, store *notes.Store, enabled bool, pins *r
 // in pins); 409 while the room's notes are still being recorded.
 func NotesDelete(reg *room.Registry, store *notes.Store, enabled bool, pins *ratelimit.Limiter) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		slug, _, ok := notesAccess(w, r, http.MethodDelete, reg, enabled && store != nil, pins)
+		slug, _, ok := pinAccess(w, r, http.MethodDelete, "/notes", "notes", reg, enabled && store != nil, pins)
 		if !ok {
 			return
 		}
@@ -86,21 +86,22 @@ func NotesDelete(reg *room.Registry, store *notes.Store, enabled bool, pins *rat
 	})
 }
 
-// notesAccess runs the checks shared by the notes requests, in order: the method (405), notes on
-// (404 before anything else), the path, the per-address PIN limit (429), the body (400), the room
-// (404) and its PIN (403, counted toward the limit). It writes the answer and reports false when a
-// check fails.
-func notesAccess(w http.ResponseWriter, r *http.Request, method string, reg *room.Registry, enabled bool, pins *ratelimit.Limiter) (string, notesRequest, bool) {
+// pinAccess runs the checks shared by the PIN-protected requests of notes and recording (suffix is
+// the path after the slug, what is the word in the 404 body and the PIN metric label), in order: the
+// method (405), the feature on (404 before anything else), the path, the per-address PIN limit
+// (429), the body (400), the room (404) and its PIN (403, counted toward the limit). It writes the
+// answer and reports false when a check fails.
+func pinAccess(w http.ResponseWriter, r *http.Request, method, suffix, what string, reg *room.Registry, enabled bool, pins *ratelimit.Limiter) (string, notesRequest, bool) {
 	var req notesRequest
 	if r.Method != method {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return "", req, false
 	}
 	if !enabled {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no notes"})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "no " + what})
 		return "", req, false
 	}
-	slug, ok := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/api/rooms/"), "/notes")
+	slug, ok := strings.CutSuffix(strings.TrimPrefix(r.URL.Path, "/api/rooms/"), suffix)
 	if !ok || slug == "" || strings.Contains(slug, "/") {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return "", req, false
@@ -123,7 +124,7 @@ func notesAccess(w http.ResponseWriter, r *http.Request, method string, reg *roo
 		return "", req, false
 	}
 	if !rm.CheckPIN(req.PIN) {
-		metrics.PINFailures.WithLabelValues("notes").Inc()
+		metrics.PINFailures.WithLabelValues(what).Inc()
 		if pins != nil && pins.Fail(ip) {
 			metrics.PINBlocks.Inc()
 		}

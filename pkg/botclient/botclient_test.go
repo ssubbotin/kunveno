@@ -143,3 +143,54 @@ func TestServeWithPassesOtherMessages(t *testing.T) {
 		}
 	}
 }
+
+// OnJoinedFrame gets the raw joined frame, before OnJoined runs.
+func TestServeWithPassesJoinedFrame(t *testing.T) {
+	sent := make(chan []byte, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer c.CloseNow()
+		ctx := r.Context()
+		var join map[string]string
+		if wsjson.Read(ctx, c, &join) != nil {
+			return
+		}
+		frame := []byte(`{"type":"joined","self":{"id":"r","name":"Запись","muted":false},"room":{"slug":"ops","name":"R"},"meeting":"2026-10-15T08:00:00.123Z"}`)
+		sent <- frame
+		_ = c.Write(ctx, websocket.MessageText, frame)
+		<-ctx.Done()
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	conn, err := Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pc, _ := webrtc.NewPeerConnection(webrtc.Configuration{})
+	defer pc.Close()
+	frames := make(chan []byte, 1)
+	order := make(chan string, 2)
+	go func() {
+		_ = ServeWith(ctx, conn, pc, "ops", "Запись", "recorder", Options{
+			OnJoinedFrame: func(data []byte) { frames <- data; order <- "frame" },
+			OnJoined:      func(func(any) error) { order <- "joined" },
+		})
+	}()
+	want := <-sent
+	select {
+	case got := <-frames:
+		if string(got) != string(want) {
+			t.Fatalf("frame = %s, want %s", got, want)
+		}
+	case <-ctx.Done():
+		t.Fatal("no joined frame")
+	}
+	if first, second := <-order, <-order; first != "frame" || second != "joined" {
+		t.Fatalf("order = %s, %s", first, second)
+	}
+}

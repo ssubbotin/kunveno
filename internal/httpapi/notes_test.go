@@ -158,7 +158,7 @@ func TestRoomsListShowsNotesUntil(t *testing.T) {
 	reg.Add(room.New("ops", "Операции", "1234", 15))
 	reg.Add(room.New("dev", "Разработка", "5678", 15))
 	recordMeeting(t, store, "ops")
-	rec := do(t, Rooms(reg, nil, nil, store, true), "GET", "/api/rooms", "")
+	rec := do(t, Rooms(reg, nil, nil, store, true, nil, false, nil), "GET", "/api/rooms", "")
 	var list []map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
 		t.Fatal(err)
@@ -173,7 +173,7 @@ func TestRoomsListShowsNotesUntil(t *testing.T) {
 	if strings.Contains(rec.Body.String(), `"pin"`) {
 		t.Fatal("pin in /api/rooms")
 	}
-	rec = do(t, Rooms(reg, nil, nil, store, false), "GET", "/api/rooms", "")
+	rec = do(t, Rooms(reg, nil, nil, store, false, nil, false, nil), "GET", "/api/rooms", "")
 	if strings.Contains(rec.Body.String(), "notes_until") {
 		t.Fatal("notes_until while notes are disabled")
 	}
@@ -188,7 +188,7 @@ func TestDeletingARoomDeletesItsNotes(t *testing.T) {
 		t.Fatal(err)
 	}
 	recordMeeting(t, store, "retro")
-	h := Rooms(reg, nil, nil, store, true)
+	h := Rooms(reg, nil, nil, store, true, nil, false, nil)
 	if rec := do(t, h, "DELETE", "/api/rooms/retro", `{"pin":"432100"}`); rec.Code != http.StatusNoContent {
 		t.Fatalf("delete: %d %s", rec.Code, rec.Body)
 	}
@@ -212,7 +212,7 @@ func TestDeletingARoomDeletesItsNotesWhileDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 	recordMeeting(t, store, "retro")
-	h := Rooms(reg, nil, nil, store, false)
+	h := Rooms(reg, nil, nil, store, false, nil, false, nil)
 	if rec := do(t, h, "GET", "/api/rooms", ""); strings.Contains(rec.Body.String(), "notes_until") {
 		t.Fatalf("notes_until while disabled: %s", rec.Body)
 	}
@@ -255,7 +255,7 @@ func TestNotesRoomsIsLocalOnly(t *testing.T) {
 
 func TestInfoNotesLiveNeedsNotes(t *testing.T) {
 	rec := httptest.NewRecorder()
-	Info("T", nil, false, false, true).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
+	Info("T", nil, false, false, true, false).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
 	if !strings.Contains(rec.Body.String(), `"notes":false`) || !strings.Contains(rec.Body.String(), `"notes_live":false`) {
 		t.Fatalf("%s", rec.Body)
 	}
@@ -280,7 +280,7 @@ func TestDeletingARoomForgetsNotesEvenIfTheFileStays(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Chmod(dir, 0o700)
-	h := Rooms(reg, nil, nil, store, true)
+	h := Rooms(reg, nil, nil, store, true, nil, false, nil)
 	if rec := do(t, h, "DELETE", "/api/rooms/retro", `{"pin":"432100"}`); rec.Code != http.StatusNoContent {
 		t.Fatalf("delete: %d %s", rec.Code, rec.Body)
 	}
@@ -349,7 +349,7 @@ func TestNotesDelete(t *testing.T) {
 	if _, err := store.Load("ops"); err != notes.ErrNoNotes {
 		t.Fatalf("Load after delete: %v", err)
 	}
-	if rec := do(t, Rooms(reg, nil, nil, store, true), "GET", "/api/rooms", ""); strings.Contains(rec.Body.String(), "notes_until") {
+	if rec := do(t, Rooms(reg, nil, nil, store, true, nil, false, nil), "GET", "/api/rooms", ""); strings.Contains(rec.Body.String(), "notes_until") {
 		t.Fatalf("the list still shows the deleted notes: %s", rec.Body)
 	}
 	if rec := del(h, "/api/rooms/ops/notes", `{"pin":"1234"}`, "10.0.0.1"); rec.Code != http.StatusNotFound {

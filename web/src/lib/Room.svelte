@@ -9,7 +9,7 @@
   import { roomLink } from './link';
   import { nextIndex } from './roving';
   import { tick, untrack } from 'svelte';
-  import { fetchNotes, notesErrorText, saveFile } from './notes';
+  import ReadyBar from './ReadyBar.svelte';
   import Announcer from './Announcer.svelte';
   import ShortcutsDialog from './ShortcutsDialog.svelte';
   import { ariaShortcut, isMac, matchShortcut, shortcutLabel, type ShortcutAction } from './shortcuts';
@@ -217,26 +217,22 @@
   let notesSeen = false;
   $effect(() => {
     const on = rs.notes;
-    if (on !== notesSeen) untrack(() => announce(on ? t('notes.recording') : t('notes.stopped')));
+    if (on !== notesSeen) untrack(() => announce(on ? t('notes.on') : t('notes.off')));
     notesSeen = on;
   });
-  let notesError = $state('');
-  let notesBusy = $state(false);
-  async function downloadNotes() {
-    if (notesBusy) return;
-    notesBusy = true;
-    notesError = '';
-    try {
-      const r = await fetchNotes(fetch, rs.roomSlug, session.pin, i18n.lang);
-      if (r.ok) saveFile(r.blob, r.filename);
-      else notesError = notesErrorText(r, t);
-    } finally {
-      notesBusy = false;
-    }
-  }
-  function dismissNotes() {
+  const recorderPresent = $derived(rs.participants.some((p) => p.botKind === 'recorder'));
+  // The recording state is announced on joining and on every change.
+  let recordingSeen = false;
+  $effect(() => {
+    const on = rs.recording;
+    if (on !== recordingSeen) untrack(() => announce(on ? t('recording.starting') : t('recording.stopped')));
+    recordingSeen = on;
+  });
+  const videoReady = $derived(site.recordingEnabled && rs.recordingReady);
+  const notesReady = $derived(site.notesEnabled && rs.notesReady);
+  function dismissReady() {
+    rs.recordingReady = false;
     rs.notesReady = false;
-    notesError = '';
   }
   const statusText = $derived(
     rs.status === 'connected' ? (rs.transport === 'tcp' ? t('status.backup') : t('status.connected'))
@@ -282,7 +278,10 @@
       <button type="button" class="try-fast" title={t('status.tryFastHint')} onclick={() => session.tryFastChannel()}>{t('status.tryFast')}</button>
     {/if}
     {#if site.notesEnabled && rs.notes}
-      <span class="notes-mark" role="status"><span class="rec" aria-hidden="true"></span>{t('notes.recording')}</span>
+      <span class="mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6zM9 9h6M9 13h6M9 17h4" /></svg>{t('notes.mark')}</span>
+    {/if}
+    {#if site.recordingEnabled && rs.recording}
+      <span class="mark rec-mark"><span class="rec" aria-hidden="true"></span>{t('recording.mark')}</span>
     {/if}
     <span class="invite"><CopyLink link={roomLink(location.origin, rs.roomSlug, session.pin)} label={t('control.invite')} /></span>
     <span class="count">{people(rs.peopleCount)}</span>
@@ -296,13 +295,9 @@
   </div>
 
 
-  {#if site.notesEnabled && rs.notesReady}
-    <div class="notes-ready" role="status">
-      <span>{t('notes.ready')}</span>
-      <button type="button" class="btn primary" disabled={notesBusy} onclick={downloadNotes}>{t('notes.download')}</button>
-      <button type="button" class="btn quiet" onclick={dismissNotes}>{t('notes.dismiss')}</button>
-      {#if notesError}<span class="notes-error" role="alert">{notesError}</span>{/if}
-    </div>
+  <!-- One bar for what the meeting left; it grows as items become ready. -->
+  {#if videoReady || notesReady}
+    <ReadyBar slug={rs.roomSlug} pin={session.pin} video={videoReady} notes={notesReady} ondismiss={dismissReady} />
   {/if}
 
   <!-- Labels stay the same whatever the state, so buttons never change width; the icon, the colour
@@ -357,7 +352,7 @@
       </div>
 
       <div class="popover-anchor">
-        <button class="btn" class:active={more} class:flag={!more && (rs.echo || !rs.receiveVideo || rs.notes)} aria-expanded={more} aria-controls="more-menu" title={t('control.more')}
+        <button class="btn" class:active={more} class:flag={!more && (rs.echo || !rs.receiveVideo || rs.notes || rs.recording)} aria-expanded={more} aria-controls="more-menu" title={t('control.more')}
           bind:this={moreBtn} onclick={openMore}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="19" cy="12" r="1.3" /></svg>
           <span class="label">{t('control.more')}</span>
@@ -376,6 +371,14 @@
                 disabled={rs.status !== 'connected'} onclick={() => session.setNotes(!rs.notes)}>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6zM9 9h6M9 13h6M9 17h4" /></svg>
                 <span class="text">{t('control.notes')}<small id="notes-hint">{rs.notes && !notesPresent ? t('notes.starting') : t('control.notesHint')}</small></span>
+                <span class="switch" aria-hidden="true"></span>
+              </button>
+            {/if}
+            {#if site.recordingEnabled}
+              <button type="button" class="row" role="switch" aria-checked={rs.recording} aria-label={t('control.recording')} aria-describedby="recording-hint"
+                disabled={rs.status !== 'connected'} onclick={() => session.setRecording(!rs.recording)}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" fill="currentColor" /></svg>
+                <span class="text">{t('control.recording')}<small id="recording-hint">{rs.recording && !recorderPresent ? t('recording.starting') : t('control.recordingHint')}</small></span>
                 <span class="switch" aria-hidden="true"></span>
               </button>
             {/if}
@@ -496,15 +499,11 @@
   .row[aria-checked='true'] .switch { background: var(--live); }
   .row[aria-checked='true'] .switch::after { transform: translateX(.85rem); }
 
-  .notes-mark { display: inline-flex; align-items: center; gap: .4rem; font-size: .9rem; color: #f1b5b3; }
-  .notes-mark .rec { width: .55rem; height: .55rem; border-radius: 50%; background: var(--danger); }
-  .notes-ready {
-    position: fixed; left: 50%; bottom: 5.5rem; transform: translateX(-50%); z-index: 6;
-    display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; max-width: 92vw;
-    padding: .7rem 1rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-2);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
-  }
-  .notes-error { color: #f1b5b3; font-size: .9rem; }
+  /* Header marks: the red dot means video recording only; notes carry the sheet icon. */
+  .mark { display: inline-flex; align-items: center; gap: .4rem; font-size: .9rem; color: var(--text); }
+  .mark svg { width: 1rem; height: 1rem; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .rec-mark { color: #f1b5b3; }
+  .mark .rec { width: .55rem; height: .55rem; border-radius: 50%; background: var(--danger); }
   @media (max-width: 1024px) {
     .controls .label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
     .controls .btn { min-width: 2.75rem; min-height: 2.75rem; padding: .6rem; }

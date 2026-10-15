@@ -1,16 +1,19 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onMount } from 'svelte';
   import { build, repoUrl } from './build';
   import { forgetPin, knownRooms, pinFor } from './pins';
   import { parseJoinLink, roomLink } from './link';
   import CopyLink from './CopyLink.svelte';
   import { formatDate, i18n, setLang, t } from './i18n/i18n.svelte';
   import { LANGS, LANG_NAMES, LANG_TAGS, type Lang } from './i18n/messages';
-  import { deleteNotes, fetchNotes, notesErrorText, notesUntil, saveFile } from './notes';
+  import { notesUntil } from './notes';
+  import { recordingUntil } from './recording';
+  import { formatSummary, formatUntil, lastCaption, lastItems, lastSummary } from './lastMeeting';
+  import LastMeetingDialog from './LastMeetingDialog.svelte';
   import { loadInfo, site } from './site.svelte';
   import MicCheck from './MicCheck.svelte';
 
-  type RoomItem = { slug: string; name: string; participants: number; capacity: number; created: boolean; notes_until?: string };
+  type RoomItem = { slug: string; name: string; participants: number; capacity: number; created: boolean; notes_until?: string; recording_until?: string; last_meeting?: unknown };
   let { onJoin, error = '' }: { onJoin: (room: string, pin: string, name: string) => void; error?: string } = $props();
 
   let rooms = $state<RoomItem[]>([]);
@@ -34,85 +37,17 @@
   let actionError = $state('');
 
   const selected = $derived(rooms.find((r) => r.slug === room));
-  const selectedNotes = $derived(site.notesEnabled && selected ? notesUntil(selected.notes_until) : null);
-  // The notes download and deletion: a PIN dialog for the chosen room, filled in from the PINs this
-  // browser knows. Deleting asks for a confirmation inside the dialog first.
-  let notesDialog: HTMLDialogElement;
-  let notesForm: HTMLFormElement;
-  // Focus targets: the confirmation replaces the buttons, so focus moves explicitly.
-  let notesPinInput: HTMLInputElement;
-  let notesDeleteButton = $state<HTMLButtonElement>();
-  let notesCancelButton = $state<HTMLButtonElement>();  let notesConfirm = $state(false);
-  let notesSlug = $state('');
-  let notesRoomName = $state('');
-  let notesKeptUntil = $state('');
-  let notesPin = $state('');
-  let notesError = $state('');
-  let notesBusy = $state(false);
-  function openNotes() {
+  // What is left of the chosen room's last meeting: one button and one PIN dialog for the video
+  // and the notes, filled in from the PINs this browser knows.
+  const lastKept = $derived(lastItems(selected, site));
+  const lastNote = $derived(lastCaption(lastKept));
+  // When, how long and how many people (no names); absent for meetings saved before summaries.
+  const lastMeet = $derived(lastSummary(selected?.last_meeting));
+  const lastLine = $derived(lastMeet ? formatSummary(lastMeet, LANG_TAGS[i18n.lang], t) : '');
+  let lastDialog: LastMeetingDialog;
+  function openLast() {
     if (!selected) return;
-    notesSlug = selected.slug;
-    notesRoomName = selected.name;
-    notesKeptUntil = selectedNotes ? t('notes.until', { time: untilText(selectedNotes) }) : '';
-    notesPin = pinFor(localStorage, selected.slug) || pin;
-    notesError = '';
-    notesConfirm = false;
-    notesDialog.showModal();
-  }
-  async function downloadNotes(ev: Event) {
-    ev.preventDefault();
-    if (notesBusy || notesConfirm) return;
-    notesBusy = true;
-    notesError = '';
-    try {
-      const r = await fetchNotes(fetch, notesSlug, notesPin, i18n.lang);
-      if (r.ok) {
-        saveFile(r.blob, r.filename);
-        notesDialog.close();
-      } else {
-        notesError = notesErrorText(r, t);
-        if (r.error === 'gone') void loadRooms(room);
-      }
-    } finally {
-      notesBusy = false;
-    }
-  }
-  async function askDeleteNotes() {
-    if (!notesForm.reportValidity()) return;
-    notesError = '';
-    notesConfirm = true;
-    await tick();
-    notesCancelButton?.focus(); // the safe choice
-  }
-  async function cancelDeleteNotes() {
-    notesConfirm = false;
-    await tick();
-    notesDeleteButton?.focus();
-  }
-  async function removeNotes() {
-    if (notesBusy) return;
-    notesBusy = true;
-    notesError = '';
-    try {
-      const r = await deleteNotes(fetch, notesSlug, notesPin);
-      if (r.ok) {
-        notesDialog.close();
-        void loadRooms(room);
-      } else {
-        notesConfirm = false;
-        notesError = notesErrorText(r, t, 'notes.deleteFailed');
-        if (r.error === 'gone') void loadRooms(room);
-        notesBusy = false;
-        await tick();
-        if (r.error === 'bad_pin') notesPinInput.focus();
-        else notesDeleteButton?.focus();
-      }
-    } finally {
-      notesBusy = false;
-    }
-  }
-  function untilText(d: Date): string {
-    return new Intl.DateTimeFormat(LANG_TAGS[i18n.lang], { dateStyle: 'short', timeStyle: 'short' }).format(d);
+    lastDialog.open(selected.slug, selected.name, lastKept, pinFor(localStorage, selected.slug) || pin, lastMeet);
   }
 
   async function loadRooms(prefer?: string) {
@@ -217,6 +152,7 @@
           <span class="room-name">{r.name}</span>
           <span class="count">
             {#if saved.includes(r.slug)}<svg class="key" viewBox="0 0 24 24" role="img" aria-label={t('rooms.pinKnown')}><title>{t('rooms.pinKnown')}</title><circle cx="8" cy="12" r="4" /><path d="M12 12h9M18 12v3M21 12v2" /></svg>{/if}
+            {#if site.recordingEnabled && recordingUntil(r.recording_until)}<svg class="key" viewBox="0 0 24 24" role="img" aria-label={t('recording.last')}><title>{t('recording.last')}</title><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" fill="currentColor" /></svg>{/if}
             {#if site.notesEnabled && notesUntil(r.notes_until)}<svg class="key" viewBox="0 0 24 24" role="img" aria-label={t('notes.last')}><title>{t('notes.last')}</title><path d="M6 3h9l3 3v15H6zM9 9h6M9 13h6M9 17h4" /></svg>{/if}
             {occupancy(r)}
           </span>
@@ -242,9 +178,12 @@
     <div class="room-actions">
       <CopyLink link={roomLink(location.origin, room, pin)} label={t('enter.copyLink')} disabled={!selected || pin === ''} />
       <p class="hint">{t('enter.linkHint')}</p>
-      {#if selectedNotes}
-        <button class="btn" type="button" aria-haspopup="dialog" onclick={openNotes}>{t('notes.last')}</button>
-        <p class="hint">{t('notes.until', { time: untilText(selectedNotes) })}</p>
+      {#if lastNote}
+        <button class="btn" type="button" aria-haspopup="dialog" aria-describedby="last-hint" onclick={openLast}>{t('last.title')}</button>
+        <p class="hint" id="last-hint">
+          {#if lastLine}<span class="line">{lastLine}</span>{/if}
+          <span class="line">{t(lastNote.key, { time: formatUntil(lastNote.until, LANG_TAGS[i18n.lang]) })}</span>
+        </p>
       {/if}
       {#if selected?.created}
         <button class="btn danger" type="button" disabled={selected.participants > 0} onclick={deleteRoom}>
@@ -277,34 +216,7 @@
   </form>
   </section>
 
-  <dialog class="notes-dialog" bind:this={notesDialog} aria-labelledby="notes-title" onclose={() => (notesConfirm = false)}>
-    <form bind:this={notesForm} onsubmit={downloadNotes}>
-      <div class="head">
-        <h2 id="notes-title">{t('notes.pinTitle', { room: notesRoomName })}</h2>
-        {#if notesConfirm}
-          <p class="confirm" role="alert">{t('notes.deleteConfirm')}</p>
-        {:else if notesKeptUntil}
-          <p class="kept">{notesKeptUntil}</p>
-        {/if}
-      </div>
-      <label class="field"><span>{t('notes.pin')}</span>
-        <input bind:this={notesPinInput} bind:value={notesPin} type="password" maxlength="16" autocomplete="off" spellcheck="false" required /></label>
-      {#if notesError}<p class="error" role="alert">{notesError}</p>{/if}
-      <!-- One row: the irreversible delete keeps to the far edge, away from the main action. -->
-      {#if notesConfirm}
-        <div class="actions">
-          <button class="btn quiet" type="button" disabled={notesBusy} bind:this={notesCancelButton} onclick={cancelDeleteNotes}>{t('notes.cancel')}</button>
-          <button class="btn danger solid" type="button" disabled={notesBusy} onclick={removeNotes}>{t('notes.deleteYes')}</button>
-        </div>
-      {:else}
-        <div class="actions">
-          <button class="btn quiet remove" type="button" disabled={notesBusy} bind:this={notesDeleteButton} onclick={askDeleteNotes}>{t('notes.deleteYes')}</button>
-          <button class="btn quiet" type="button" onclick={() => notesDialog.close()}>{t('notes.cancel')}</button>
-          <button class="btn primary" type="submit" disabled={notesBusy}>{t('notes.download')}</button>
-        </div>
-      {/if}
-    </form>
-  </dialog>
+  <LastMeetingDialog bind:this={lastDialog} onchange={() => void loadRooms(room)} />
 </div>
 
 <footer class="about">
@@ -364,6 +276,7 @@
   .room-actions { display: grid; gap: .6rem; justify-items: start; margin-top: .9rem; }
   .wide { justify-content: center; width: 100%; }
   .hint { margin: 0; color: var(--muted); font-size: .85rem; }
+  .hint .line { display: block; }
 
   /* The footer sits at the bottom of the viewport on short pages and spans its full width. */
   .page { min-height: 100%; display: flex; flex-direction: column; }
@@ -384,22 +297,4 @@
     .lobby { grid-template-columns: 1fr; }
     .pair { grid-template-columns: 1fr; }
   }
-  .notes-dialog {
-    width: min(26rem, 92vw); padding: 1.25rem 1.5rem; border: 1px solid var(--line); border-radius: var(--radius);
-    background: var(--panel-2); color: var(--text);
-  }
-  .notes-dialog::backdrop { background: rgba(0, 0, 0, .55); }
-  .notes-dialog form { display: grid; gap: 1rem; }
-  .notes-dialog .head { display: grid; gap: .3rem; }
-  .notes-dialog h2 { color: var(--text); font-size: 1.1rem; margin: 0; }
-  .notes-dialog .kept { color: var(--muted); font-size: .85rem; margin: 0; }
-  .notes-dialog .confirm { color: var(--text); margin: 0; }
-  .notes-dialog .actions {
-    display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .5rem;
-    padding-top: 1rem; border-top: 1px solid var(--line);
-  }
-  /* Delete reads as a quiet red word at the far edge; its confirmation is the filled red button. */
-  .notes-dialog .remove { margin-right: auto; border-color: transparent; color: #f1b5b3; padding-inline: .5rem; }
-  .notes-dialog .remove:hover:not(:disabled) { border-color: var(--danger); }
-  .notes-dialog .danger.solid { background: var(--danger); color: #fff; }
 </style>

@@ -213,6 +213,8 @@ type anyMsg struct {
 	Name         string            `json:"name"`
 	Text         string            `json:"text"`
 	Start        int64             `json:"start"`
+	Recording    bool              `json:"recording"`
+	Meeting      string            `json:"meeting"`
 }
 
 // expect reads frames until one of the wanted type arrives.

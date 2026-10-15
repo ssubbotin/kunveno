@@ -319,3 +319,31 @@ func TestNotes(t *testing.T) {
 		t.Error("unknown key under notes accepted")
 	}
 }
+
+func TestRecordingDefaults(t *testing.T) {
+	cfg, err := Parse([]byte("media:\n  advertise_ip: 10.0.0.1\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := cfg.Recording
+	if r.Enabled || *r.Keep != "1d" || r.KeepFor != 24*time.Hour || r.Dir != "/var/lib/kunveno/recordings" ||
+		r.MaxSize != "8GB" || r.MaxBytes != 8<<30 {
+		t.Fatalf("defaults = %+v", r)
+	}
+}
+
+func TestRecordingSettings(t *testing.T) {
+	cfg, err := Parse([]byte("media:\n  advertise_ip: 10.0.0.1\nrecording:\n  enabled: true\n  keep: 12h\n  dir: /r\n  max_size: 500MB\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := cfg.Recording
+	if !r.Enabled || r.KeepFor != 12*time.Hour || r.Dir != "/r" || r.MaxBytes != 500<<20 {
+		t.Fatalf("set = %+v", r)
+	}
+	for _, bad := range []string{"keep: 1w", "keep: \"\"", "max_size: 0GB", "max_size: 8gb", "max_size: 1.5GB", "max_size: 9999999GB"} {
+		if _, err := Parse([]byte("media:\n  advertise_ip: 10.0.0.1\nrecording:\n  " + bad + "\n")); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}

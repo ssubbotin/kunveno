@@ -36,6 +36,9 @@ Licencia GNU Affero General Public License v3.0 only; hay disponible una licenci
 - Notas de la reunión con el complemento comercial `kunveno-notes`: el habla de cada participante se
   reconoce en el servidor y el texto de la última reunión de la sala se descarga en Markdown (véase
   [Notas de la reunión](#notas-de-la-reunión)).
+- Grabación de la reunión con el complemento comercial `kunveno-recorder`: la pantalla compartida y
+  el audio de todos en un único vídeo MP4, que se descarga desde la sala o desde la página de inicio
+  (véase [Grabación de la reunión](#grabación-de-la-reunión)).
 - Funciona en redes difíciles: si a un participante le falla UDP, el navegador pasa a ICE sobre
   TCP en el mismo puerto.
 - Interfaz en ruso (por defecto), inglés y español; el título de la instalación es configurable.
@@ -152,6 +155,7 @@ métricas, Prometheus, Grafana, node-exporter) escuchan solo en 127.0.0.1; a Gra
 `/grafana/`.
 La fila «Заметки» del panel (plegada) pertenece al complemento opcional kunveno-notes, que añade su
 destino de Prometheus mediante `/etc/prometheus/targets/*.json`; sin él no hay destino y la fila queda vacía.
+La fila «Запись» (plegada) funciona igual para el complemento kunveno-recorder.
 
 **Regla del cortafuegos.** Permitir desde las redes de los usuarios hacia el servidor: TCP 443 (y
 80), UDP 7000 y TCP 7000. Si un segmento de red solo puede usar TCP 7000, dejar pasar su UDP 7000
@@ -165,11 +169,11 @@ en los equipos de los usuarios. Funciona en Chrome y Firefox en Linux y Windows.
 Un participante puede activar las notas en una sala (Más → Tomar notas). El bot de notas entra
 entonces en la sala como un participante llamado «Notas», escucha el micrófono de cada persona por
 separado y envía las frases reconocidas al servidor, que guarda el texto: quién dijo qué y cuándo.
-Todos ven «● Tomando notas» en la cabecera de la sala. Cuando se desactivan las notas o sale la
-última persona, quienes siguen en la sala reciben «Las notas están listas» con un botón
-«Descargar»; en la página de inicio el mismo archivo está disponible como «Notas de la última
+Todos ven «Notas» con un icono de hoja en la cabecera de la sala. Cuando se desactivan las notas o
+sale la última persona, quienes siguen en la sala reciben la barra «Listo tras la reunión:» con un
+botón «Notas» que las descarga; en la página de inicio el mismo archivo está disponible en «Última
 reunión», con el PIN de la sala. El archivo es Markdown: la sala, la fecha y la hora, quién habló y
-las frases en orden, con las pausas de la grabación marcadas.
+las frases en orden, con las pausas marcadas.
 
 - El bot es el complemento comercial `kunveno-notes` (reconocimiento de voz en el procesador del
   servidor, sin servicios externos y sin guardar el audio). No forma parte de este repositorio; para
@@ -180,11 +184,48 @@ las frases en orden, con las pausas de la grabación marcadas.
   notas terminan (una desactivación o el final de la reunión; un día por defecto); la primera frase
   de la reunión siguiente las sustituye. Eliminar una sala elimina sus notas. Descargarlas exige el
   PIN de la sala, y los PIN erróneos cuentan para el mismo bloqueo que al entrar.
-- Las notas se pueden eliminar antes desde la página de inicio: «Notas de la última reunión» →
-  «Eliminar» con el PIN de la sala y una confirmación. Mientras se toman notas no se pueden
+- Las notas se pueden eliminar antes desde la página de inicio: «Última reunión» → «Eliminar…» con
+  el PIN de la sala, y luego «Notas» (o «Todo») en la confirmación. Mientras se toman notas no se pueden
   eliminar: primero hay que desactivarlas.
 - `notes.live: true` muestra las frases en la sala a medida que se reconocen, en el recuadro del
   participante «Notas», para comprobar el reconocimiento.
+
+## Grabación de la reunión
+
+Un participante puede activar la grabación en una sala (Más → Grabación). El bot de
+grabación entra entonces en la sala como un participante llamado «Grabación» y graba la pantalla
+compartida y el audio de todos en un único vídeo (1920x1080, 15 fotogramas por segundo, H.264 y
+AAC). Mientras nadie comparte pantalla, el vídeo muestra una pantalla de espera con el nombre de la
+sala, la fecha y quien está hablando. Las cámaras no se graban. Todos ven «● Grabando» en la
+cabecera de la sala; el punto rojo siempre se refiere a este vídeo. Cuando se desactiva la grabación
+o sale la última persona, el bot sube el archivo al servidor y quienes siguen en la sala reciben un
+botón «Vídeo» en la barra «Listo tras la reunión:» (junto a «Notas» si la reunión también tuvo
+notas, con un solo botón de cierre para ambos); en la página de inicio el mismo archivo está
+disponible en «Última reunión», con el PIN de la sala.
+
+La página de inicio muestra «Última reunión» bajo una sala que guarda un vídeo, notas o ambos, con
+lo que hay y el vencimiento más próximo («Vídeo y notas, se guardan hasta 16/10, 14:43»). Su
+ventana pide el PIN de la sala una vez y muestra cada elemento con su propio plazo y un botón
+«Descargar». Encima del texto y en la ventana se indica cuándo fue esa reunión, cuánto duró y
+cuántas personas participaron («15/10, 11:00–11:27 · 27 min · 7 participantes»; sin nombres),
+mientras se guardan sus notas o su grabación.
+
+- El bot es el complemento comercial `kunveno-recorder`. No forma parte de este repositorio; para
+  una licencia escribe a ssubbotin@gmail.com. La guía de instalación acompaña a la licencia.
+- Sin el complemento deja `recording.enabled: false` (por defecto): las salas y la página de inicio
+  no muestran nada de la grabación.
+- Solo se guarda la grabación de la última reunión de cada sala, durante `recording.keep` desde que
+  termina (un día por defecto); la grabación siguiente la sustituye. Volver a activar la grabación en la misma reunión también
+  sustituye lo grabado antes: una reunión tiene una sola grabación y gana la posterior. Eliminar una
+  sala elimina su grabación. Descargarla exige el PIN de la sala, y los PIN erróneos cuentan para el
+  mismo bloqueo que al entrar. Una descarga interrumpida se puede reanudar mientras el enlace sea
+  válido (5 minutos); después hay que empezar la descarga de nuevo desde la sala o la página de inicio.
+- La grabación se puede eliminar antes desde la página de inicio: «Última reunión» → «Eliminar…»
+  con el PIN de la sala, y luego «Vídeo» (o «Todo») en la confirmación. Una grabación en curso no se puede eliminar:
+  primero hay que desactivarla.
+- Un archivo mayor que `recording.max_size` (8 GB por defecto) lo rechaza el servidor y el archivo se queda
+  en el volumen del complemento;
+  conviene fijar el límite según la reunión más larga y dejar espacio libre en el disco.
 
 ## Cómo funciona
 
@@ -267,6 +308,10 @@ repasa las comprobaciones manuales de [docs/test-matrix.md](docs/test-matrix.md)
 | `notes.keep` | cuánto se guardan las notas tras terminar: un número entero y `m`, `h` o `d` (`90m`, `12h`, `1d`, `2d`; por defecto `1d`) |
 | `notes.live` | `true` muestra las frases en la sala a medida que se reconocen, para comprobar el reconocimiento (por defecto `false`) |
 | `notes.dir` | dónde se guardan las notas (`/var/lib/kunveno/notes`, que en el stack es `data/notes`) |
+| `recording.enabled` | `true` ofrece la grabación de la reunión en las salas; necesita el complemento `kunveno-recorder` (por defecto `false`, que oculta todo lo relativo a la grabación) |
+| `recording.keep` | cuánto se guarda una grabación tras terminar: un número entero y `m`, `h` o `d` (`90m`, `12h`, `1d`, `2d`; por defecto `1d`) |
+| `recording.dir` | dónde se guardan las grabaciones (`/var/lib/kunveno/recordings`, que en el stack es `data/recordings`) |
+| `recording.max_size` | la grabación más grande que acepta el servidor: un número entero y `MB` o `GB` (`500MB`, `8GB`; por defecto `8GB`) |
 
 `.env`, junto al archivo compose, fija la versión (`KUNVENO_VERSION`), los puertos, el nombre
 público del equipo para Grafana y su contraseña de administrador.

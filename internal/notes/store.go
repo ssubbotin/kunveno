@@ -75,6 +75,7 @@ type Store struct {
 
 	mu    sync.Mutex
 	ended map[string]time.Time // slug -> end of its transcript; zero while the transcript is open
+	start map[string]time.Time // slug -> start of the meeting its transcript belongs to
 }
 
 // Open reads the transcripts in dir (a missing dir holds none). A file without an end line was cut
@@ -84,7 +85,7 @@ func Open(dir string, keep time.Duration, now func() time.Time) (*Store, error) 
 	if now == nil {
 		now = time.Now
 	}
-	s := &Store{dir: dir, keep: keep, now: now, ended: map[string]time.Time{}}
+	s := &Store{dir: dir, keep: keep, now: now, ended: map[string]time.Time{}, start: map[string]time.Time{}}
 	paths, err := filepath.Glob(filepath.Join(dir, "*.jsonl"))
 	if err != nil {
 		return nil, err
@@ -111,6 +112,7 @@ func Open(dir string, keep time.Duration, now func() time.Time) (*Store, error) 
 			}
 		}
 		s.ended[slug] = time.UnixMilli(last.At)
+		s.start[slug] = time.UnixMilli(lines[0].At)
 	}
 	return s, nil
 }
@@ -139,6 +141,7 @@ func (s *Store) Begin(slug, room string, start time.Time) error {
 		return err
 	}
 	s.ended[slug] = time.Time{}
+	s.start[slug] = time.UnixMilli(start.UnixMilli())
 	return nil
 }
 
@@ -201,6 +204,17 @@ func (s *Store) untilLocked(slug string) (time.Time, bool) {
 	return until, s.now().Before(until)
 }
 
+// Meeting returns the start of the meeting whose ready notes the room keeps (to the millisecond);
+// false when Until is false.
+func (s *Store) Meeting(slug string) (time.Time, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.untilLocked(slug); !ok {
+		return time.Time{}, false
+	}
+	return s.start[slug], true
+}
+
 // Load reads the room's ready notes; ErrNoNotes when there are none to download.
 func (s *Store) Load(slug string) (Transcript, error) {
 	if !slugRe.MatchString(slug) {
@@ -245,6 +259,7 @@ func (s *Store) Delete(slug string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.ended, slug)
+	delete(s.start, slug)
 	if err := os.Remove(s.path(slug)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
@@ -276,6 +291,7 @@ func (s *Store) DeleteEnded(slug string) error {
 		return err
 	}
 	delete(s.ended, slug)
+	delete(s.start, slug)
 	return nil
 }
 
@@ -292,6 +308,7 @@ func (s *Store) Sweep() []string {
 			continue // tried again on the next sweep
 		}
 		delete(s.ended, slug)
+		delete(s.start, slug)
 		gone = append(gone, slug)
 	}
 	sort.Strings(gone)

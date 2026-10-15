@@ -37,7 +37,7 @@ func Dial(ctx context.Context, url string, insecure bool) (*websocket.Conn, erro
 	return conn, nil
 }
 
-// Serve joins room as a helper (role "echo", "player", "camera" or "notes") and answers every
+// Serve joins room as a helper (role "echo", "player", "camera", "notes" or "recorder") and answers every
 // offer on pc until the connection or ctx ends. onJoined (may be nil) runs once the server has
 // admitted us and gets a function for sending further messages.
 func Serve(ctx context.Context, conn *websocket.Conn, pc *webrtc.PeerConnection, room, name, role string, onJoined func(send func(any) error)) error {
@@ -49,6 +49,9 @@ type Options struct {
 	// OnJoined runs once the server has admitted us, with a function for sending further messages.
 	// The function is safe for concurrent use.
 	OnJoined func(send func(any) error)
+	// OnJoinedFrame, when set, gets the raw joined frame before OnJoined runs; the recorder
+	// reads the meeting start from it.
+	OnJoinedFrame func(data []byte)
 	// OnMessage gets every server message other than joined, error and offer: its type and the
 	// raw frame. It runs on the read loop and must not block.
 	OnMessage func(typ string, data []byte)
@@ -71,6 +74,9 @@ func ServeWith(ctx context.Context, conn *websocket.Conn, pc *webrtc.PeerConnect
 		}
 		switch msg.Type {
 		case "joined":
+			if o.OnJoinedFrame != nil {
+				o.OnJoinedFrame(data)
+			}
 			if o.OnJoined != nil {
 				o.OnJoined(send)
 			}

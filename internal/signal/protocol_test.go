@@ -77,8 +77,8 @@ func TestParseClientEchoRoleNeedsNoPIN(t *testing.T) {
 }
 
 func TestServerMessagesEncode(t *testing.T) {
-	b, _ := json.Marshal(Participants([]ParticipantInfo{{ID: "a", Name: "Ann", Muted: true}, {ID: "e", Name: "Echo", Bot: true}}, "", true, false))
-	want := `{"type":"participants","participants":[{"id":"a","name":"Ann","muted":true},{"id":"e","name":"Echo","muted":false,"bot":true}],"sharer":"","echo":true,"notes":false}`
+	b, _ := json.Marshal(Participants([]ParticipantInfo{{ID: "a", Name: "Ann", Muted: true}, {ID: "e", Name: "Echo", Bot: true}}, "", true, false, false))
+	want := `{"type":"participants","participants":[{"id":"a","name":"Ann","muted":true},{"id":"e","name":"Echo","muted":false,"bot":true}],"sharer":"","echo":true,"notes":false,"recording":false}`
 	if string(b) != want {
 		t.Errorf("participants:\n got %s\nwant %s", b, want)
 	}
@@ -150,5 +150,36 @@ func TestNotesServerMessagesEncode(t *testing.T) {
 		if b, _ := json.Marshal(c.msg); string(b) != c.want {
 			t.Errorf("got %s, want %s", b, c.want)
 		}
+	}
+}
+
+func TestParseRecordingMessages(t *testing.T) {
+	if _, err := ParseClient([]byte(`{"type":"recording","on":true}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseClient([]byte(`{"type":"recording"}`)); !errors.Is(err, ErrBadMessage) {
+		t.Fatalf("recording without on: %v", err)
+	}
+	if _, err := ParseClient([]byte(`{"type":"join","room":"ops","name":"Запись","role":"recorder"}`)); err != nil {
+		t.Fatalf("recorder join: %v", err)
+	}
+}
+
+func TestParticipantsCarriesRecording(t *testing.T) {
+	b, _ := json.Marshal(Participants(nil, "", false, false, true))
+	if !strings.Contains(string(b), `"recording":true`) {
+		t.Fatal(string(b))
+	}
+	b, _ = json.Marshal(RecordingReady())
+	if string(b) != `{"type":"recording_ready"}` {
+		t.Fatal(string(b))
+	}
+}
+
+func TestJoinedRecorderCarriesTheMeeting(t *testing.T) {
+	m := time.Date(2026, 10, 15, 8, 0, 0, 123e6, time.UTC)
+	b, _ := json.Marshal(JoinedRecorder(ParticipantInfo{ID: "x"}, "ops", "Ops", m))
+	if !strings.Contains(string(b), `"meeting":"2026-10-15T08:00:00.123Z"`) {
+		t.Fatal(string(b))
 	}
 }

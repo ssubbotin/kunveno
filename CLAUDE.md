@@ -66,6 +66,10 @@ Go packages are separated so each is tested alone:
   The notes bot itself is the closed `kunveno-notes` add-on (another repository); it depends on the
   bot contract documented in `internal/signal/protocol.go` and on `pkg/botclient`, so change those
   only together with it. `notes.enabled` (default false) hides every notes control.
+- `internal/recording`: the store of meeting recordings (`<slug>.mp4` and `<slug>.json`), uploaded by
+  the closed `kunveno-recorder` add-on over `PUT /internal/recording/{slug}`. Its bot contract is
+  documented in `internal/signal/protocol.go` next to the notes one and changes only together with
+  the add-on. `recording.enabled` (default false) hides every recording control.
 
 Media model, which explains most design choices:
 

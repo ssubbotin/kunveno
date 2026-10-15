@@ -5,6 +5,7 @@ package room
 import (
 	"crypto/subtle"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 )
@@ -22,7 +23,7 @@ type Participant struct {
 	Name  string
 	Muted bool
 	Bot   bool // a server-side helper such as the echo, not a person
-	// BotKind says which helper: BotEcho, BotPlayer, BotCamera or BotNotes.
+	// BotKind says which helper: BotEcho, BotPlayer, BotCamera, BotNotes or BotRecorder.
 	BotKind string
 	// Quality is the connection grade ("good", "fair", "poor"), empty until measured.
 	Quality string
@@ -37,6 +38,7 @@ type Snapshot struct {
 	Sharer       string
 	Echo         bool // someone asked for the echo helper in this room
 	Notes        bool // someone asked for meeting notes in this room
+	Recording    bool // someone asked for a recording of this room's meeting
 }
 
 // Room is safe for concurrent use.
@@ -45,15 +47,19 @@ type Room struct {
 	max             int
 	created         bool // made through the API, not from the config file
 
-	mu      sync.Mutex
-	members map[string]*Participant
-	order   []string
-	sharer  string
-	echo    bool
-	player  bool
-	notes   bool
-	meeting time.Time        // start of the current meeting, or of the last one
-	now     func() time.Time // time.Now; tests replace it
+	mu        sync.Mutex
+	members   map[string]*Participant
+	order     []string
+	sharer    string
+	echo      bool
+	player    bool
+	notes     bool
+	recording bool
+	meeting   time.Time        // start of the current meeting, or of the last one
+	people    map[string]bool  // trimmed names of the people who joined the current meeting
+	last      Summary          // the most recently ended meeting
+	hasLast   bool             // some meeting has ended
+	now       func() time.Time // time.Now; tests replace it
 }
 
 func New(slug, name, pin string, max int) *Room {
@@ -92,10 +98,11 @@ func (r *Room) Join(id, name, pin string) error {
 
 // Helper kinds that join rooms as bots.
 const (
-	BotEcho   = "echo"
-	BotPlayer = "player"
-	BotCamera = "camera"
-	BotNotes  = "notes"
+	BotEcho     = "echo"
+	BotPlayer   = "player"
+	BotCamera   = "camera"
+	BotNotes    = "notes"
+	BotRecorder = "recorder"
 )
 
 // JoinBot admits a trusted server-side helper without a PIN; capacity still applies.
@@ -127,6 +134,10 @@ func (r *Room) add(p *Participant) error {
 	}
 	if !p.Bot && !r.hasPeopleLocked() {
 		r.meeting = r.now() // the first person in a room without people starts a meeting
+		r.people = map[string]bool{}
+	}
+	if !p.Bot {
+		r.people[strings.TrimSpace(p.Name)] = true // a person who reconnects counts once
 	}
 	r.members[p.ID] = p
 	r.order = append(r.order, p.ID)
@@ -159,6 +170,19 @@ func (r *Room) Notes() bool {
 	return r.notes
 }
 
+// SetRecording records whether the room wants its meeting recorded.
+func (r *Room) SetRecording(on bool) {
+	r.mu.Lock()
+	r.recording = on
+	r.mu.Unlock()
+}
+
+func (r *Room) Recording() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.recording
+}
+
 // Meeting returns the start of the current meeting (from the first person entering a room without
 // people until the last person leaves) and whether it is still going on. After it ends the start
 // stays, so late phrases still find their meeting; zero before the first meeting.
@@ -168,12 +192,34 @@ func (r *Room) Meeting() (start time.Time, active bool) {
 	return r.meeting, r.hasPeopleLocked()
 }
 
-// Leave removes id. It reports whether id held the share lock, which is now released.
-func (r *Room) Leave(id string) (releasedShare bool) {
+// Summary describes an ended meeting: its start and end and how many people took part (people
+// who joined under the same name count once; bots never count).
+type Summary struct {
+	Start, End time.Time
+	People     int
+}
+
+// LastMeeting returns the summary of the most recently ended meeting; false before any ended.
+func (r *Room) LastMeeting() (Summary, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.members[id]; !ok {
-		return false
+	return r.last, r.hasLast
+}
+
+// Leave removes id. It reports whether id held the share lock, which is now released.
+func (r *Room) Leave(id string) (releasedShare bool) {
+	releasedShare, _, _ = r.LeaveEnding(id)
+	return releasedShare
+}
+
+// LeaveEnding is Leave that also reports, under the same lock, whether this leave ended the meeting
+// (id was its last person) and that meeting's summary, so a join right after cannot hide it.
+func (r *Room) LeaveEnding(id string) (releasedShare bool, meeting Summary, ended bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	p, ok := r.members[id]
+	if !ok {
+		return false, Summary{}, false
 	}
 	delete(r.members, id)
 	for i, o := range r.order {
@@ -183,14 +229,20 @@ func (r *Room) Leave(id string) (releasedShare bool) {
 		}
 	}
 	if !r.hasPeopleLocked() {
-		r.echo = false  // nobody left to listen
-		r.notes = false // nor to take notes of
+		r.echo = false      // nobody left to listen
+		r.notes = false     // nor to take notes of
+		r.recording = false // nor to record
+		if !p.Bot {
+			r.last = Summary{Start: r.meeting, End: r.now(), People: len(r.people)}
+			r.hasLast = true
+			meeting, ended = r.last, true
+		}
 	}
 	if r.sharer == id {
 		r.sharer = ""
-		return true
+		releasedShare = true
 	}
-	return false
+	return releasedShare, meeting, ended
 }
 
 func (r *Room) hasPeopleLocked() bool {
@@ -243,7 +295,7 @@ func (r *Room) StopShare(id string) bool {
 func (r *Room) Snapshot() Snapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	s := Snapshot{Sharer: r.sharer, Echo: r.echo, Notes: r.notes, Participants: make([]Participant, 0, len(r.order))}
+	s := Snapshot{Sharer: r.sharer, Echo: r.echo, Notes: r.notes, Recording: r.recording, Participants: make([]Participant, 0, len(r.order))}
 	for _, id := range r.order {
 		s.Participants = append(s.Participants, *r.members[id])
 	}

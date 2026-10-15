@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -82,21 +83,39 @@ type Config struct {
 		// KeepFor is Keep parsed; set by Parse and Load.
 		KeepFor time.Duration `yaml:"-"`
 	} `yaml:"notes"`
+	// Recording configures meeting recording. It needs the recording bot of the commercial
+	// kunveno-recorder add-on; switch it on together with installing it.
+	Recording struct {
+		// Enabled offers recording in rooms; false hides every recording option.
+		Enabled bool `yaml:"enabled"`
+		// Keep is how long the last meeting's recording stays after it ends (notes.ParseKeep
+		// format); DefaultRecordingKeep when unset.
+		Keep *string `yaml:"keep"`
+		Dir  string  `yaml:"dir"`
+		// MaxSize is the largest upload accepted from the bot: <n>MB or <n>GB.
+		MaxSize string `yaml:"max_size"`
+		// KeepFor and MaxBytes are Keep and MaxSize parsed; set by Parse and Load.
+		KeepFor  time.Duration `yaml:"-"`
+		MaxBytes int64         `yaml:"-"`
+	} `yaml:"recording"`
 }
 
 const (
-	DefaultListen          = "127.0.0.1:8080"
-	DefaultTitle           = "kunveno"
-	MaxTitleLen            = 80
-	MaxReactions           = 16
-	DefaultRoomsFile       = "/var/lib/kunveno/rooms.json"
-	DefaultBackgroundsDir  = "/var/lib/kunveno/backgrounds"
-	DefaultNotesKeep       = "1d"
-	DefaultNotesDir        = "/var/lib/kunveno/notes"
-	DefaultUDPPort         = 7000
-	DefaultShareMaxKbps    = 2500
-	DefaultMaxParticipants = 15
-	MaxParticipantsLimit   = 50
+	DefaultListen           = "127.0.0.1:8080"
+	DefaultTitle            = "kunveno"
+	MaxTitleLen             = 80
+	MaxReactions            = 16
+	DefaultRoomsFile        = "/var/lib/kunveno/rooms.json"
+	DefaultBackgroundsDir   = "/var/lib/kunveno/backgrounds"
+	DefaultNotesKeep        = "1d"
+	DefaultNotesDir         = "/var/lib/kunveno/notes"
+	DefaultRecordingKeep    = "1d"
+	DefaultRecordingDir     = "/var/lib/kunveno/recordings"
+	DefaultRecordingMaxSize = "8GB"
+	DefaultUDPPort          = 7000
+	DefaultShareMaxKbps     = 2500
+	DefaultMaxParticipants  = 15
+	MaxParticipantsLimit    = 50
 )
 
 var slugRe = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
@@ -153,7 +172,9 @@ func parse(data []byte, getenv func(string) string, detect func() (string, error
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	cfg.Notes.KeepFor, _ = notes.ParseKeep(*cfg.Notes.Keep) // checked by Validate
+	cfg.Notes.KeepFor, _ = notes.ParseKeep(*cfg.Notes.Keep)         // checked by Validate
+	cfg.Recording.KeepFor, _ = notes.ParseKeep(*cfg.Recording.Keep) // checked by Validate
+	cfg.Recording.MaxBytes, _ = ParseSize(cfg.Recording.MaxSize)    // checked by Validate
 	return &cfg, nil
 }
 
@@ -177,6 +198,16 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Notes.Dir == "" {
 		c.Notes.Dir = DefaultNotesDir
+	}
+	if c.Recording.Keep == nil {
+		keep := DefaultRecordingKeep
+		c.Recording.Keep = &keep
+	}
+	if c.Recording.Dir == "" {
+		c.Recording.Dir = DefaultRecordingDir
+	}
+	if c.Recording.MaxSize == "" {
+		c.Recording.MaxSize = DefaultRecordingMaxSize
 	}
 	if c.HTTP.Listen == "" {
 		c.HTTP.Listen = DefaultListen
@@ -232,6 +263,14 @@ func (c *Config) Validate() error {
 		if _, err := notes.ParseKeep(*c.Notes.Keep); err != nil {
 			errs = append(errs, fmt.Errorf("notes.keep: %w", err))
 		}
+	}
+	if c.Recording.Keep != nil {
+		if _, err := notes.ParseKeep(*c.Recording.Keep); err != nil {
+			errs = append(errs, fmt.Errorf("recording.keep: %w", err))
+		}
+	}
+	if _, err := ParseSize(c.Recording.MaxSize); err != nil {
+		errs = append(errs, fmt.Errorf("recording.max_size: %w", err))
 	}
 	seen := map[string]bool{}
 	for i, r := range c.Rooms {
@@ -305,6 +344,25 @@ func bridgeName(name string) bool {
 		}
 	}
 	return false
+}
+
+// At most six digits: 999999GB still fits an int64.
+var sizeRe = regexp.MustCompile(`^([1-9][0-9]{0,5})(MB|GB)$`)
+
+// ParseSize reads recording.max_size: a positive whole number and MB or GB ("500MB", "8GB").
+func ParseSize(s string) (int64, error) {
+	m := sizeRe.FindStringSubmatch(s)
+	if m == nil {
+		return 0, fmt.Errorf("%q is not a positive whole number followed by MB or GB (500MB, 8GB)", s)
+	}
+	n, err := strconv.ParseInt(m[1], 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	if m[2] == "GB" {
+		return n << 30, nil
+	}
+	return n << 20, nil
 }
 
 // DefaultReactions is the reaction set when ui.reactions is not configured.

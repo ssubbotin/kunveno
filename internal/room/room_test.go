@@ -108,3 +108,21 @@ func TestRegistry(t *testing.T) {
 		t.Fatalf("All order: %v", all)
 	}
 }
+
+func TestRecordingFlagClearedWhenThePeopleLeave(t *testing.T) {
+	r := New("ops", "Ops", "1234", 15)
+	if err := r.Join("a", "Ann", "1234"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.JoinBot("b", "Запись", BotRecorder); err != nil {
+		t.Fatal(err)
+	}
+	r.SetRecording(true)
+	if !r.Recording() || !r.Snapshot().Recording {
+		t.Fatal("recording not set")
+	}
+	r.Leave("a")
+	if r.Recording() {
+		t.Fatal("recording kept with only the bot left")
+	}
+}

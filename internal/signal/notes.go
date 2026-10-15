@@ -33,9 +33,15 @@ func (h *Handler) SetNotes(store *notes.Store, live bool) {
 }
 
 // receives reports whether to is subscribed to from's track of kind: the notes bot hears people's
-// audio only (no video, no other helper); everyone else receives everything.
+// audio only; the recorder gets people's audio and screen; everyone else receives everything.
 func receives(to, from *session, kind sfu.Kind) bool {
-	return to.botKind != RoleNotes || (kind == sfu.KindAudio && !from.bot)
+	switch to.botKind {
+	case RoleNotes:
+		return kind == sfu.KindAudio && !from.bot
+	case RoleRecorder:
+		return (kind == sfu.KindAudio || kind == sfu.KindScreen) && !from.bot
+	}
+	return true
 }
 
 // switchNotes turns the room's notes on or off at a person's request.
