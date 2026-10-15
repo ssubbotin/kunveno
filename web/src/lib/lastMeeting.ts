@@ -33,9 +33,11 @@ export function lastCaption(items: LastItem[]): { key: Key; until: Date } | null
 }
 
 // formatUntil writes an expiry as day, month and time, with the year only when it is not the
-// current one: "16.10, 14:43", "16.10.2027, 14:43" in Russian.
+// current one: "16.10, 14:43", "16.10.2027, 14:43" in Russian, "10/16, 2:43 PM" in English. A
+// 24-hour clock keeps two-digit hours ("09:05"); a 12-hour one drops the leading zero.
 export function formatUntil(d: Date, locale: string, now = new Date()): string {
-  const opts: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' };
+  const opts: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit', hour: 'numeric', minute: '2-digit' };
+  if (!new Intl.DateTimeFormat(locale, opts).resolvedOptions().hour12) opts.hour = '2-digit';
   if (d.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
   return new Intl.DateTimeFormat(locale, opts).format(d);
 }

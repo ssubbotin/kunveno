@@ -54,4 +54,9 @@ describe('formatUntil', () => {
     expect(formatUntil(new Date(2027, 0, 1, 9, 5), 'ru-RU', new Date(2026, 11, 31, 23, 0))).toBe('01.01.2027, 09:05');
     expect(formatUntil(new Date(2027, 0, 1, 9, 5), 'ru-RU', new Date(2027, 0, 1, 0, 30))).toBe('01.01, 09:05');
   });
+  it('follows the language: 12-hour English, 24-hour Spanish', () => {
+    expect(formatUntil(new Date(2026, 9, 16, 14, 43), 'en-US', new Date(2026, 9, 15, 10, 0))).toBe('10/16, 2:43 PM');
+    expect(formatUntil(new Date(2026, 9, 16, 9, 5), 'en-US', new Date(2026, 9, 15, 10, 0))).toBe('10/16, 9:05 AM');
+    expect(formatUntil(new Date(2026, 9, 16, 14, 43), 'es-ES', new Date(2026, 9, 15, 10, 0))).toBe('16/10, 14:43');
+  });
 });

@@ -173,7 +173,7 @@ Todos ven «Notas» con un icono de hoja en la cabecera de la sala. Cuando se de
 sale la última persona, quienes siguen en la sala reciben la barra «Listo tras la reunión:» con un
 botón «Notas» que las descarga; en la página de inicio el mismo archivo está disponible en «Última
 reunión», con el PIN de la sala. El archivo es Markdown: la sala, la fecha y la hora, quién habló y
-las frases en orden, con las pausas de la grabación marcadas.
+las frases en orden, con las pausas marcadas.
 
 - El bot es el complemento comercial `kunveno-notes` (reconocimiento de voz en el procesador del
   servidor, sin servicios externos y sin guardar el audio). No forma parte de este repositorio; para

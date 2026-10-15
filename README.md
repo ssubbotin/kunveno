@@ -169,7 +169,7 @@ recognised phrases to the server, which keeps the text: who said what, and when.
 room sees "Notes" with a sheet icon in the header. When the notes are switched off, or the last
 person leaves, everyone still in the room gets the bar "Ready after the meeting:" with a "Notes"
 button that downloads them; the lobby offers the same file under "Last meeting", with the room PIN. The file is Markdown: the room,
-the date and time, who spoke, and the phrases in order, with pauses of the recording marked.
+the date and time, who spoke, and the phrases in order, with pauses marked.
 
 - The bot is the commercial add-on `kunveno-notes` (speech recognition on the server's processor,
   no external service, no audio stored). It is not part of this repository; for a licence write to
@@ -199,7 +199,7 @@ everyone still in the room gets a "Video" button in the bar "Ready after the mee
 file under "Last meeting", with the room PIN.
 
 The lobby shows "Last meeting" under a room that keeps a video, notes or both, with what is there
-and the nearest expiry ("Video and notes, kept until 10/16, 02:43 PM"). Its dialog asks for the room
+and the nearest expiry ("Video and notes, kept until 10/16, 2:43 PM"). Its dialog asks for the room
 PIN once and lists each item with its own expiry and a "Download" button.
 
 - The recorder is the commercial add-on `kunveno-recorder`. It is not part of this repository; for a

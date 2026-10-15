@@ -44,7 +44,7 @@
   let lastDialog: LastMeetingDialog;
   function openLast() {
     if (!selected) return;
-    lastDialog.open(selected.slug, lastKept, pinFor(localStorage, selected.slug) || pin);
+    lastDialog.open(selected.slug, selected.name, lastKept, pinFor(localStorage, selected.slug) || pin);
   }
 
   async function loadRooms(prefer?: string) {

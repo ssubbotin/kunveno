@@ -19,6 +19,7 @@
   let cancelButton = $state<HTMLButtonElement>();
 
   let slug = $state('');
+  let roomName = $state('');
   let items = $state<LastItem[]>([]);
   let pin = $state('');
   let showPin = $state(false);
@@ -28,8 +29,9 @@
   // One guard per action, against double clicks.
   let busy = $state({ video: false, notes: false, remove: false });
 
-  export function open(roomSlug: string, kept: LastItem[], knownPin: string) {
+  export function open(roomSlug: string, name: string, kept: LastItem[], knownPin: string) {
     slug = roomSlug;
+    roomName = name;
     items = kept;
     pin = knownPin;
     showPin = false;
@@ -159,9 +161,13 @@
   }
 </script>
 
-<dialog class="last-dialog" bind:this={dialog} aria-labelledby="last-title" onclose={() => (confirming = false)}>
+<dialog class="last-dialog" bind:this={dialog} aria-labelledby="last-title last-room" onclose={() => (confirming = false)}>
   <form bind:this={form} onsubmit={submit}>
-    <h2 id="last-title">{t('last.title')}</h2>
+    <!-- The room name says which room the PIN is for. -->
+    <div class="head">
+      <h2 id="last-title">{t('last.title')}</h2>
+      <p class="room" id="last-room">{roomName}</p>
+    </div>
     <label class="field"><span>{t('last.pin')}</span>
       <span class="pin-box">
         <input bind:this={pinInput} bind:value={pin} type={showPin ? 'text' : 'password'} maxlength="16" autocomplete="off" spellcheck="false" required />
@@ -217,6 +223,8 @@
   .last-dialog::backdrop { background: rgba(0, 0, 0, .55); }
   form { display: grid; gap: 1rem; }
   h2 { color: var(--text); font-size: 1.1rem; font-weight: 500; margin: 0; }
+  .head { display: grid; gap: .3rem; }
+  .room { color: var(--muted); font-size: .9rem; margin: 0; }
   .error p { margin: 0; }
   .pin-box { position: relative; display: block; }
   .pin-box input { padding-right: 2.6rem; }
