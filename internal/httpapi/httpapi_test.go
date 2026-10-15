@@ -22,7 +22,7 @@ func TestRoomsListsWithoutPINs(t *testing.T) {
 	reg.Add(room.New("dev", "Development", "5678", 20))
 
 	rec := httptest.NewRecorder()
-	Rooms(reg, nil, nil, nil, false, nil, false).ServeHTTP(rec, httptest.NewRequest("GET", "/api/rooms", nil))
+	Rooms(reg, nil, nil, nil, false, nil, false, nil).ServeHTTP(rec, httptest.NewRequest("GET", "/api/rooms", nil))
 	if rec.Code != 200 {
 		t.Fatalf("status %d", rec.Code)
 	}
@@ -39,7 +39,7 @@ func TestRoomsListsWithoutPINs(t *testing.T) {
 		}
 	}
 	rec = httptest.NewRecorder()
-	Rooms(reg, nil, nil, nil, false, nil, false).ServeHTTP(rec, httptest.NewRequest("PUT", "/api/rooms", nil))
+	Rooms(reg, nil, nil, nil, false, nil, false, nil).ServeHTTP(rec, httptest.NewRequest("PUT", "/api/rooms", nil))
 	if rec.Code != 405 {
 		t.Fatalf("PUT status %d, want 405", rec.Code)
 	}
@@ -56,7 +56,7 @@ func TestCreateAndDeleteRoom(t *testing.T) {
 	reg := room.NewRegistry()
 	reg.Add(room.New("ops", "Operations", "1234", 15))
 	saves := 0
-	h := Rooms(reg, func() error { saves++; return nil }, nil, nil, false, nil, false)
+	h := Rooms(reg, func() error { saves++; return nil }, nil, nil, false, nil, false, nil)
 	createdBefore := testutil.ToFloat64(metrics.RoomsCreated)
 	deletedBefore := testutil.ToFloat64(metrics.RoomsDeleted)
 
@@ -145,7 +145,7 @@ func TestDeleteGuessingIsBlocked(t *testing.T) {
 	if _, err := reg.Create("Retro", "432100"); err != nil {
 		t.Fatal(err)
 	}
-	h := Rooms(reg, nil, ratelimit.New(5, 10*time.Minute, time.Minute), nil, false, nil, false)
+	h := Rooms(reg, nil, ratelimit.New(5, 10*time.Minute, time.Minute), nil, false, nil, false, nil)
 	try := func(pin string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest("DELETE", "/api/rooms/retro", strings.NewReader(`{"pin":"`+pin+`"}`))
 		req.RemoteAddr = "127.0.0.1:1"

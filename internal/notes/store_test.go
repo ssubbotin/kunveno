@@ -337,3 +337,35 @@ func TestStoreDeleteEndedKeepsNotesWhenRemoveFails(t *testing.T) {
 		t.Fatal("notes forgotten though the file stays")
 	}
 }
+
+func TestStoreMeetingIsTheReadyTranscriptsStart(t *testing.T) {
+	dir := t.TempDir()
+	now := at(0, 0)
+	clock := func() time.Time { return now }
+	s, err := Open(dir, time.Hour, clock)
+	must(t, err)
+	if _, ok := s.Meeting("ops"); ok {
+		t.Fatal("a meeting without notes")
+	}
+	must(t, s.Begin("ops", "Планёрка", at(37, 0)))
+	if _, ok := s.Meeting("ops"); ok {
+		t.Fatal("a meeting while its transcript is open")
+	}
+	must(t, s.End("ops", at(50, 0)))
+	if m, ok := s.Meeting("ops"); !ok || !m.Equal(at(37, 0)) {
+		t.Fatalf("meeting = %v, %v", m, ok)
+	}
+	s2, err := Open(dir, time.Hour, clock) // after a restart
+	must(t, err)
+	if m, ok := s2.Meeting("ops"); !ok || !m.Equal(at(37, 0)) {
+		t.Fatalf("after a restart: %v, %v", m, ok)
+	}
+	now = at(50, 0).Add(time.Hour)
+	if _, ok := s2.Meeting("ops"); ok {
+		t.Fatal("a meeting of expired notes")
+	}
+	must(t, s.Delete("ops"))
+	if _, ok := s.Meeting("ops"); ok {
+		t.Fatal("a meeting of deleted notes")
+	}
+}

@@ -288,3 +288,21 @@ func TestPutOlderMeetingAfterExpiry(t *testing.T) {
 		t.Fatalf("body %q meta %+v", body, m)
 	}
 }
+
+func TestMeetingOfTheStoredRecording(t *testing.T) {
+	s, now, _ := newStore(t)
+	if _, ok := s.Meeting("ops"); ok {
+		t.Fatal("a meeting without a recording")
+	}
+	meeting := t0.Add(123 * time.Millisecond)
+	if _, err := s.Put("ops", meeting, strings.NewReader("v"), 1<<20); err != nil {
+		t.Fatal(err)
+	}
+	if m, ok := s.Meeting("ops"); !ok || !m.Equal(meeting) {
+		t.Fatalf("meeting = %v, %v", m, ok)
+	}
+	*now = t0.Add(25 * time.Hour)
+	if _, ok := s.Meeting("ops"); ok {
+		t.Fatal("a meeting of an expired recording")
+	}
+}

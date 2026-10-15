@@ -189,6 +189,18 @@ func (s *Store) Until(slug string) (time.Time, bool) {
 	return m.Ended.Add(s.keep), true
 }
 
+// Meeting returns the start of the meeting whose recording the room keeps; false when there is
+// none or it has expired.
+func (s *Store) Meeting(slug string) (time.Time, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m, ok := s.meta[slug]
+	if !ok || s.expired(m) {
+		return time.Time{}, false
+	}
+	return m.Meeting, true
+}
+
 // Open opens the room's recording for reading; the caller closes the file.
 func (s *Store) Open(slug string) (*os.File, Meta, error) {
 	s.mu.Lock()
