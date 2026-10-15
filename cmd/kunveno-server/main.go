@@ -104,7 +104,7 @@ func run(cfgPath string, log *slog.Logger) error {
 		ws.SetNotes(store, cfg.Notes.Live)
 	}
 	mux.Handle("/ws", ws)
-	rooms := httpapi.Rooms(reg, persist, ws.PINLimiter(), store, cfg.Notes.Enabled)
+	rooms := httpapi.Rooms(reg, persist, ws.PINLimiter(), store, cfg.Notes.Enabled, nil)
 	mux.Handle("/api/rooms", rooms)
 	mux.Handle("/api/rooms/", rooms)
 	mux.Handle("POST /api/rooms/{slug}/notes", httpapi.NotesDownload(reg, store, cfg.Notes.Enabled, ws.PINLimiter(), time.Local))
@@ -113,7 +113,7 @@ func run(cfgPath string, log *slog.Logger) error {
 	mux.Handle("/api/backgrounds", bg)
 	mux.Handle("/api/backgrounds/", bg)
 	mux.Handle("/healthz", httpapi.Health())
-	mux.Handle("/api/info", httpapi.Info(cfg.UI.Title, cfg.UI.Reactions, cfg.UI.NoiseSuppression, cfg.Notes.Enabled, cfg.Notes.Live))
+	mux.Handle("/api/info", httpapi.Info(cfg.UI.Title, cfg.UI.Reactions, cfg.UI.NoiseSuppression, cfg.Notes.Enabled, cfg.Notes.Live, false))
 	mux.Handle("/internal/echo", httpapi.EchoRooms(reg))                       // never proxied by nginx
 	mux.Handle("/internal/notes", httpapi.NotesRooms(reg, cfg.Notes.Enabled))  // never proxied by nginx
 	mux.Handle("/metrics", metrics.Handler(metrics.NewRegistry(reg, version))) // local scrapers only
