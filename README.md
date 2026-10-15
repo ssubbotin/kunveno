@@ -143,7 +143,7 @@ meeting of the same size needs under 10 Mbit/s.
 | TCP 443 | the site (HTTPS) and signaling (WebSocket through nginx) |
 | TCP 80 | a redirect to 443, nothing else |
 | UDP 7000 | the media channel: voice and video of all participants on one port; no per-call ports are opened |
-| TCP 7000 | the fallback media channel for a participant whose UDP does not get through (typically a NAT or a firewall on a gateway that drops long UDP flows); the browser switches to it on its own |
+| TCP 7000 | the fallback media channel for a participant whose UDP does not get through (typically a NAT or a firewall on a gateway that drops long UDP flows); the browser switches to it on its own and keeps it for a week, and "try the fast one" next to the status switches back |
 
 No STUN, TURN or other external service is involved. The server's own ports (API, metrics,
 Prometheus, Grafana, node-exporter) listen on 127.0.0.1 only; Grafana is reached through 443 at `/grafana/`.

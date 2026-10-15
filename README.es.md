@@ -145,7 +145,7 @@ mismo tamaño solo con voz necesita menos de 10 Mbit/s.
 | TCP 443 | el sitio (HTTPS) y la señalización (WebSocket a través de nginx) |
 | TCP 80 | solo una redirección a 443 |
 | UDP 7000 | el canal de audio y vídeo: voz y vídeo de todos los participantes en un solo puerto; no se abren puertos por llamada |
-| TCP 7000 | el canal de reserva para un participante cuyo UDP no pasa (normalmente un NAT o un cortafuegos en una pasarela que corta los flujos UDP largos); el navegador cambia a él por sí solo |
+| TCP 7000 | el canal de reserva para un participante cuyo UDP no pasa (normalmente un NAT o un cortafuegos en una pasarela que corta los flujos UDP largos); el navegador cambia a él por sí solo y lo recuerda una semana, y «probar el rápido» junto al estado vuelve a UDP |
 
 No hace falta STUN, TURN ni ningún servicio externo. Los puertos internos del servidor (API,
 métricas, Prometheus, Grafana, node-exporter) escuchan solo en 127.0.0.1; a Grafana se llega por el mismo 443 en

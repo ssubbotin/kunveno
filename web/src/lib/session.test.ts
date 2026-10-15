@@ -301,6 +301,38 @@ describe('Session', () => {
     expect(s.state.status).not.toBe('idle');
   });
 
+  it('falls back to TCP after a media failure and tries UDP again on request', async () => {
+    const s = await joined();
+    vi.useFakeTimers();
+    expect(s.state.tcpForced).toBe(false);
+    FakeSocket.all[0].onmessage?.({ data: JSON.stringify({ type: 'error', code: 'media_failed', message: 'x' }) });
+    FakeSocket.all[0].close();
+    await vi.advanceTimersByTimeAsync(1000);
+    FakeSocket.all[1].open();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(FakeSocket.all[1].sent[0]).toMatchObject({ type: 'join', media: 'tcp' });
+    expect(s.state.tcpForced).toBe(true);
+    expect(localStorage.getItem('kunveno.tcpUntil')).not.toBeNull();
+
+    s.tryFastChannel();
+    expect(FakeSocket.all[1].closed).toBe(true);
+    expect(s.state.tcpForced).toBe(false);
+    expect(localStorage.getItem('kunveno.tcpUntil')).toBeNull();
+    await vi.advanceTimersByTimeAsync(10_000); // no "joined" came, so the backoff grew
+    FakeSocket.all[2].open();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(FakeSocket.all[2].sent[0]).toMatchObject({ type: 'join' });
+    expect(FakeSocket.all[2].sent[0]).not.toHaveProperty('media');
+    // A browser already on UDP has nothing to retry.
+    s.tryFastChannel();
+    expect(FakeSocket.all[2].closed).toBe(false);
+  });
+
+  it('starts forced to TCP when a failure is remembered', () => {
+    localStorage.setItem('kunveno.tcpUntil', String(Date.now() + 60_000));
+    expect(new Session().state.tcpForced).toBe(true);
+  });
+
   it('switches blur to an image inside the effect, without reopening the camera', async () => {
     vi.spyOn(Rtc.prototype, 'startCamera').mockResolvedValue();
     const replace = vi.spyOn(Rtc.prototype, 'replaceCamera').mockResolvedValue();
