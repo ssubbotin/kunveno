@@ -20,6 +20,7 @@ import (
 	"github.com/pion/webrtc/v4"
 
 	"github.com/ssubbotin/kunveno/internal/notes"
+	"github.com/ssubbotin/kunveno/internal/recording"
 	"github.com/ssubbotin/kunveno/internal/room"
 	"github.com/ssubbotin/kunveno/internal/sfu"
 )
@@ -61,6 +62,8 @@ type Handler struct {
 	notesLive    bool               // send each phrase to the room as it is recognised
 	stopGrace    time.Duration      // how long a stopped notes bot may take to leave
 	notesMu      sync.Mutex         // orders every room's notes state and the store's writes
+	recording    *recording.Store   // meeting recording (recording.enabled); nil when off
+	recStopGrace time.Duration      // how long a stopped recorder may take to upload and leave
 
 	mu   sync.Mutex
 	live map[string]*liveRoom // slug -> members
@@ -75,11 +78,11 @@ type liveRoom struct {
 type session struct {
 	id, name, slug string
 	bot            bool        // a helper: the echo or a player
-	botKind        string      // RoleEcho, RolePlayer, RoleCamera or RoleNotes
+	botKind        string      // RoleEcho, RolePlayer, RoleCamera, RoleNotes or RoleRecorder
 	noVideo        bool        // declined other participants' cameras; guarded by Handler.mu
-	stopping       bool        // notes bot told to stop; guarded by Handler.mu
+	stopping       bool        // notes bot or recorder told to stop; guarded by Handler.mu
 	stoppedAtJoin  bool        // notes bot whose notes were switched off while it joined; guarded by Handler.mu
-	stopTimer      *time.Timer // closes a stopped notes bot that does not leave; guarded by Handler.mu
+	stopTimer      *time.Timer // closes a stopped notes bot or recorder that does not leave; guarded by Handler.mu
 	meeting        time.Time   // notes bot: start of the meeting it joined to take notes of
 	client         string      // the page's id from join, if it sent one
 	lastReaction   time.Time   // for the reaction rate limit; only the session's read loop uses it
@@ -92,7 +95,7 @@ type session struct {
 
 func New(reg *room.Registry, media Media, origins []string, log *slog.Logger) *Handler {
 	return &Handler{reg: reg, media: media, origins: origins, log: log, live: map[string]*liveRoom{}, qualityEvery: 3 * time.Second,
-		stopGrace: NotesStopGrace, pins: ratelimit.New(5, 10*time.Minute, time.Minute), reactions: set(config.DefaultReactions)}
+		stopGrace: NotesStopGrace, recStopGrace: RecordingStopGrace, pins: ratelimit.New(5, 10*time.Minute, time.Minute), reactions: set(config.DefaultReactions)}
 }
 
 // lookup returns the live state of a registered room, creating it on first use. Rooms can be
@@ -250,8 +253,8 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 		case "react":
 			h.react(s, m.Emoji)
 		case "video":
-			if s.botKind == RoleNotes {
-				continue // the notes bot hears audio only
+			if s.botKind == RoleNotes || s.botKind == RoleRecorder {
+				continue // the notes bot hears audio only; the recorder's media is fixed
 			}
 			h.setReceiveVideo(s, *m.Receive)
 		case "echo":
@@ -267,6 +270,11 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 				continue // helpers cannot switch notes; with notes.enabled off the switch does not exist
 			}
 			h.switchNotes(s, *m.On)
+		case "recording":
+			if s.bot || h.recording == nil {
+				continue // helpers cannot switch it; with recording.enabled off the switch does not exist
+			}
+			h.switchRecording(s, *m.On)
 		case "phrase":
 			if s.botKind != RoleNotes {
 				continue
@@ -304,6 +312,8 @@ func (h *Handler) join(conn *websocket.Conn, cancel context.CancelFunc, m Client
 		return nil, CodeBadRoom, "no player configured for this room"
 	case m.Role == RoleNotes && (h.notes == nil || !lr.room.Notes()):
 		return nil, CodeBadRoom, "notes not requested in this room"
+	case m.Role == RoleRecorder && (h.recording == nil || !lr.room.Recording() || h.hasActiveRecorder(lr)):
+		return nil, CodeBadRoom, "recording not requested in this room"
 	}
 	h.replaceClient(lr, m.Client)
 	id := newID()
@@ -356,7 +366,12 @@ func (h *Handler) join(conn *websocket.Conn, cancel context.CancelFunc, m Client
 		}
 	}
 	metrics.Joins.WithLabelValues(lr.room.Slug(), "ok").Inc()
-	if err := s.write(Joined(ParticipantInfo{ID: id, Name: m.Name}, lr.room.Slug(), lr.room.Name())); err != nil {
+	joinedMsg := Joined(ParticipantInfo{ID: id, Name: m.Name}, lr.room.Slug(), lr.room.Name())
+	if m.Role == RoleRecorder {
+		meeting, _ := lr.room.Meeting()
+		joinedMsg = JoinedRecorder(ParticipantInfo{ID: id, Name: m.Name}, lr.room.Slug(), lr.room.Name(), meeting)
+	}
+	if err := s.write(joinedMsg); err != nil {
 		h.leave(s)
 		return nil, CodeMediaFailed, "write failed"
 	}
@@ -368,6 +383,9 @@ func (h *Handler) join(conn *websocket.Conn, cancel context.CancelFunc, m Client
 		s.stoppedAtJoin = true // it heard nothing while the notes were on
 		h.mu.Unlock()
 		h.stopNotes(lr) // switched off while this bot was joining, before it was a member to stop
+	}
+	if s.botKind == RoleRecorder && !lr.room.Recording() {
+		h.stopRecorders(lr) // switched off while this recorder was joining
 	}
 	return s, "", ""
 }
@@ -385,6 +403,7 @@ func (lr *liveRoom) membersExcept(id string) []*session {
 func (h *Handler) leave(s *session) {
 	lr, _ := h.lookup(s.slug)
 	wasNotes := lr.room.Notes()
+	wasRecording := lr.room.Recording()
 	if !s.bot {
 		// Before leaving the members, so a phrase of this person is never without a name.
 		h.rememberSpeaker(lr, s, wasNotes)
@@ -413,6 +432,12 @@ func (h *Handler) leave(s *session) {
 		h.notesBotLeft(lr, s)
 	case wasNotes && !lr.room.Notes():
 		h.stopNotes(lr) // the last person left
+	}
+	switch {
+	case s.botKind == RoleRecorder:
+		h.recorderLeft(lr, s)
+	case wasRecording && !lr.room.Recording():
+		h.stopRecorders(lr) // the last person left
 	}
 	h.broadcast(lr)
 }
