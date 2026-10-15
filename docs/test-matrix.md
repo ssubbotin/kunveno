@@ -136,7 +136,7 @@ Meeting recording (with the `kunveno-recorder` add-on installed and `recording.e
     leaves one file, the later recording.
 47. Meeting summary: with notes or recording on, Ann and Bob join, an echo or notes bot is in the
     room, Bob reloads the page (rejoins under the same name), then everyone leaves. The lobby shows
-    above the "Last meeting" caption a line like "15.10, 11:00–11:27 · 27 min · 2 participants":
+    above the "Last meeting" caption a line like "10/15, 11:00 AM–11:27 AM · 27 min · 2 participants":
     the date, the start and end times, the duration and 2 people (the bot and the rejoin do not
     count); the dialog shows the same line under the room name, in each language (Russian
     "2 участника", Spanish "2 participantes"). After `docker compose restart server` the line is

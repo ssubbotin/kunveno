@@ -1,10 +1,10 @@
 // What is left of a room's last meeting: its video (recording) and its notes, as the lobby shows
 // them under one "Last meeting" button and one dialog.
 import type { Key } from './i18n/messages';
-
-type Translate = (key: Key, vars?: Record<string, string | number>) => string;
 import { notesUntil } from './notes';
 import { recordingUntil } from './recording';
+
+type Translate = (key: Key, vars?: Record<string, string | number>) => string;
 
 export type LastKind = 'video' | 'notes';
 export type LastItem = { kind: LastKind; until: Date };

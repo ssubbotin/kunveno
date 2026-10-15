@@ -208,14 +208,18 @@ func (r *Room) LastMeeting() (Summary, bool) {
 
 // Leave removes id. It reports whether id held the share lock, which is now released.
 func (r *Room) Leave(id string) (releasedShare bool) {
+	releasedShare, _, _ = r.LeaveEnding(id)
+	return releasedShare
+}
+
+// LeaveEnding is Leave that also reports, under the same lock, whether this leave ended the meeting
+// (id was its last person) and that meeting's summary, so a join right after cannot hide it.
+func (r *Room) LeaveEnding(id string) (releasedShare bool, meeting Summary, ended bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	p, ok := r.members[id]
 	if !ok {
-		return false
-	}
-	if !p.Bot {
-		defer r.endMeetingLocked()
+		return false, Summary{}, false
 	}
 	delete(r.members, id)
 	for i, o := range r.order {
@@ -228,21 +232,17 @@ func (r *Room) Leave(id string) (releasedShare bool) {
 		r.echo = false      // nobody left to listen
 		r.notes = false     // nor to take notes of
 		r.recording = false // nor to record
+		if !p.Bot {
+			r.last = Summary{Start: r.meeting, End: r.now(), People: len(r.people)}
+			r.hasLast = true
+			meeting, ended = r.last, true
+		}
 	}
 	if r.sharer == id {
 		r.sharer = ""
-		return true
+		releasedShare = true
 	}
-	return false
-}
-
-// endMeetingLocked records the meeting's summary once its last person has left.
-func (r *Room) endMeetingLocked() {
-	if r.hasPeopleLocked() {
-		return
-	}
-	r.last = Summary{Start: r.meeting, End: r.now(), People: len(r.people)}
-	r.hasLast = true
+	return releasedShare, meeting, ended
 }
 
 func (r *Room) hasPeopleLocked() bool {

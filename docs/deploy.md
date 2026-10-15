@@ -240,7 +240,7 @@ summaries.
 
 `/api/rooms` lists `last_meeting` (`{"start","end","people"}`, RFC 3339) for a room only while it
 keeps notes or a recording of a meeting with a saved summary (the recording's meeting first), and
-the lobby shows it as "15.10, 11:00–11:27 · 27 min · 7 participants" above the "Last meeting"
+the lobby shows it as "10/15, 11:00 AM–11:27 AM · 27 min · 7 participants" above the "Last meeting"
 caption and in its dialog.
 
 ## Monitoring (Prometheus and Grafana)

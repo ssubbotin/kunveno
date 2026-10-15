@@ -419,10 +419,8 @@ func (h *Handler) leave(s *session) {
 	delete(lr.members, s.id)
 	others := lr.membersExcept(s.id)
 	h.mu.Unlock()
-	_, wasMeeting := lr.room.Meeting()
-	lr.room.Leave(s.id)
-	if _, active := lr.room.Meeting(); wasMeeting && !active {
-		h.saveMeeting(lr, s)
+	if _, m, ended := lr.room.LeaveEnding(s.id); ended {
+		h.saveMeeting(lr, s, m)
 	}
 	for _, o := range others {
 		_ = o.peer.Unsubscribe(s.peer, sfu.KindAudio)
@@ -452,11 +450,9 @@ func (h *Handler) leave(s *session) {
 // SetMeetings keeps the summary of every ended meeting in store. Call before serving.
 func (h *Handler) SetMeetings(store *meetings.Store) { h.meetings = store }
 
-// saveMeeting stores the summary of the room's meeting that has just ended. Two people leaving at
-// once may both save it; the store keeps one entry per meeting start.
-func (h *Handler) saveMeeting(lr *liveRoom, s *session) {
-	m, ok := lr.room.LastMeeting()
-	if !ok || h.meetings == nil {
+// saveMeeting stores the summary of the room's meeting that s's leave has just ended.
+func (h *Handler) saveMeeting(lr *liveRoom, s *session, m room.Summary) {
+	if h.meetings == nil {
 		return
 	}
 	if err := h.meetings.Add(lr.room.Slug(), meetings.Summary{Start: m.Start, End: m.End, People: m.People}); err != nil {

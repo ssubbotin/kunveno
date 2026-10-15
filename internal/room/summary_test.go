@@ -55,3 +55,30 @@ func TestLastMeetingResetsWithANewMeeting(t *testing.T) {
 		t.Fatalf("second summary = %+v, %v", s, ok)
 	}
 }
+
+func TestLastLeaveReportsItsMeetingEvenIfSomeoneJoinsRightAfter(t *testing.T) {
+	r := New("ops", "Ops", "1234", 10)
+	clock := time.Date(2026, 10, 15, 11, 0, 0, 0, time.UTC)
+	r.now = func() time.Time { return clock }
+	start := clock
+	_ = r.Join("a", "Ann", "1234")
+	_ = r.Join("b", "Bob", "1234")
+	_ = r.JoinBot("n", "Заметки", BotNotes)
+	if _, _, ended := r.LeaveEnding("a"); ended {
+		t.Fatal("ended while Bob is still in the meeting")
+	}
+	clock = clock.Add(27 * time.Minute)
+	_, m, ended := r.LeaveEnding("b")
+	end := clock
+	clock = clock.Add(time.Second)
+	_ = r.Join("c", "Cid", "1234") // the next meeting starts at once
+	if !ended || !m.Start.Equal(start) || !m.End.Equal(end) || m.People != 2 {
+		t.Fatalf("last leave = %+v, %v; want the 11:00 meeting of 2 people", m, ended)
+	}
+	if _, _, ended := r.LeaveEnding("n"); ended {
+		t.Fatal("a bot leaving ended a meeting")
+	}
+	if _, _, ended := r.LeaveEnding("zz"); ended {
+		t.Fatal("an unknown id ended a meeting")
+	}
+}
