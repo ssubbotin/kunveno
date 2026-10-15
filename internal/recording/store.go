@@ -3,6 +3,7 @@
 package recording
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,8 +30,8 @@ type Meta struct {
 	Size    int64     `json:"size"`
 }
 
-// Store is safe for concurrent use. Files: <slug>.mp4 and <slug>.json (Meta) in dir, 0600; an
-// upload in progress is <slug>.mp4.tmp.
+// Store is safe for concurrent use. Files: <slug>.mp4 and <slug>.json (Meta) in dir, 0600. An
+// upload writes unique temporary files (ending in .tmp) that are renamed into place or removed.
 type Store struct {
 	dir  string
 	keep time.Duration
@@ -41,6 +42,8 @@ type Store struct {
 	active map[string]bool
 }
 
+// Open loads the stored recordings of dir. Leftover temporary files and files without a partner
+// (an .mp4 without a valid .json, or a .json without its .mp4) are removed.
 func Open(dir string, keep time.Duration, now func() time.Time) (*Store, error) {
 	if now == nil {
 		now = time.Now
@@ -55,18 +58,25 @@ func Open(dir string, keep time.Duration, now func() time.Time) (*Store, error) 
 	}
 	for _, e := range entries {
 		name := e.Name()
-		switch {
-		case strings.HasSuffix(name, ".tmp"):
+		if strings.HasSuffix(name, ".tmp") {
 			_ = os.Remove(filepath.Join(dir, name)) // an upload cut off by a restart
-		case strings.HasSuffix(name, ".json"):
-			slug := strings.TrimSuffix(name, ".json")
+			continue
+		}
+		if slug, ok := strings.CutSuffix(name, ".json"); ok {
 			var m Meta
 			data, err := os.ReadFile(filepath.Join(dir, name))
-			if err != nil || json.Unmarshal(data, &m) != nil {
-				continue
-			}
-			if _, err := os.Stat(s.video(slug)); err == nil {
+			_, serr := os.Stat(s.video(slug))
+			if err == nil && serr == nil && json.Unmarshal(data, &m) == nil {
 				s.meta[slug] = m
+			} else {
+				_ = os.Remove(filepath.Join(dir, name)) // best effort: an orphan
+			}
+		}
+	}
+	for _, e := range entries {
+		if slug, ok := strings.CutSuffix(e.Name(), ".mp4"); ok {
+			if _, kept := s.meta[slug]; !kept {
+				_ = os.Remove(filepath.Join(s.dir, e.Name())) // best effort: an orphan
 			}
 		}
 	}
@@ -88,50 +98,82 @@ func (s *Store) SetActive(slug string, on bool) {
 }
 
 // Put stores the recording of meeting from r, at most max bytes. A recording of an earlier meeting
-// than the stored one is refused (ErrStale); one of the same meeting replaces it.
+// than the stored one is refused (ErrStale) unless the stored one has expired; one of the same
+// meeting replaces it. On failure the stored recording is left as it was, or removed when the
+// failure came after the new files were put in place.
 func (s *Store) Put(slug string, meeting time.Time, r io.Reader, max int64) (Meta, error) {
 	s.mu.Lock()
-	if old, ok := s.meta[slug]; ok && meeting.Before(old.Meeting) {
-		s.mu.Unlock()
+	stale := s.staleLocked(slug, meeting)
+	s.mu.Unlock()
+	if stale {
 		return Meta{}, ErrStale
 	}
-	s.mu.Unlock()
-	tmp := s.video(slug) + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	tmpVideo, n, err := s.writeTemp(slug+".mp4.*.tmp", r, max)
 	if err != nil {
 		return Meta{}, err
 	}
+	m := Meta{Meeting: meeting, Ended: s.now(), Size: n}
+	data, _ := json.Marshal(m)
+	tmpInfo, _, err := s.writeTemp(slug+".json.*.tmp", bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		_ = os.Remove(tmpVideo)
+		return Meta{}, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.staleLocked(slug, meeting) { // a later meeting's upload finished meanwhile
+		_ = os.Remove(tmpVideo)
+		_ = os.Remove(tmpInfo)
+		return Meta{}, ErrStale
+	}
+	if err := os.Rename(tmpVideo, s.video(slug)); err != nil {
+		_ = os.Remove(tmpVideo)
+		_ = os.Remove(tmpInfo)
+		return Meta{}, err
+	}
+	if err := os.Rename(tmpInfo, s.info(slug)); err != nil {
+		// The new video is in place without its meta: drop the pair so the store is consistent.
+		_ = os.Remove(tmpInfo)
+		_ = os.Remove(s.video(slug))
+		_ = os.Remove(s.info(slug))
+		delete(s.meta, slug)
+		return Meta{}, err
+	}
+	s.meta[slug] = m
+	return m, nil
+}
+
+// writeTemp copies at most max bytes from r into a new file in dir named by pattern. It returns
+// the file's name and size; on failure the file is removed.
+func (s *Store) writeTemp(pattern string, r io.Reader, max int64) (string, int64, error) {
+	f, err := os.CreateTemp(s.dir, pattern)
+	if err != nil {
+		return "", 0, err
+	}
+	name := f.Name()
 	n, err := io.Copy(f, io.LimitReader(r, max+1))
 	if cerr := f.Close(); err == nil {
 		err = cerr
+	}
+	if err == nil {
+		err = os.Chmod(name, 0o600)
 	}
 	if err == nil && n > max {
 		err = ErrTooLarge
 	}
 	if err != nil {
-		_ = os.Remove(tmp)
-		return Meta{}, err
+		_ = os.Remove(name)
+		return "", 0, err
 	}
-	m := Meta{Meeting: meeting, Ended: s.now(), Size: n}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if old, ok := s.meta[slug]; ok && meeting.Before(old.Meeting) {
-		_ = os.Remove(tmp) // a later meeting's upload finished meanwhile
-		return Meta{}, ErrStale
-	}
-	data, _ := json.Marshal(m)
-	if err := os.WriteFile(s.info(slug)+".tmp", data, 0o600); err != nil {
-		_ = os.Remove(tmp)
-		return Meta{}, err
-	}
-	if err := os.Rename(tmp, s.video(slug)); err != nil {
-		return Meta{}, err
-	}
-	if err := os.Rename(s.info(slug)+".tmp", s.info(slug)); err != nil {
-		return Meta{}, err
-	}
-	s.meta[slug] = m
-	return m, nil
+	return name, n, nil
+}
+
+// staleLocked reports whether a stored, unexpired recording is of a later meeting than meeting.
+// The caller holds s.mu.
+func (s *Store) staleLocked(slug string, meeting time.Time) bool {
+	old, ok := s.meta[slug]
+	return ok && !s.expired(old) && meeting.Before(old.Meeting)
 }
 
 func (s *Store) expired(m Meta) bool { return !s.now().Before(m.Ended.Add(s.keep)) }
@@ -187,19 +229,24 @@ func (s *Store) Remove(slug string) error {
 	return s.removeLocked(slug)
 }
 
+// removeLocked deletes both files of the room and then its meta entry. If a file cannot be
+// removed, the entry stays so that a later Sweep or Remove retries. The caller holds s.mu.
 func (s *Store) removeLocked(slug string) error {
+	var first error
+	for _, p := range []string{s.video(slug), s.info(slug)} {
+		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) && first == nil {
+			first = err
+		}
+	}
+	if first != nil {
+		return first
+	}
 	delete(s.meta, slug)
-	err := os.Remove(s.video(slug))
-	if errors.Is(err, os.ErrNotExist) {
-		err = nil
-	}
-	if e := os.Remove(s.info(slug)); e != nil && !errors.Is(e, os.ErrNotExist) && err == nil {
-		err = e
-	}
-	return err
+	return nil
 }
 
-// Sweep deletes expired recordings and returns their rooms, sorted.
+// Sweep deletes expired recordings and returns their rooms, sorted. A room whose files cannot be
+// removed is left for a later sweep and not returned.
 func (s *Store) Sweep() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()

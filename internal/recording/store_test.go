@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -182,5 +183,108 @@ func TestRestartKeepsRecordings(t *testing.T) {
 func TestFileName(t *testing.T) {
 	if got := FileName("ops", t0, time.UTC); got != "ops-2026-10-15-1100.mp4" {
 		t.Fatal(got)
+	}
+}
+
+func TestConcurrentPutSameSlug(t *testing.T) {
+	s, _, dir := newStore(t)
+	const n = 8
+	bodies := make([]string, n)
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	for i := range bodies {
+		bodies[i] = strings.Repeat(string(rune('a'+i)), 1000+i*100)
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, errs[i] = s.Put("ops", t0, strings.NewReader(bodies[i]), 1<<20)
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("put %d: %v", i, err)
+		}
+	}
+	body, m := read(t, s, "ops")
+	found := false
+	for _, b := range bodies {
+		if b == body {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("stored body matches none of the uploads (len %d)", len(body))
+	}
+	if m.Size != int64(len(body)) {
+		t.Fatalf("meta size %d, file %d", m.Size, len(body))
+	}
+	if matches, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(matches) != 0 {
+		t.Fatalf("left %v", matches)
+	}
+}
+
+func TestPutFailureLeavesNoRecording(t *testing.T) {
+	s, _, dir := newStore(t)
+	if err := os.Mkdir(filepath.Join(dir, "ops.json"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Put("ops", t0, strings.NewReader("v"), 100); err == nil {
+		t.Fatal("put over a directory succeeded")
+	}
+	if _, _, err := s.Open("ops"); !errors.Is(err, ErrNoRecording) {
+		t.Fatalf("open after failed put: %v", err)
+	}
+	if _, ok := s.Until("ops"); ok {
+		t.Fatal("failed put listed")
+	}
+	if matches, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(matches) != 0 {
+		t.Fatalf("left %v", matches)
+	}
+}
+
+func TestOpenRemovesOrphans(t *testing.T) {
+	dir := t.TempDir()
+	s, err := Open(dir, time.Hour, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Put("ops", t0, strings.NewReader("v"), 100); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, body string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("lone.mp4", "video without meta")
+	write("half.json", `{"meeting":"2026-10-15T11:00:00Z","ended":"2026-10-15T11:00:00Z","size":1}`)
+	write("ops.json.tmp", "{}")
+	if _, err := Open(dir, time.Hour, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"lone.mp4", "half.json", "ops.json.tmp"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+			t.Fatalf("%s kept: %v", name, err)
+		}
+	}
+	s2, _ := Open(dir, time.Hour, nil)
+	if _, ok := s2.Until("ops"); !ok {
+		t.Fatal("valid recording dropped")
+	}
+}
+
+func TestPutOlderMeetingAfterExpiry(t *testing.T) {
+	s, now, _ := newStore(t)
+	if _, err := s.Put("ops", t0.Add(time.Hour), strings.NewReader("new"), 100); err != nil {
+		t.Fatal(err)
+	}
+	*now = t0.Add(time.Hour + 24*time.Hour)
+	if _, err := s.Put("ops", t0, strings.NewReader("old"), 100); err != nil {
+		t.Fatalf("older meeting after expiry: %v", err)
+	}
+	if body, m := read(t, s, "ops"); body != "old" || !m.Meeting.Equal(t0) {
+		t.Fatalf("body %q meta %+v", body, m)
 	}
 }
