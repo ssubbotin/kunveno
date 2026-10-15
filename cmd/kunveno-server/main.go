@@ -19,6 +19,7 @@ import (
 	"github.com/ssubbotin/kunveno/internal/httpapi"
 	"github.com/ssubbotin/kunveno/internal/metrics"
 	"github.com/ssubbotin/kunveno/internal/notes"
+	"github.com/ssubbotin/kunveno/internal/recording"
 	"github.com/ssubbotin/kunveno/internal/room"
 	"github.com/ssubbotin/kunveno/internal/roomstore"
 	"github.com/ssubbotin/kunveno/internal/sfu"
@@ -96,6 +97,11 @@ func run(cfgPath string, log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	go sweepNotes(ctx, store, log) // stored notes expire whether or not notes are enabled
+	recStore, err := recording.Open(cfg.Recording.Dir, cfg.Recording.KeepFor, nil)
+	if err != nil {
+		return fmt.Errorf("recording %s: %w", cfg.Recording.Dir, err)
+	}
+	go sweepRecordings(ctx, recStore, log) // recordings expire whether or not recording is enabled
 
 	mux := http.NewServeMux()
 	ws := sig.New(reg, engineMedia{engine}, cfg.HTTP.AllowedOrigins, log)
@@ -103,17 +109,28 @@ func run(cfgPath string, log *slog.Logger) error {
 	if cfg.Notes.Enabled {
 		ws.SetNotes(store, cfg.Notes.Live)
 	}
+	var rec *recording.Store // nil while recording.enabled is off
+	if cfg.Recording.Enabled {
+		rec = recStore
+		ws.SetRecording(rec)
+	}
+	links := httpapi.NewLinks(5 * time.Minute)
 	mux.Handle("/ws", ws)
-	rooms := httpapi.Rooms(reg, persist, ws.PINLimiter(), store, cfg.Notes.Enabled, nil)
+	rooms := httpapi.Rooms(reg, persist, ws.PINLimiter(), store, cfg.Notes.Enabled, rec)
 	mux.Handle("/api/rooms", rooms)
 	mux.Handle("/api/rooms/", rooms)
 	mux.Handle("POST /api/rooms/{slug}/notes", httpapi.NotesDownload(reg, store, cfg.Notes.Enabled, ws.PINLimiter(), time.Local))
 	mux.Handle("DELETE /api/rooms/{slug}/notes", httpapi.NotesDelete(reg, store, cfg.Notes.Enabled, ws.PINLimiter()))
 	bg := backgrounds.New(cfg.BackgroundsDir, log).Handler()
+	mux.Handle("POST /api/rooms/{slug}/recording", httpapi.RecordingLink(reg, rec, ws.PINLimiter(), links))
+	mux.Handle("GET /api/rooms/{slug}/recording/{token}", httpapi.RecordingFile(rec, links, time.Local))
+	mux.Handle("DELETE /api/rooms/{slug}/recording", httpapi.RecordingDelete(reg, rec, ws.PINLimiter()))
+	mux.Handle("/internal/recording", httpapi.RecordingRooms(reg, cfg.Recording.Enabled))                                       // never proxied by nginx
+	mux.Handle("PUT /internal/recording/{slug}", httpapi.RecordingUpload(reg, rec, cfg.Recording.MaxBytes, ws.RecordingStored)) // never proxied by nginx
 	mux.Handle("/api/backgrounds", bg)
 	mux.Handle("/api/backgrounds/", bg)
 	mux.Handle("/healthz", httpapi.Health())
-	mux.Handle("/api/info", httpapi.Info(cfg.UI.Title, cfg.UI.Reactions, cfg.UI.NoiseSuppression, cfg.Notes.Enabled, cfg.Notes.Live, false))
+	mux.Handle("/api/info", httpapi.Info(cfg.UI.Title, cfg.UI.Reactions, cfg.UI.NoiseSuppression, cfg.Notes.Enabled, cfg.Notes.Live, cfg.Recording.Enabled))
 	mux.Handle("/internal/echo", httpapi.EchoRooms(reg))                       // never proxied by nginx
 	mux.Handle("/internal/notes", httpapi.NotesRooms(reg, cfg.Notes.Enabled))  // never proxied by nginx
 	mux.Handle("/metrics", metrics.Handler(metrics.NewRegistry(reg, version))) // local scrapers only
@@ -121,7 +138,7 @@ func run(cfgPath string, log *slog.Logger) error {
 	srv := &http.Server{Addr: cfg.HTTP.Listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
-	log.Info("kunveno-server started", "version", version, "listen", cfg.HTTP.Listen, "udp_port", engine.Port(), "tcp_port", engine.TCPPort(), "advertise_ip", cfg.Media.AdvertiseIP, "rooms", len(reg.All()), "rooms_file", cfg.RoomsFile, "backgrounds", cfg.BackgroundsDir, "notes", cfg.Notes.Enabled)
+	log.Info("kunveno-server started", "version", version, "listen", cfg.HTTP.Listen, "udp_port", engine.Port(), "tcp_port", engine.TCPPort(), "advertise_ip", cfg.Media.AdvertiseIP, "rooms", len(reg.All()), "rooms_file", cfg.RoomsFile, "backgrounds", cfg.BackgroundsDir, "notes", cfg.Notes.Enabled, "recording", cfg.Recording.Enabled)
 
 	select {
 	case err := <-errc:
@@ -135,6 +152,22 @@ func run(cfgPath string, log *slog.Logger) error {
 		return err
 	}
 	return nil
+}
+
+// sweepRecordings deletes expired meeting recordings every minute.
+func sweepRecordings(ctx context.Context, store *recording.Store, log *slog.Logger) {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		for _, slug := range store.Sweep() {
+			log.Info("recording expired", "room", slug)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
 }
 
 // sweepNotes deletes expired meeting notes every minute.
