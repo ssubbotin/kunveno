@@ -195,8 +195,9 @@ las frases en orden, con las pausas marcadas.
 Un participante puede activar la grabación en una sala (Más → Grabación). El bot de
 grabación entra entonces en la sala como un participante llamado «Grabación» y graba la pantalla
 compartida y el audio de todos en un único vídeo (1920x1080, 15 fotogramas por segundo, H.264 y
-AAC). Mientras nadie comparte pantalla, el vídeo muestra una pantalla de espera con el nombre de la
-sala, la fecha y quien está hablando. Las cámaras no se graban. Todos ven «● Grabando» en la
+AAC). Mientras nadie comparte pantalla, el vídeo muestra la cámara de quien está hablando o, si la
+tiene apagada, una pantalla de espera con el nombre de la sala, la fecha y su nombre. Las demás
+cámaras no se graban. Todos ven «● Grabando» en la
 cabecera de la sala; el punto rojo siempre se refiere a este vídeo. Cuando se desactiva la grabación
 o sale la última persona, el bot sube el archivo al servidor y quienes siguen en la sala reciben un
 botón «Vídeo» en la barra «Listo tras la reunión:» (junto a «Notas» si la reunión también tuvo

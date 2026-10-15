@@ -191,7 +191,8 @@ the date and time, who spoke, and the phrases in order, with pauses marked.
 A participant can switch on recording in a room (More → Recording). The recorder bot then
 joins the room as a participant named "Recording" and records the shared screen and everyone's audio
 as one video (1920x1080, 15 frames per second, H.264 and AAC). While nobody shares a screen, the
-video shows a slate with the room name, the date and the current speaker. Cameras are not recorded.
+video shows the current speaker's camera, or, when that camera is off, a slate with the room name,
+the date and the speaker's name. Other cameras are not recorded.
 Everyone in the room sees "● Recording" in the header; the red dot always means this video. When
 recording is switched off, or the last person leaves, the bot uploads the file to the server, and
 everyone still in the room gets a "Video" button in the bar "Ready after the meeting:" (next to

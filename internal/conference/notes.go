@@ -32,13 +32,14 @@ func (c *Conference) SetNotes(store *notes.Store, live bool) {
 }
 
 // receives reports whether to is subscribed to from's track of kind: the notes bot hears people's
-// audio only; the recorder gets people's audio and screen; everyone else receives everything.
+// audio only; the recorder gets people's audio, screen and cameras; everyone else receives
+// everything.
 func receives(to, from *Member, kind media.Kind) bool {
 	switch to.botKind {
 	case room.BotNotes:
 		return kind == media.KindAudio && !from.bot
 	case room.BotRecorder:
-		return (kind == media.KindAudio || kind == media.KindScreen) && !from.bot
+		return !from.bot
 	}
 	return true
 }

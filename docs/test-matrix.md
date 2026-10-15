@@ -112,7 +112,9 @@ Meeting recording (with the `kunveno-recorder` add-on installed and `recording.e
     "● Recording" for everyone, a screen reader announces the change, and the switch is on for
     everyone in the room.
 40. Share a screen, speak, stop the share: the recording shows the screen while it is shared and a
-    slate with the room name, the date and the speaker's name while nobody shares; no cameras.
+    slate with the room name, the date and the speaker's name while nobody shares and the speaker's
+    camera is off. With the speaker's camera on, the recording shows that camera instead of the
+    slate; switching the camera off, on and off again during the meeting follows within a second.
 41. Switching recording off: the Recording participant leaves, and within a minute everyone in the
     room gets the bar "Ready after the meeting:" with "Video"; the file plays with the screen and
     the audio of all. With notes on as well, the bar holds both buttons ("Video" and "Notes", each

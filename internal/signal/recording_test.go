@@ -85,7 +85,8 @@ func TestRecordingDisabledIgnoresTheSwitchAndTheRole(t *testing.T) {
 	}
 }
 
-func TestRecorderReceivesPeoplesAudioAndScreenOnly(t *testing.T) {
+// The recorder gets people's audio, screen and cameras, nothing from helpers.
+func TestRecorderReceivesPeoplesMediaOnly(t *testing.T) {
 	e, _ := newRecordingEnv(t)
 	ca, ida := join(t, e, "Ann")
 	e.media.peer(ida).setTrack(t, media.KindAudio)
@@ -96,19 +97,27 @@ func TestRecorderReceivesPeoplesAudioAndScreenOnly(t *testing.T) {
 	send(t, player, `{"type":"join","room":"ops","name":"Видео","role":"player"}`)
 	pid := expect(t, player, "joined").Self.ID
 	e.media.peer(pid).setTrack(t, media.KindAudio)
+	e.media.peer(pid).setTrack(t, media.KindCamera)
 	recordingOn(t, ca, true)
 	_, joined := joinRecorder(t, e)
 	rp := e.media.peer(joined.Self.ID)
-	if rp.subCount(ida, media.KindAudio) != 1 || rp.subCount(ida, media.KindCamera) != 0 || rp.subCount(pid, media.KindAudio) != 0 {
-		t.Fatalf("recorder subscriptions: ann audio %d, ann camera %d, player audio %d",
-			rp.subCount(ida, media.KindAudio), rp.subCount(ida, media.KindCamera), rp.subCount(pid, media.KindAudio))
+	if rp.subCount(ida, media.KindAudio) != 1 || rp.subCount(ida, media.KindCamera) != 1 ||
+		rp.subCount(pid, media.KindAudio) != 0 || rp.subCount(pid, media.KindCamera) != 0 {
+		t.Fatalf("recorder subscriptions: ann audio %d, ann camera %d, player audio %d, player camera %d",
+			rp.subCount(ida, media.KindAudio), rp.subCount(ida, media.KindCamera), rp.subCount(pid, media.KindAudio), rp.subCount(pid, media.KindCamera))
 	}
+	// A camera switched on after the recorder joined reaches it too.
+	_, idb := join(t, e, "Bob")
+	e.media.peer(idb).setTrack(t, media.KindCamera)
+	e.media.peer(idb).publish(media.KindCamera)
+	waitFor(t, func() bool { return rp.subCount(idb, media.KindCamera) == 1 })
 	send(t, ca, `{"type":"share","action":"start"}`)
 	for expect(t, ca, "participants").Sharer != ida {
 	}
 	e.media.peer(ida).setTrack(t, media.KindScreen)
 	e.media.peer(ida).publish(media.KindScreen)
-	waitFor(t, func() bool { return rp.subCount(ida, media.KindScreen) == 1 })
+	// At least once: the share's own subscribe can race the first RTP's, and the SFU keeps one.
+	waitFor(t, func() bool { return rp.subCount(ida, media.KindScreen) >= 1 })
 }
 
 func TestRecordingStopGraceAndActiveMark(t *testing.T) {

@@ -221,8 +221,9 @@ together with the add-on (the same text is the package comment of `internal/sign
    refused unless the room wants a recording, and while another recorder of the room that was not
    told to stop is there. The `joined` message carries `meeting`: the start of the meeting
    (RFC 3339), which the upload names. The bot sends no media and receives every person's audio
-   (stream id = participant id) and the current sharer's screen; no cameras, nothing from other
-   helpers.
+   (stream id = participant id), the current sharer's screen and every person's camera (stream id
+   = participant id + `/camera`); nothing from other helpers. A camera switched off stops sending;
+   the `participants` message says whose camera is on.
 3. When the room no longer wants a recording the server sends `{"type":"stop"}`. The bot finishes
    the file, uploads it with `PUT /internal/recording/<slug>` (loopback only, body `video/mp4`,
    header `X-Kunveno-Meeting`: the meeting start from `joined`) and sends `{"type":"leave"}`. A bot
