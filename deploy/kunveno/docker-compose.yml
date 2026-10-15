@@ -58,6 +58,10 @@ services:
       HTTPS_PORT: ${HTTPS_PORT:-443}
       KUNVENO_UPSTREAM: ${KUNVENO_UPSTREAM:-127.0.0.1:8080}
       GRAFANA_PORT: ${GRAFANA_PORT:-3000}
+      # The password wall in front of /grafana/ (grafana-wall.sh).
+      GRAFANA_WALL_USER: ${GRAFANA_WALL_USER:-admin}
+      GRAFANA_WALL_PASSWORD: ${GRAFANA_WALL_PASSWORD:-}
+      GRAFANA_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-}
       # Names in the self-signed certificate issued on first start.
       PUBLIC_HOST: ${PUBLIC_HOST:?set PUBLIC_HOST in .env}
       TLS_NAMES: ${TLS_NAMES:-}

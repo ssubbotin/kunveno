@@ -25,5 +25,7 @@ FROM nginx:1.30-alpine-slim
 RUN rm -f /etc/nginx/conf.d/default.conf && apk add --no-cache openssl
 # Issues a self-signed certificate on first start when ./certs is empty.
 COPY --chmod=0755 deploy/docker/web-cert.sh /docker-entrypoint.d/05-kunveno-cert.sh
+# Writes the password file of the wall in front of /grafana/.
+COPY --chmod=0755 deploy/docker/grafana-wall.sh /docker-entrypoint.d/06-kunveno-grafana-wall.sh
 COPY --from=build /web/dist/ /usr/share/nginx/kunveno/
 COPY deploy/docker/nginx.conf.template /etc/nginx/templates/kunveno.conf.template

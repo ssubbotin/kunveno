@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: shellcheck -s sh deploy/docker/web-cert.sh deploy/docker/check-image.sh deploy/docker/check-nginx.sh
+      - run: shellcheck -s sh deploy/docker/web-cert.sh deploy/docker/grafana-wall.sh deploy/docker/check-image.sh deploy/docker/check-nginx.sh
       - name: both nginx configs parse
         run: deploy/docker/check-nginx.sh
       # The released archive must run with nothing but the two values filled in.

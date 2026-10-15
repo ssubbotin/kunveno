@@ -93,7 +93,7 @@ docker compose pull && docker compose up -d
 |---|---|
 | Применить изменения в `config.yaml` | `docker compose restart server player` |
 | Посмотреть журнал | `journalctl -t kunveno-server -f` |
-| Мониторинг | `https://<PUBLIC_HOST>/grafana/`, пользователь `admin`, пароль из `.env` |
+| Мониторинг | `https://<PUBLIC_HOST>/grafana/`: сначала браузер спрашивает пароль, которым nginx закрывает Grafana, затем вход в саму Grafana; в обоих случаях пользователь `admin` и пароль из `.env`, если не заданы `GRAFANA_WALL_USER`/`GRAFANA_WALL_PASSWORD` |
 | Поставить свой сертификат | заменить `certs/fullchain.pem` и `certs/privkey.pem`, затем `docker compose restart web` |
 | Сделать резервную копию | скопировать каталог (`data/` пишет root, поэтому через `sudo`) |
 

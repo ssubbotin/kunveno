@@ -96,7 +96,7 @@ vídeo).
 |---|---|
 | Aplicar cambios de `config.yaml` | `docker compose restart server player` |
 | Leer los registros | `journalctl -t kunveno-server -f` |
-| Supervisión | `https://<PUBLIC_HOST>/grafana/`, usuario `admin`, la contraseña de `.env` |
+| Supervisión | `https://<PUBLIC_HOST>/grafana/`: el navegador pide primero la contraseña del muro y luego el inicio de sesión de Grafana; en ambos, usuario `admin` y la contraseña de `.env`, salvo que se definan `GRAFANA_WALL_USER`/`GRAFANA_WALL_PASSWORD` |
 | Usar tu propio certificado | sustituye `certs/fullchain.pem` y `certs/privkey.pem`, luego `docker compose restart web` |
 | Copia de seguridad | copia el directorio (`data/` lo escribe root, así que con `sudo`) |
 
