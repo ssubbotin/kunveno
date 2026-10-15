@@ -16,8 +16,11 @@ import (
 	"time"
 
 	"github.com/ssubbotin/kunveno/internal/backgrounds"
+	"github.com/ssubbotin/kunveno/internal/conference"
 	"github.com/ssubbotin/kunveno/internal/config"
 	"github.com/ssubbotin/kunveno/internal/httpapi"
+	"github.com/ssubbotin/kunveno/internal/lobby"
+	"github.com/ssubbotin/kunveno/internal/media"
 	"github.com/ssubbotin/kunveno/internal/meetings"
 	"github.com/ssubbotin/kunveno/internal/metrics"
 	"github.com/ssubbotin/kunveno/internal/notes"
@@ -30,10 +33,10 @@ import (
 
 var version = "dev"
 
-// engineMedia adapts *sfu.Engine to signal.Media (interface return type).
+// engineMedia adapts *sfu.Engine to conference.Media (interface return type).
 type engineMedia struct{ e *sfu.Engine }
 
-func (m engineMedia) NewPeer(id string, s sfu.Signaler, h sfu.Handlers) (sig.MediaPeer, error) {
+func (m engineMedia) NewPeer(id string, s media.Signaler, h media.Handlers) (conference.MediaPeer, error) {
 	p, err := m.e.NewPeer(id, s, h)
 	if err != nil {
 		return nil, err
@@ -110,20 +113,23 @@ func run(cfgPath string, log *slog.Logger) error {
 	go sweepMeetings(ctx, meets, log)
 
 	mux := http.NewServeMux()
-	ws := sig.New(reg, engineMedia{engine}, cfg.HTTP.AllowedOrigins, log)
-	ws.SetReactions(cfg.UI.Reactions)
-	ws.SetMeetings(meets)
+	conf := conference.New(reg, engineMedia{engine}, log)
+	conf.SetReactions(cfg.UI.Reactions)
+	conf.SetMeetings(meets)
 	if cfg.Notes.Enabled {
-		ws.SetNotes(store, cfg.Notes.Live)
+		conf.SetNotes(store, cfg.Notes.Live)
 	}
 	var rec *recording.Store // nil while recording.enabled is off
 	if cfg.Recording.Enabled {
 		rec = recStore
-		ws.SetRecording(rec)
+		conf.SetRecording(rec)
 	}
+	ws := sig.New(conf, cfg.HTTP.AllowedOrigins, log)
 	links := httpapi.NewLinks(5 * time.Minute)
 	mux.Handle("/ws", ws)
-	rooms := httpapi.Rooms(reg, persist, ws.PINLimiter(), store, cfg.Notes.Enabled, recStore, cfg.Recording.Enabled, meets)
+	rooms := httpapi.Rooms(httpapi.RoomsConfig{Registry: reg, Persist: persist, PINs: ws.PINLimiter(), Kept: lobby.Kept{
+		Notes: store, NotesEnabled: cfg.Notes.Enabled, Recordings: recStore, RecordingEnabled: cfg.Recording.Enabled, Meetings: meets,
+	}})
 	mux.Handle("/api/rooms", rooms)
 	mux.Handle("/api/rooms/", rooms)
 	mux.Handle("POST /api/rooms/{slug}/notes", httpapi.NotesDownload(reg, store, cfg.Notes.Enabled, ws.PINLimiter(), time.Local))
@@ -132,8 +138,8 @@ func run(cfgPath string, log *slog.Logger) error {
 	mux.Handle("POST /api/rooms/{slug}/recording", httpapi.RecordingLink(reg, rec, ws.PINLimiter(), links))
 	mux.Handle("GET /api/rooms/{slug}/recording/{token}", httpapi.RecordingFile(rec, links, time.Local))
 	mux.Handle("DELETE /api/rooms/{slug}/recording", httpapi.RecordingDelete(reg, rec, ws.PINLimiter()))
-	mux.Handle("/internal/recording", httpapi.RecordingRooms(reg, cfg.Recording.Enabled))                                       // never proxied by nginx
-	mux.Handle("PUT /internal/recording/{slug}", httpapi.RecordingUpload(reg, rec, cfg.Recording.MaxBytes, ws.RecordingStored)) // never proxied by nginx
+	mux.Handle("/internal/recording", httpapi.RecordingRooms(reg, cfg.Recording.Enabled))                                         // never proxied by nginx
+	mux.Handle("PUT /internal/recording/{slug}", httpapi.RecordingUpload(reg, rec, cfg.Recording.MaxBytes, conf.RecordingStored)) // never proxied by nginx
 	mux.Handle("/api/backgrounds", bg)
 	mux.Handle("/api/backgrounds/", bg)
 	mux.Handle("/healthz", httpapi.Health())

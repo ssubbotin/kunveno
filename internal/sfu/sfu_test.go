@@ -14,7 +14,9 @@ import (
 	"time"
 
 	"github.com/pion/webrtc/v4"
-	"github.com/pion/webrtc/v4/pkg/media"
+	pionmedia "github.com/pion/webrtc/v4/pkg/media"
+
+	"github.com/ssubbotin/kunveno/internal/media"
 )
 
 // chanSignaler delivers server offers to the test's browser stand-in.
@@ -90,9 +92,9 @@ func TestAudioFlowsBetweenTwoPeers(t *testing.T) {
 	var peerA, peerB *Peer
 	var once sync.Once
 	published := make(chan struct{})
-	h := Handlers{OnPublisher: func(src Source, kind Kind) {
-		if src.ID() == "a" && kind == KindAudio {
-			if err := peerB.Subscribe(peerA, KindAudio); err != nil {
+	h := media.Handlers{OnPublisher: func(src media.Source, kind media.Kind) {
+		if src.ID() == "a" && kind == media.KindAudio {
+			if err := peerB.Subscribe(peerA, media.KindAudio); err != nil {
 				t.Error(err)
 			}
 			once.Do(func() { close(published) })
@@ -146,7 +148,7 @@ func TestAudioFlowsBetweenTwoPeers(t *testing.T) {
 			case <-done:
 				return
 			case <-tick.C:
-				_ = mic.WriteSample(media.Sample{Data: []byte{0xfc, 0xff, 0xfe}, Duration: 20 * time.Millisecond})
+				_ = mic.WriteSample(pionmedia.Sample{Data: []byte{0xfc, 0xff, 0xfe}, Duration: 20 * time.Millisecond})
 			}
 		}
 	}()
@@ -228,7 +230,7 @@ func TestNegotiateCoalesces(t *testing.T) {
 	}
 	defer eng.Close()
 	sig := &chanSignaler{offers: make(chan string, 8)}
-	p, err := eng.NewPeer("x", sig, Handlers{})
+	p, err := eng.NewPeer("x", sig, media.Handlers{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,12 +268,13 @@ func TestNegotiateCoalesces(t *testing.T) {
 
 type staticSource struct {
 	id     string
-	tracks map[Kind]*webrtc.TrackLocalStaticRTP
+	tracks map[media.Kind]*webrtc.TrackLocalStaticRTP
 }
 
-func (s staticSource) ID() string                               { return s.id }
-func (s staticSource) Track(k Kind) *webrtc.TrackLocalStaticRTP { return s.tracks[k] }
-func (s staticSource) RequestKeyframe(Kind)                     {}
+func (s staticSource) ID() string                                     { return s.id }
+func (s staticSource) Track(k media.Kind) *webrtc.TrackLocalStaticRTP { return s.tracks[k] }
+func (s staticSource) RequestKeyframe(media.Kind)                     {}
+func (s staticSource) Publishes(k media.Kind) bool                    { return s.tracks[k] != nil }
 
 // The receive slots (mid 0 audio, mid 1 screen, mid 2 camera) carry the participant's own media; a
 // forwarded track placed there reaches a browser whose slot is sendonly and is never played.
@@ -281,18 +284,18 @@ func TestSubscribeNeverUsesTheReceiveSlots(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer eng.Close()
-	p, err := eng.NewPeer("x", &chanSignaler{offers: make(chan string, 8)}, Handlers{})
+	p, err := eng.NewPeer("x", &chanSignaler{offers: make(chan string, 8)}, media.Handlers{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer p.Close()
 	audio, _ := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2}, "audio", "y")
 	video, _ := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000}, "screen", "y")
-	src := staticSource{id: "y", tracks: map[Kind]*webrtc.TrackLocalStaticRTP{KindAudio: audio, KindScreen: video}}
-	if err := p.Subscribe(src, KindAudio); err != nil {
+	src := staticSource{id: "y", tracks: map[media.Kind]*webrtc.TrackLocalStaticRTP{media.KindAudio: audio, media.KindScreen: video}}
+	if err := p.Subscribe(src, media.KindAudio); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.Subscribe(src, KindScreen); err != nil {
+	if err := p.Subscribe(src, media.KindScreen); err != nil {
 		t.Fatal(err)
 	}
 	trs := p.pc.GetTransceivers()
@@ -317,7 +320,7 @@ func TestConnectsOverTCPWhenUDPIsUnavailable(t *testing.T) {
 	}
 	defer eng.Close()
 	sig := &chanSignaler{offers: make(chan string, 8)}
-	p, err := eng.NewPeer("x", sig, Handlers{})
+	p, err := eng.NewPeer("x", sig, media.Handlers{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -366,7 +369,7 @@ func TestTCPOnlyPeerOffersNoUDPCandidates(t *testing.T) {
 	}
 	defer eng.Close()
 	sig := &chanSignaler{offers: make(chan string, 8)}
-	p, err := eng.NewPeer("x", sig, Handlers{TCPOnly: true})
+	p, err := eng.NewPeer("x", sig, media.Handlers{TCPOnly: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -422,7 +425,7 @@ func TestNegotiationOnAClosedConnectionIsNotAFailure(t *testing.T) {
 	}
 	defer eng.Close()
 	failed := make(chan struct{}, 1)
-	p, err := eng.NewPeer("x", &chanSignaler{offers: make(chan string, 4)}, Handlers{OnFailed: func(Source) { failed <- struct{}{} }})
+	p, err := eng.NewPeer("x", &chanSignaler{offers: make(chan string, 4)}, media.Handlers{OnFailed: func(media.Source) { failed <- struct{}{} }})
 	if err != nil {
 		t.Fatal(err)
 	}

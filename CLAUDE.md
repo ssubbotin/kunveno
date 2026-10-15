@@ -65,10 +65,19 @@ Go packages are separated so each is tested alone:
 - `internal/sfu`: pion engine (codecs, interceptors, ICE lite, UDP mux) and one `Peer` per
   participant. The server is the only SDP offerer; `Negotiate` coalesces concurrent
   subscribe/unsubscribe so at most one offer is outstanding per peer.
-- `internal/signal`: WebSocket sessions, message validation, snapshot fan-out, and coordination
-  between `room` and media. It depends on the `Media`/`MediaPeer` interfaces, so handler tests use a
-  fake media layer; `cmd/kunveno-server` adapts the real `sfu.Engine` to it.
-- `internal/httpapi`: `GET /api/rooms` (never returns PINs), `GET /healthz`.
+- `internal/media`: the vocabulary shared by `sfu` and `conference` (`Kind`, `Source`, `Signaler`,
+  `Handlers`, `Candidate`), so neither depends on the other.
+- `internal/conference`: the meetings themselves, with no WebSocket: live rooms and members, who
+  receives which track, the share lock, the helpers and the notes bot / recorder lifecycles. It
+  talks to a member's client through the `Conn` interface and `Event` values, and to media through
+  `Media`/`MediaPeer`; `cmd/kunveno-server` adapts the real `sfu.Engine` to it. Lock order:
+  `recMu` and `notesMu` are taken before `mu`, never while holding it.
+- `internal/signal`: the WebSocket transport: frame validation (`protocol.go`, also the bot
+  contract), the wrong-PIN limiter, turning frames into `conference` calls and events into
+  protocol messages. Its tests drive the whole stack over a real socket with a fake media layer.
+- `internal/httpapi`: `GET /api/rooms` (never returns PINs), `GET /healthz`, notes and recording
+  downloads; `internal/lobby` decides what the lobby lists of the notes, recording and meeting
+  summary each room keeps, and removes them with a deleted room.
 - `internal/config`: YAML at `/etc/kunveno/config.yaml`, with `KUNVENO_LISTEN` and
   `KUNVENO_ADVERTISE_IP` filling gaps; configured rooms need a restart to change, rooms created in
   the lobby are kept in `rooms_file` (`internal/roomstore`). `media.reconnect_grace` (3..120 s,

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ssubbotin/kunveno/internal/lobby"
 	"github.com/ssubbotin/kunveno/internal/meetings"
 	"github.com/ssubbotin/kunveno/internal/recording"
 	"github.com/ssubbotin/kunveno/internal/room"
@@ -59,7 +60,7 @@ func TestRoomsListShowsTheMeetingOfTheKeptNotes(t *testing.T) {
 	_ = meets.Add("ops", meetings.Summary{Start: meetingAt(9, 37), End: meetingAt(10, 2), People: 7})
 	_ = meets.Add("dev", meetings.Summary{Start: meetingAt(9, 0), End: meetingAt(9, 30), People: 3}) // no notes, no recording
 
-	rec := do(t, Rooms(reg, nil, nil, store, true, nil, false, meets), "GET", "/api/rooms", "")
+	rec := do(t, Rooms(RoomsConfig{Registry: reg, Kept: lobby.Kept{Notes: store, NotesEnabled: true, Meetings: meets}}), "GET", "/api/rooms", "")
 	got := lastMeetings(t, rec.Body.String())
 	m := got["ops"]
 	if m == nil || m.People != 7 {
@@ -76,7 +77,7 @@ func TestRoomsListShowsTheMeetingOfTheKeptNotes(t *testing.T) {
 	if strings.Contains(rec.Body.String(), "Анна") {
 		t.Fatal("a participant's name in /api/rooms")
 	}
-	rec = do(t, Rooms(reg, nil, nil, store, false, nil, false, meets), "GET", "/api/rooms", "")
+	rec = do(t, Rooms(RoomsConfig{Registry: reg, Kept: lobby.Kept{Notes: store, Meetings: meets}}), "GET", "/api/rooms", "")
 	if strings.Contains(rec.Body.String(), "last_meeting") {
 		t.Fatal("last_meeting while notes are disabled")
 	}
@@ -94,7 +95,7 @@ func TestRoomsListUsesTheMeetingOfTheKeptRecording(t *testing.T) {
 	_ = meets.Add("ops", meetings.Summary{Start: meetingAt(9, 37), End: meetingAt(10, 2), People: 4})
 	// A later meeting without notes or a recording is the newest summary.
 	_ = meets.Add("ops", meetings.Summary{Start: meetingAt(11, 0), End: meetingAt(11, 10), People: 2})
-	m := lastMeetings(t, do(t, Rooms(reg, nil, nil, nil, false, rec, true, meets), "GET", "/api/rooms", "").Body.String())["ops"]
+	m := lastMeetings(t, do(t, Rooms(RoomsConfig{Registry: reg, Kept: lobby.Kept{Recordings: rec, RecordingEnabled: true, Meetings: meets}}), "GET", "/api/rooms", "").Body.String())["ops"]
 	if m == nil || m.People != 4 {
 		t.Fatalf("last_meeting = %+v; want the recorded meeting of 4 people", m)
 	}
@@ -113,14 +114,14 @@ func TestRoomsListPrefersTheRecordingsMeeting(t *testing.T) {
 	meets := meetingsStore(t)
 	_ = meets.Add("ops", meetings.Summary{Start: meetingAt(8, 0), End: meetingAt(8, 30), People: 5})
 	_ = meets.Add("ops", meetings.Summary{Start: meetingAt(9, 37), End: meetingAt(10, 2), People: 7})
-	m := lastMeetings(t, do(t, Rooms(reg, nil, nil, store, true, rec, true, meets), "GET", "/api/rooms", "").Body.String())["ops"]
+	m := lastMeetings(t, do(t, Rooms(RoomsConfig{Registry: reg, Kept: lobby.Kept{Notes: store, NotesEnabled: true, Recordings: rec, RecordingEnabled: true, Meetings: meets}}), "GET", "/api/rooms", "").Body.String())["ops"]
 	if m == nil || m.People != 5 {
 		t.Fatalf("last_meeting = %+v; want the recording's meeting", m)
 	}
 	// Without a summary of the recording's meeting the notes' meeting is used.
 	_ = meets.Delete("ops")
 	_ = meets.Add("ops", meetings.Summary{Start: meetingAt(9, 37), End: meetingAt(10, 2), People: 7})
-	m = lastMeetings(t, do(t, Rooms(reg, nil, nil, store, true, rec, true, meets), "GET", "/api/rooms", "").Body.String())["ops"]
+	m = lastMeetings(t, do(t, Rooms(RoomsConfig{Registry: reg, Kept: lobby.Kept{Notes: store, NotesEnabled: true, Recordings: rec, RecordingEnabled: true, Meetings: meets}}), "GET", "/api/rooms", "").Body.String())["ops"]
 	if m == nil || m.People != 7 {
 		t.Fatalf("last_meeting = %+v; want the notes' meeting", m)
 	}
@@ -133,7 +134,7 @@ func TestDeletingARoomDeletesItsMeetings(t *testing.T) {
 	}
 	meets := meetingsStore(t)
 	_ = meets.Add("retro", meetings.Summary{Start: meetingAt(9, 37), End: meetingAt(10, 2), People: 7})
-	rec := do(t, Rooms(reg, nil, nil, nil, false, nil, false, meets), "DELETE", "/api/rooms/retro", `{"pin":"432100"}`)
+	rec := do(t, Rooms(RoomsConfig{Registry: reg, Kept: lobby.Kept{Meetings: meets}}), "DELETE", "/api/rooms/retro", `{"pin":"432100"}`)
 	if rec.Code != 204 {
 		t.Fatalf("delete = %d", rec.Code)
 	}

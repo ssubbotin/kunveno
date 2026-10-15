@@ -18,10 +18,10 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/pion/webrtc/v4"
 
+	"github.com/ssubbotin/kunveno/internal/conference"
+	"github.com/ssubbotin/kunveno/internal/media"
 	"github.com/ssubbotin/kunveno/internal/room"
-	"github.com/ssubbotin/kunveno/internal/sfu"
 )
 
 // fakeMedia records subscriptions instead of moving RTP.
@@ -39,10 +39,11 @@ func (m *fakeMedia) setHold(f func()) {
 
 type fakePeer struct {
 	id       string
-	sig      sfu.Signaler
+	sig      media.Signaler
+	h        media.Handlers
 	m        *fakeMedia
 	mu       sync.Mutex
-	tracks   map[sfu.Kind]*webrtc.TrackLocalStaticRTP
+	tracks   map[media.Kind]bool
 	subs     map[string]int // "from/kind" -> subscribe count minus unsubscribe count
 	tcpOnly  bool
 	sample   quality.Sample
@@ -53,14 +54,14 @@ type fakePeer struct {
 
 func newFakeMedia() *fakeMedia { return &fakeMedia{peers: map[string]*fakePeer{}} }
 
-func (m *fakeMedia) NewPeer(id string, sig sfu.Signaler, h sfu.Handlers) (MediaPeer, error) {
+func (m *fakeMedia) NewPeer(id string, sig media.Signaler, h media.Handlers) (conference.MediaPeer, error) {
 	m.mu.Lock()
 	hold := m.hold
 	m.mu.Unlock()
 	if hold != nil {
 		hold()
 	}
-	p := &fakePeer{id: id, sig: sig, m: m, tcpOnly: h.TCPOnly, tracks: map[sfu.Kind]*webrtc.TrackLocalStaticRTP{}, subs: map[string]int{}}
+	p := &fakePeer{id: id, sig: sig, h: h, m: m, tcpOnly: h.TCPOnly, tracks: map[media.Kind]bool{}, subs: map[string]int{}}
 	m.mu.Lock()
 	m.peers[id] = p
 	m.mu.Unlock()
@@ -74,12 +75,11 @@ func (m *fakeMedia) peer(id string) *fakePeer {
 }
 
 func (p *fakePeer) ID() string { return p.id }
-func (p *fakePeer) Track(k sfu.Kind) *webrtc.TrackLocalStaticRTP {
+func (p *fakePeer) Publishes(k media.Kind) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.tracks[k]
 }
-func (p *fakePeer) RequestKeyframe(sfu.Kind) {}
 func (p *fakePeer) Negotiate() {
 	p.mu.Lock()
 	p.offers++
@@ -99,17 +99,17 @@ func (p *fakePeer) setSample(s quality.Sample) {
 	p.sample, p.sampleOK = s, true
 	p.mu.Unlock()
 }
-func (p *fakePeer) AddICECandidate(webrtc.ICECandidateInit) error { return nil }
-func (p *fakePeer) Subscribe(from sfu.Source, k sfu.Kind) error {
-	if from.Track(k) == nil {
-		return sfu.ErrNoTrack
+func (p *fakePeer) AddICECandidate(media.Candidate) error { return nil }
+func (p *fakePeer) Subscribe(from media.Source, k media.Kind) error {
+	if !from.Publishes(k) {
+		return media.ErrNoTrack
 	}
 	p.mu.Lock()
 	p.subs[from.ID()+"/"+k.String()]++
 	p.mu.Unlock()
 	return nil
 }
-func (p *fakePeer) Unsubscribe(from sfu.Source, k sfu.Kind) error {
+func (p *fakePeer) Unsubscribe(from media.Source, k media.Kind) error {
 	p.mu.Lock()
 	p.subs[from.ID()+"/"+k.String()]--
 	p.mu.Unlock()
@@ -117,22 +117,17 @@ func (p *fakePeer) Unsubscribe(from sfu.Source, k sfu.Kind) error {
 }
 func (p *fakePeer) Close() error { p.mu.Lock(); p.closed = true; p.mu.Unlock(); return nil }
 
-func (p *fakePeer) setTrack(t *testing.T, k sfu.Kind) {
+func (p *fakePeer) setTrack(t *testing.T, k media.Kind) {
 	t.Helper()
-	mime := webrtc.MimeTypeOpus
-	if k != sfu.KindAudio {
-		mime = webrtc.MimeTypeVP8
-	}
-	tr, err := webrtc.NewTrackLocalStaticRTP(webrtc.RTPCodecCapability{MimeType: mime, ClockRate: 90000}, k.String(), p.id)
-	if err != nil {
-		t.Fatal(err)
-	}
 	p.mu.Lock()
-	p.tracks[k] = tr
+	p.tracks[k] = true
 	p.mu.Unlock()
 }
 
-func (p *fakePeer) subCount(fromID string, k sfu.Kind) int {
+// publish simulates the first RTP of kind from this peer.
+func (p *fakePeer) publish(k media.Kind) { p.h.OnPublisher(p, k) }
+
+func (p *fakePeer) subCount(fromID string, k media.Kind) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.subs[fromID+"/"+k.String()]
@@ -142,6 +137,8 @@ type env struct {
 	srv   *httptest.Server
 	media *fakeMedia
 	h     *Handler
+	conf  *conference.Conference
+	reg   *room.Registry
 
 	notesDir string // the notes store's directory, for tests with notes
 	logs     *lockedBuf
@@ -173,11 +170,13 @@ func newEnv(t *testing.T, capacity int) *env {
 	tw := &testWriter{t: t}
 	t.Cleanup(tw.stop)
 	logs := &lockedBuf{}
-	h := New(reg, media, nil, slog.New(slog.NewTextHandler(io.MultiWriter(tw, logs), nil)))
-	h.qualityEvery = 20 * time.Millisecond
+	log := slog.New(slog.NewTextHandler(io.MultiWriter(tw, logs), nil))
+	conf := conference.New(reg, media, log)
+	conf.QualityEvery = 20 * time.Millisecond
+	h := New(conf, nil, log)
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	return &env{srv: srv, media: media, h: h, logs: logs}
+	return &env{srv: srv, media: media, h: h, conf: conf, reg: reg, logs: logs}
 }
 
 // testWriter routes server logs to t.Log until the test ends; session goroutines
@@ -294,7 +293,7 @@ func TestFirstFrameMustBeJoin(t *testing.T) {
 		t.Fatalf("code = %q", m.Code)
 	}
 	expectClosed(t, c2)
-	if n := e.h.count("ops"); n != 0 {
+	if n := e.conf.Members("ops"); n != 0 {
 		t.Fatalf("room count after rejected frames = %d", n)
 	}
 }
@@ -321,7 +320,7 @@ func TestJoinErrors(t *testing.T) {
 		t.Fatalf("code = %q", m.Code)
 	}
 	expectClosed(t, c)
-	if n := e.h.count("ops"); n != 2 {
+	if n := e.conf.Members("ops"); n != 2 {
 		t.Fatalf("room count = %d, want 2", n)
 	}
 }
@@ -354,13 +353,13 @@ func TestMuteBroadcasts(t *testing.T) {
 func TestLateJoinerSubscribesToExistingPublishers(t *testing.T) {
 	e := newEnv(t, 15)
 	_, ida := join(t, e, "Ann")
-	e.media.peer(ida).setTrack(t, sfu.KindAudio)
-	e.h.onPublisher(e.media.peer(ida), sfu.KindAudio) // simulate first RTP from Ann
+	e.media.peer(ida).setTrack(t, media.KindAudio)
+	e.media.peer(ida).publish(media.KindAudio) // simulate first RTP from Ann
 	_, idb := join(t, e, "Bob")
-	if n := e.media.peer(idb).subCount(ida, sfu.KindAudio); n != 1 {
+	if n := e.media.peer(idb).subCount(ida, media.KindAudio); n != 1 {
 		t.Fatalf("Bob subscribed to Ann audio %d times, want 1", n)
 	}
-	if n := e.media.peer(ida).subCount(idb, sfu.KindAudio); n != 0 {
+	if n := e.media.peer(ida).subCount(idb, media.KindAudio); n != 0 {
 		t.Fatalf("Ann subscribed to Bob although Bob has no track yet: %d", n)
 	}
 }
@@ -380,9 +379,9 @@ func TestShareLockLifecycle(t *testing.T) {
 		t.Fatalf("code = %q", m.Code)
 	}
 	// Ann's screen RTP arrives: Bob gets subscribed.
-	e.media.peer(ida).setTrack(t, sfu.KindScreen)
-	e.h.onPublisher(e.media.peer(ida), sfu.KindScreen)
-	if n := e.media.peer(idb).subCount(ida, sfu.KindScreen); n != 1 {
+	e.media.peer(ida).setTrack(t, media.KindScreen)
+	e.media.peer(ida).publish(media.KindScreen)
+	if n := e.media.peer(idb).subCount(ida, media.KindScreen); n != 1 {
 		t.Fatalf("Bob screen subs = %d, want 1", n)
 	}
 	// Ann stops and starts again: resubscribed from the existing track (Review Focus 5).
@@ -392,7 +391,7 @@ func TestShareLockLifecycle(t *testing.T) {
 			break
 		}
 	}
-	if n := e.media.peer(idb).subCount(ida, sfu.KindScreen); n != 0 {
+	if n := e.media.peer(idb).subCount(ida, media.KindScreen); n != 0 {
 		t.Fatalf("Bob screen subs after stop = %d, want 0", n)
 	}
 	send(t, ca, `{"type":"share","action":"start"}`)
@@ -401,7 +400,7 @@ func TestShareLockLifecycle(t *testing.T) {
 			break
 		}
 	}
-	waitFor(t, func() bool { return e.media.peer(idb).subCount(ida, sfu.KindScreen) == 1 })
+	waitFor(t, func() bool { return e.media.peer(idb).subCount(ida, media.KindScreen) == 1 })
 	// Ann's socket dies without a stop (Review Focus 2).
 	_ = ca.CloseNow()
 	for {
@@ -410,7 +409,7 @@ func TestShareLockLifecycle(t *testing.T) {
 			break
 		}
 	}
-	waitFor(t, func() bool { return e.media.peer(idb).subCount(ida, sfu.KindScreen) == 0 })
+	waitFor(t, func() bool { return e.media.peer(idb).subCount(ida, media.KindScreen) == 0 })
 	waitFor(t, func() bool { p := e.media.peer(ida); p.mu.Lock(); defer p.mu.Unlock(); return p.closed })
 }
 
@@ -443,7 +442,7 @@ func TestEndOfCandidatesKeepsSession(t *testing.T) {
 // Rooms created through the API after the handler started must accept joins.
 func TestJoinRoomCreatedAtRuntime(t *testing.T) {
 	e := newEnv(t, 15)
-	if _, err := e.h.reg.Create("Retro", "432100"); err != nil {
+	if _, err := e.reg.Create("Retro", "432100"); err != nil {
 		t.Fatal(err)
 	}
 	c := dial(t, e)
@@ -469,7 +468,7 @@ func TestEchoToggle(t *testing.T) {
 	send(t, ca, `{"type":"echo","on":true}`)
 	for !expect(t, ca, "participants").Echo {
 	}
-	if got := e.h.reg.EchoRooms(); len(got) != 1 || got[0] != "ops" {
+	if got := e.reg.EchoRooms(); len(got) != 1 || got[0] != "ops" {
 		t.Fatalf("EchoRooms = %v", got)
 	}
 
@@ -500,7 +499,7 @@ func TestEchoRoleRejectedThroughProxy(t *testing.T) {
 	if m := expect(t, c, "error"); m.Code != CodeBadMessage {
 		t.Fatalf("code = %q", m.Code)
 	}
-	if n := e.h.count("ops"); n != 0 {
+	if n := e.conf.Members("ops"); n != 0 {
 		t.Fatalf("room count = %d", n)
 	}
 }
@@ -538,7 +537,7 @@ func TestSignalingMetrics(t *testing.T) {
 
 	// A room of its own: sessions of earlier tests leave "ops" asynchronously and would be counted here.
 	e := newEnv(t, 15)
-	e.h.reg.Add(room.New("metrics", "Metrics", "1234", 15))
+	e.reg.Add(room.New("metrics", "Metrics", "1234", 15))
 	c := dial(t, e)
 	send(t, c, `{"type":"join","room":"metrics","pin":"0000","name":"Ann"}`)
 	expect(t, c, "error")
@@ -654,25 +653,25 @@ func TestCameraFlagReachesTheRoom(t *testing.T) {
 func TestCamerasFollowTheReceivePreference(t *testing.T) {
 	e := newEnv(t, 15)
 	_, ida := join(t, e, "Ann")
-	e.media.peer(ida).setTrack(t, sfu.KindCamera)
-	e.h.onPublisher(e.media.peer(ida), sfu.KindCamera)
+	e.media.peer(ida).setTrack(t, media.KindCamera)
+	e.media.peer(ida).publish(media.KindCamera)
 
 	cb, idb := join(t, e, "Bob") // late joiner gets the camera that is already on
-	if n := e.media.peer(idb).subCount(ida, sfu.KindCamera); n != 1 {
+	if n := e.media.peer(idb).subCount(ida, media.KindCamera); n != 1 {
 		t.Fatalf("late joiner camera subscriptions = %d, want 1", n)
 	}
 	send(t, cb, `{"type":"video","receive":false}`)
-	waitFor(t, func() bool { return e.media.peer(idb).subCount(ida, sfu.KindCamera) == 0 })
+	waitFor(t, func() bool { return e.media.peer(idb).subCount(ida, media.KindCamera) == 0 })
 
 	_, idc := join(t, e, "Cid")
-	e.media.peer(idc).setTrack(t, sfu.KindCamera)
-	e.h.onPublisher(e.media.peer(idc), sfu.KindCamera) // a new camera while Bob declines video
-	if n := e.media.peer(idb).subCount(idc, sfu.KindCamera); n != 0 {
+	e.media.peer(idc).setTrack(t, media.KindCamera)
+	e.media.peer(idc).publish(media.KindCamera) // a new camera while Bob declines video
+	if n := e.media.peer(idb).subCount(idc, media.KindCamera); n != 0 {
 		t.Fatalf("Bob got a new camera while declining video: %d", n)
 	}
 	send(t, cb, `{"type":"video","receive":true}`)
 	waitFor(t, func() bool {
-		return e.media.peer(idb).subCount(ida, sfu.KindCamera) == 1 && e.media.peer(idb).subCount(idc, sfu.KindCamera) == 1
+		return e.media.peer(idb).subCount(ida, media.KindCamera) == 1 && e.media.peer(idb).subCount(idc, media.KindCamera) == 1
 	})
 }
 
@@ -698,7 +697,7 @@ func TestPlayerJoinsOnlyItsRoomAndStaysWhenEchoGoesOff(t *testing.T) {
 		t.Fatalf("player in a room without one: %q", m.Code)
 	}
 
-	r, _ := e.h.reg.Get("ops")
+	r, _ := e.reg.Get("ops")
 	r.SetPlayer(true)
 	player := dial(t, e)
 	send(t, player, `{"type":"join","room":"ops","name":"Видео","role":"player"}`)
@@ -733,7 +732,7 @@ func TestSameClientReplacesItsEarlierSession(t *testing.T) {
 	send(t, second, `{"type":"join","room":"ops","pin":"1234","name":"Вероника","client":"page-abc123"}`)
 	expect(t, second, "joined")
 	expectClosed(t, first)
-	waitFor(t, func() bool { return e.h.count("ops") == 1 })
+	waitFor(t, func() bool { return e.conf.Members("ops") == 1 })
 	for {
 		m := expect(t, second, "participants")
 		if len(m.Participants) == 1 {
@@ -744,7 +743,7 @@ func TestSameClientReplacesItsEarlierSession(t *testing.T) {
 	other := dial(t, e)
 	send(t, other, `{"type":"join","room":"ops","pin":"1234","name":"Вероника","client":"page-zzz999"}`)
 	expect(t, other, "joined")
-	waitFor(t, func() bool { return e.h.count("ops") == 2 })
+	waitFor(t, func() bool { return e.conf.Members("ops") == 2 })
 }
 
 func TestReactionReachesEveryoneAndIsRateLimited(t *testing.T) {
@@ -775,7 +774,7 @@ func TestReactionReachesEveryoneAndIsRateLimited(t *testing.T) {
 // before the set changed) is ignored without dropping the connection.
 func TestReactionsOutsideTheConfiguredSetAreIgnored(t *testing.T) {
 	e := newEnv(t, 15)
-	e.h.SetReactions([]string{"🚀"})
+	e.conf.SetReactions([]string{"🚀"})
 	ca, _ := join(t, e, "Ann")
 	cb, _ := join(t, e, "Bob")
 	send(t, ca, `{"type":"react","emoji":"👍"}`)
@@ -795,7 +794,7 @@ func TestCameraRoleNeedsAPlayerRoom(t *testing.T) {
 	if m := expect(t, c, "error"); m.Code != CodeBadRoom {
 		t.Fatalf("camera in a room without a player: %q", m.Code)
 	}
-	r, _ := e.h.reg.Get("ops")
+	r, _ := e.reg.Get("ops")
 	r.SetPlayer(true)
 	cam := dial(t, e)
 	send(t, cam, `{"type":"join","room":"ops","name":"Двор","role":"camera"}`)

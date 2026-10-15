@@ -1,6 +1,8 @@
 package sfu
 
 import (
+	"github.com/ssubbotin/kunveno/internal/media"
+
 	"github.com/pion/rtcp"
 	"testing"
 	"time"
@@ -48,10 +50,10 @@ func TestVideoLossIsSeparate(t *testing.T) {
 	if _, ok := p.takeVideoLoss(); ok {
 		t.Fatal("a window without video reported a loss figure")
 	}
-	p.noteReport(KindCamera, rr(9, 100, 0))
-	p.noteReport(KindCamera, rr(9, 200, 10)) // 10 of 100 video packets lost
-	p.noteReport(KindAudio, rr(7, 1000, 0))
-	p.noteReport(KindAudio, rr(7, 1150, 0))
+	p.noteReport(media.KindCamera, rr(9, 100, 0))
+	p.noteReport(media.KindCamera, rr(9, 200, 10)) // 10 of 100 video packets lost
+	p.noteReport(media.KindAudio, rr(7, 1000, 0))
+	p.noteReport(media.KindAudio, rr(7, 1150, 0))
 	if got, ok := p.takeVideoLoss(); !ok || got < 0.099 || got > 0.101 {
 		t.Fatalf("video loss = %v, want 0.1", got)
 	}

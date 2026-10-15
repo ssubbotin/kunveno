@@ -14,30 +14,16 @@ import (
 
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
+
+	"github.com/ssubbotin/kunveno/internal/media"
 )
 
-// ErrNoTrack is returned when subscribing to a source that has not published yet.
-var ErrNoTrack = errors.New("source has no track of that kind")
-
-// Signaler delivers server offers to one client.
-type Signaler interface {
-	SendOffer(sdp string) error
-}
-
-// Source is a publisher another peer can subscribe to.
-type Source interface {
-	ID() string
-	Track(Kind) *webrtc.TrackLocalStaticRTP
-	RequestKeyframe(Kind)
-}
-
-// Handlers are callbacks into the coordinator (the signal package).
-type Handlers struct {
-	OnPublisher func(Source, Kind) // first RTP of that kind arrived; the track is ready
-	OnFailed    func(Source)       // the connection failed or closed unexpectedly
-	// TCPOnly strips UDP candidates from this peer's offers, for a participant whose UDP path
-	// failed: the browser then has only the ICE-TCP candidate to connect to.
-	TCPOnly bool
+// source is what a peer subscribes to: another participant's Peer, or a test's stand-in. The
+// coordinator hands it over as a media.Source.
+type source interface {
+	media.Source
+	Track(media.Kind) *webrtc.TrackLocalStaticRTP
+	RequestKeyframe(media.Kind)
 }
 
 // Peer is one participant's connection to the SFU.
@@ -51,8 +37,8 @@ type Peer struct {
 	rtt         time.Duration // latest round trip from its receiver reports; guarded by mu
 	id          string
 	pc          *webrtc.PeerConnection
-	sig         Signaler
-	h           Handlers
+	sig         media.Signaler
+	h           media.Handlers
 	log         *slog.Logger
 
 	mu          sync.Mutex
@@ -65,7 +51,7 @@ type Peer struct {
 	pendingPLI  []pendingKeyframe
 }
 
-func (e *Engine) NewPeer(id string, sig Signaler, h Handlers) (*Peer, error) {
+func (e *Engine) NewPeer(id string, sig media.Signaler, h media.Handlers) (*Peer, error) {
 	// One API per peer: pion takes its loggers from the API, and this way they carry the peer id.
 	// Each PeerConnection copies the media engine and builds its own interceptors anyway.
 	se := e.se
@@ -125,14 +111,17 @@ func (e *Engine) NewPeer(id string, sig Signaler, h Handlers) (*Peer, error) {
 
 func (p *Peer) ID() string { return p.id }
 
-func (p *Peer) Track(kind Kind) *webrtc.TrackLocalStaticRTP {
+// Publishes reports whether this peer's track of kind has arrived.
+func (p *Peer) Publishes(kind media.Kind) bool { return p.Track(kind) != nil }
+
+func (p *Peer) Track(kind media.Kind) *webrtc.TrackLocalStaticRTP {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.out[kind]
 }
 
 // RequestKeyframe asks this peer's browser for a keyframe on its published track.
-func (p *Peer) RequestKeyframe(kind Kind) {
+func (p *Peer) RequestKeyframe(kind media.Kind) {
 	p.mu.Lock()
 	ssrc := p.outSSRC[kind]
 	p.mu.Unlock()
@@ -154,7 +143,7 @@ func (p *Peer) onTrack(remote *webrtc.TrackRemote, receiver *webrtc.RTPReceiver)
 	}
 	// The camera gets its own stream id so browsers can tell it from the screen.
 	stream := p.id
-	if kind == KindCamera {
+	if kind == media.KindCamera {
 		stream = p.id + "/camera"
 	}
 	local, err := webrtc.NewTrackLocalStaticRTP(remote.Codec().RTPCodecCapability, kind.String(), stream)
@@ -185,13 +174,20 @@ func (p *Peer) onTrack(remote *webrtc.TrackRemote, receiver *webrtc.RTPReceiver)
 	}
 }
 
-func subKey(from Source, kind Kind) string { return from.ID() + "/" + kind.String() }
+func subKey(from media.Source, kind media.Kind) string { return from.ID() + "/" + kind.String() }
+
+// errNotPublisher is returned when subscribing to a source this engine did not create.
+var errNotPublisher = errors.New("source is not a peer of this engine")
 
 // Subscribe attaches from's track of the given kind to this peer and renegotiates.
-func (p *Peer) Subscribe(from Source, kind Kind) error {
+func (p *Peer) Subscribe(src media.Source, kind media.Kind) error {
+	from, ok := src.(source)
+	if !ok {
+		return errNotPublisher
+	}
 	track := from.Track(kind)
 	if track == nil {
-		return ErrNoTrack
+		return media.ErrNoTrack
 	}
 	key := subKey(from, kind)
 	p.mu.Lock()
@@ -212,7 +208,7 @@ func (p *Peer) Subscribe(from Source, kind Kind) error {
 	}
 	sender := tr.Sender()
 	p.subs[key] = sender
-	if kind != KindAudio {
+	if kind != media.KindAudio {
 		p.pendingPLI = append(p.pendingPLI, pendingKeyframe{from, kind})
 	}
 	p.mu.Unlock()
@@ -222,7 +218,7 @@ func (p *Peer) Subscribe(from Source, kind Kind) error {
 }
 
 // Unsubscribe detaches from's track; a no-op when not subscribed.
-func (p *Peer) Unsubscribe(from Source, kind Kind) error {
+func (p *Peer) Unsubscribe(from media.Source, kind media.Kind) error {
 	key := subKey(from, kind)
 	p.mu.Lock()
 	sender, ok := p.subs[key]
@@ -239,7 +235,7 @@ func (p *Peer) Unsubscribe(from Source, kind Kind) error {
 	return nil
 }
 
-func (p *Peer) readRTCP(sender *webrtc.RTPSender, from Source, kind Kind) {
+func (p *Peer) readRTCP(sender *webrtc.RTPSender, from source, kind media.Kind) {
 	for {
 		pkts, _, err := sender.ReadRTCP()
 		if err != nil {
@@ -249,7 +245,7 @@ func (p *Peer) readRTCP(sender *webrtc.RTPSender, from Source, kind Kind) {
 			switch v := pkt.(type) {
 			case *rtcp.PictureLossIndication:
 				metrics.ViewerPLIs.WithLabelValues(kind.String()).Inc()
-				if kind != KindAudio {
+				if kind != media.KindAudio {
 					from.RequestKeyframe(kind)
 				}
 			case *rtcp.TransportLayerNack:
@@ -323,7 +319,10 @@ func (p *Peer) HandleAnswer(sdp string) error {
 	return nil
 }
 
-func (p *Peer) AddICECandidate(c webrtc.ICECandidateInit) error { return p.pc.AddICECandidate(c) }
+// AddICECandidate adds a candidate the client sent.
+func (p *Peer) AddICECandidate(c media.Candidate) error {
+	return p.pc.AddICECandidate(webrtc.ICECandidateInit{Candidate: c.Candidate, SDPMid: c.SDPMid, SDPMLineIndex: c.SDPMLineIndex, UsernameFragment: c.UsernameFragment})
+}
 
 func (p *Peer) fail(err error) {
 	p.mu.Lock()
@@ -437,20 +436,20 @@ func (p *Peer) Sample() (s quality.Sample, ok bool) {
 func seconds(f float64) time.Duration { return time.Duration(f * float64(time.Second)) }
 
 // noteReceiverReport records what the participant says about the audio we send it.
-func (p *Peer) noteReceiverReport(rr *rtcp.ReceiverReport) { p.noteReport(KindAudio, rr) }
+func (p *Peer) noteReceiverReport(rr *rtcp.ReceiverReport) { p.noteReport(media.KindAudio, rr) }
 
 // noteReport records what the participant says about a stream we send it: the round trip from
 // audio reports, and loss for audio and video in separate windows.
-func (p *Peer) noteReport(kind Kind, rr *rtcp.ReceiverReport) {
+func (p *Peer) noteReport(kind media.Kind, rr *rtcp.ReceiverReport) {
 	now := compactNTP(time.Now())
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	w := &p.videoLoss
-	if kind == KindAudio {
+	if kind == media.KindAudio {
 		w = &p.audioLoss
 	}
 	for _, r := range rr.Reports {
-		if kind == KindAudio {
+		if kind == media.KindAudio {
 			if rtt := rttFromReport(now, r.LastSenderReport, r.Delay); rtt > 0 {
 				p.rtt = rtt
 			}
@@ -536,12 +535,12 @@ func compactNTP(t time.Time) uint32 {
 
 // pendingKeyframe is a video subscription waiting for the answer that activates it.
 type pendingKeyframe struct {
-	src  Source
-	kind Kind
+	src  source
+	kind media.Kind
 }
 
 // kindOf finds which fixed slot a remote track arrived on.
-func (p *Peer) kindOf(r *webrtc.RTPReceiver) (Kind, bool) {
+func (p *Peer) kindOf(r *webrtc.RTPReceiver) (media.Kind, bool) {
 	for _, tr := range p.pc.GetTransceivers() {
 		if tr.Receiver() == r {
 			return kindForMid(tr.Mid())

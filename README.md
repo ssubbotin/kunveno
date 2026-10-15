@@ -247,7 +247,7 @@ Certificates, the firewall, troubleshooting and the helpers in detail: [docs/dep
 |---|---|
 | `cmd/kunveno-server` | server process: configuration, HTTP, signaling, media |
 | `cmd/kunveno-echo`, `cmd/kunveno-player` | the echo, and the player for video files and RTSP cameras |
-| `internal/room`, `internal/signal`, `internal/sfu` | room state, WebSocket signaling, the SFU |
+| `internal/room`, `internal/conference`, `internal/signal`, `internal/sfu` | room state, meetings, WebSocket signaling, the SFU |
 | `internal/config`, `internal/httpapi`, `internal/metrics` | configuration, HTTP API, Prometheus metrics |
 | `internal/quality`, `internal/ratelimit`, `internal/roomstore` | connection grades, PIN limits, saved rooms |
 | `internal/echo`, `internal/player`, `pkg/botclient` | helper internals |

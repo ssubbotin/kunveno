@@ -9,38 +9,23 @@ import (
 
 	"github.com/pion/interceptor"
 	"github.com/pion/webrtc/v4"
+
+	"github.com/ssubbotin/kunveno/internal/media"
 )
 
-// Kind is the media a Source publishes.
-type Kind int
-
-const (
-	KindAudio Kind = iota
-	KindScreen
-	KindCamera
-	numKinds
-)
-
-func (k Kind) String() string {
-	switch k {
-	case KindAudio:
-		return "audio"
-	case KindCamera:
-		return "camera"
-	}
-	return "screen"
-}
+// numKinds sizes the arrays indexed by media.Kind.
+const numKinds = int(media.KindCamera) + 1
 
 // kindForMid maps the participant's fixed send slots to what they carry: the server creates
 // them in this order on every connection (mid 0 audio, mid 1 screen, mid 2 camera).
-func kindForMid(mid string) (Kind, bool) {
+func kindForMid(mid string) (media.Kind, bool) {
 	switch mid {
 	case "0":
-		return KindAudio, true
+		return media.KindAudio, true
 	case "1":
-		return KindScreen, true
+		return media.KindScreen, true
 	case "2":
-		return KindCamera, true
+		return media.KindCamera, true
 	}
 	return 0, false
 }

@@ -257,7 +257,7 @@ Certificados, cortafuegos, resolución de problemas y los ayudantes en detalle: 
 |---|---|
 | `cmd/kunveno-server` | el proceso del servidor: configuración, HTTP, señalización, audio y vídeo |
 | `cmd/kunveno-echo`, `cmd/kunveno-player` | el eco y el reproductor de archivos de vídeo y cámaras RTSP |
-| `internal/room`, `internal/signal`, `internal/sfu` | estado de las salas, señalización por WebSocket, la SFU |
+| `internal/room`, `internal/conference`, `internal/signal`, `internal/sfu` | estado de las salas, reuniones, señalización por WebSocket, la SFU |
 | `internal/config`, `internal/httpapi`, `internal/metrics` | configuración, API HTTP, métricas de Prometheus |
 | `internal/quality`, `internal/ratelimit`, `internal/roomstore` | calidad de conexión, límite de intentos de PIN, salas guardadas |
 | `internal/echo`, `internal/player`, `pkg/botclient` | interior de los ayudantes |
