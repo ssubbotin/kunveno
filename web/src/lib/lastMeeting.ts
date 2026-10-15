@@ -1,6 +1,8 @@
 // What is left of a room's last meeting: its video (recording) and its notes, as the lobby shows
 // them under one "Last meeting" button and one dialog.
 import type { Key } from './i18n/messages';
+
+type Translate = (key: Key, vars?: Record<string, string | number>) => string;
 import { notesUntil } from './notes';
 import { recordingUntil } from './recording';
 
@@ -40,4 +42,48 @@ export function formatUntil(d: Date, locale: string, now = new Date()): string {
   if (!new Intl.DateTimeFormat(locale, opts).resolvedOptions().hour12) opts.hour = '2-digit';
   if (d.getFullYear() !== now.getFullYear()) opts.year = 'numeric';
   return new Intl.DateTimeFormat(locale, opts).format(d);
+}
+
+// A summary of the meeting whose video or notes are kept: no names, only times and a count.
+export type MeetingSummary = { start: Date; end: Date; people: number };
+
+// lastSummary reads a room's last_meeting; null when it is missing or malformed (a bad date, an end
+// before the start, a count that is not a positive whole number).
+export function lastSummary(v: unknown): MeetingSummary | null {
+  if (typeof v !== 'object' || v === null) return null;
+  const { start, end, people } = v as Record<string, unknown>;
+  if (typeof start !== 'string' || typeof end !== 'string' || typeof people !== 'number') return null;
+  const s = new Date(start);
+  const e = new Date(end);
+  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime()) || e < s) return null;
+  if (!Number.isInteger(people) || people < 1) return null;
+  return { start: s, end: e, people };
+}
+
+// formatTime writes a time of day by the same rules as formatUntil.
+function formatTime(d: Date, locale: string): string {
+  const opts: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit' };
+  if (!new Intl.DateTimeFormat(locale, opts).resolvedOptions().hour12) opts.hour = '2-digit';
+  return new Intl.DateTimeFormat(locale, opts).format(d);
+}
+
+const sameDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+// formatDuration counts the minutes between the times as they read (11:00 to 11:27 is 27 minutes);
+// a meeting shorter than a minute is "<1 min".
+export function formatDuration(start: Date, end: Date, t: Translate): string {
+  if (end.getTime() - start.getTime() < 60_000) return t('last.underMinute');
+  const minutes = Math.floor(end.getTime() / 60_000) - Math.floor(start.getTime() / 60_000);
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h === 0) return t('last.minutes', { n: m });
+  return m === 0 ? t('last.hours', { n: h }) : t('last.hoursMinutes', { h, m });
+}
+
+// formatSummary writes "15.10, 11:00–11:27 · 27 мин · 7 участников": the end carries its own date
+// when the meeting crossed midnight.
+export function formatSummary(m: MeetingSummary, locale: string, t: Translate, now = new Date()): string {
+  const end = sameDay(m.start, m.end) ? formatTime(m.end, locale) : formatUntil(m.end, locale, now);
+  return `${formatUntil(m.start, locale, now)}–${end} · ${formatDuration(m.start, m.end, t)} · ${t('last.people', { n: m.people })}`;
 }

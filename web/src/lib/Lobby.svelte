@@ -8,12 +8,12 @@
   import { LANGS, LANG_NAMES, LANG_TAGS, type Lang } from './i18n/messages';
   import { notesUntil } from './notes';
   import { recordingUntil } from './recording';
-  import { formatUntil, lastCaption, lastItems } from './lastMeeting';
+  import { formatSummary, formatUntil, lastCaption, lastItems, lastSummary } from './lastMeeting';
   import LastMeetingDialog from './LastMeetingDialog.svelte';
   import { loadInfo, site } from './site.svelte';
   import MicCheck from './MicCheck.svelte';
 
-  type RoomItem = { slug: string; name: string; participants: number; capacity: number; created: boolean; notes_until?: string; recording_until?: string };
+  type RoomItem = { slug: string; name: string; participants: number; capacity: number; created: boolean; notes_until?: string; recording_until?: string; last_meeting?: unknown };
   let { onJoin, error = '' }: { onJoin: (room: string, pin: string, name: string) => void; error?: string } = $props();
 
   let rooms = $state<RoomItem[]>([]);
@@ -41,10 +41,13 @@
   // and the notes, filled in from the PINs this browser knows.
   const lastKept = $derived(lastItems(selected, site));
   const lastNote = $derived(lastCaption(lastKept));
+  // When, how long and how many people (no names); absent for meetings saved before summaries.
+  const lastMeet = $derived(lastSummary(selected?.last_meeting));
+  const lastLine = $derived(lastMeet ? formatSummary(lastMeet, LANG_TAGS[i18n.lang], t) : '');
   let lastDialog: LastMeetingDialog;
   function openLast() {
     if (!selected) return;
-    lastDialog.open(selected.slug, selected.name, lastKept, pinFor(localStorage, selected.slug) || pin);
+    lastDialog.open(selected.slug, selected.name, lastKept, pinFor(localStorage, selected.slug) || pin, lastMeet);
   }
 
   async function loadRooms(prefer?: string) {
@@ -177,7 +180,10 @@
       <p class="hint">{t('enter.linkHint')}</p>
       {#if lastNote}
         <button class="btn" type="button" aria-haspopup="dialog" aria-describedby="last-hint" onclick={openLast}>{t('last.title')}</button>
-        <p class="hint" id="last-hint">{t(lastNote.key, { time: formatUntil(lastNote.until, LANG_TAGS[i18n.lang]) })}</p>
+        <p class="hint" id="last-hint">
+          {#if lastLine}<span class="line">{lastLine}</span>{/if}
+          <span class="line">{t(lastNote.key, { time: formatUntil(lastNote.until, LANG_TAGS[i18n.lang]) })}</span>
+        </p>
       {/if}
       {#if selected?.created}
         <button class="btn danger" type="button" disabled={selected.participants > 0} onclick={deleteRoom}>
@@ -270,6 +276,7 @@
   .room-actions { display: grid; gap: .6rem; justify-items: start; margin-top: .9rem; }
   .wide { justify-content: center; width: 100%; }
   .hint { margin: 0; color: var(--muted); font-size: .85rem; }
+  .hint .line { display: block; }
 
   /* The footer sits at the bottom of the viewport on short pages and spans its full width. */
   .page { min-height: 100%; display: flex; flex-direction: column; }

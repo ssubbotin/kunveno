@@ -4,7 +4,7 @@
   import { tick } from 'svelte';
   import { i18n, t } from './i18n/i18n.svelte';
   import { LANG_TAGS } from './i18n/messages';
-  import { formatUntil, type LastItem, type LastKind } from './lastMeeting';
+  import { formatSummary, formatUntil, type LastItem, type LastKind, type MeetingSummary } from './lastMeeting';
   import { deleteNotes, fetchNotes, notesErrorText, saveFile } from './notes';
   import { deleteRecording, recordingErrorText, recordingLink, startDownload } from './recording';
 
@@ -20,6 +20,7 @@
 
   let slug = $state('');
   let roomName = $state('');
+  let meeting = $state<MeetingSummary | null>(null);
   let items = $state<LastItem[]>([]);
   let pin = $state('');
   let showPin = $state(false);
@@ -29,9 +30,11 @@
   // One guard per action, against double clicks.
   let busy = $state({ video: false, notes: false, remove: false });
 
-  export function open(roomSlug: string, name: string, kept: LastItem[], knownPin: string) {
+  // summary: the meeting's times and number of people, null when unknown.
+  export function open(roomSlug: string, name: string, kept: LastItem[], knownPin: string, summary: MeetingSummary | null = null) {
     slug = roomSlug;
     roomName = name;
+    meeting = summary;
     items = kept;
     pin = knownPin;
     showPin = false;
@@ -170,6 +173,7 @@
     <div class="head">
       <h2 id="last-title">{t('last.title')}</h2>
       <p class="room" id="last-room">{roomName}</p>
+      {#if meeting}<p class="room">{formatSummary(meeting, LANG_TAGS[i18n.lang], t)}</p>{/if}
     </div>
     <label class="field"><span>{t('last.pin')}</span>
       <span class="pin-box">
