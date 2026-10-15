@@ -100,6 +100,8 @@ class FakeSocket {
 
 // A peer connection that Chrome refuses to create while it believes the network is down.
 let networkDown = false;
+// What happened to the screen slot (mid 1) and the screen capture, in order.
+const screenLog: string[] = [];
 class FakePeerConnection {
   connectionState = 'new';
   onicecandidate = null;
@@ -122,7 +124,17 @@ class FakePeerConnection {
     return { type: 'answer', sdp: 'v=0' };
   }
   async setLocalDescription() {}
-  private transceivers = ['0', '1', '2'].map((mid) => ({ mid, direction: 'recvonly', sender: { replaceTrack: async () => {} } }));
+  private transceivers = ['0', '1', '2'].map((mid) => ({
+    mid,
+    direction: 'recvonly',
+    sender: {
+      replaceTrack: async (t: { label?: string } | null) => {
+        if (mid === '1') screenLog.push(t ? `send ${t.label}` : 'detach');
+      },
+      getParameters: () => ({ encodings: [{}] }),
+      setParameters: async () => {},
+    },
+  }));
   getTransceivers() {
     return this.transceivers;
   }
@@ -149,6 +161,7 @@ describe('Session', () => {
   beforeEach(() => {
     FakeSocket.all = [];
     networkDown = false;
+    screenLog.length = 0;
     mic.inputs.length = 0;
     mic.filterWorks = true;
     cam.opened.length = 0;
@@ -188,6 +201,23 @@ describe('Session', () => {
     await flush();
     return s;
   }
+
+  // Firefox on Wayland crashed when the capture was stopped while the sender still used it.
+  it('detaches the screen from its sender before stopping the capture', async () => {
+    const screen = { label: 'screen', onended: null as (() => void) | null, stop: () => screenLog.push('stop capture') };
+    const devices = (navigator as unknown as { mediaDevices: Record<string, unknown> }).mediaDevices;
+    devices.getDisplayMedia = async () => ({ getVideoTracks: () => [screen] });
+    const s = await joined();
+    const ws = FakeSocket.all[0];
+    ws.onmessage?.({ data: JSON.stringify({ type: 'joined', self: { id: 'me', name: 'Ann', muted: false }, room: { slug: 'ops', name: 'Ops' } }) });
+    await s.startShare();
+    ws.onmessage?.({ data: JSON.stringify({ type: 'participants', participants: [{ id: 'me', name: 'Ann', muted: false }], sharer: 'me', echo: false }) });
+    await flush();
+    await s.stopShare();
+    await flush();
+    expect(screenLog).toEqual(['send screen', 'detach', 'stop capture']);
+    expect(ws.sent.map((m) => m.type)).toContain('share');
+  });
 
   it('retries the join when the peer connection cannot be created', async () => {
     const s = new Session();

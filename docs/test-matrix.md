@@ -12,6 +12,8 @@ pull request.
 5. Share the screen (full screen and a single window): others see it within 2 s.
 6. While sharing, another participant's Share button is disabled.
 7. Stop sharing from the app button and from the browser's own bar: the view clears for others.
+   Repeat the app button in Firefox on a Wayland desktop (GNOME): Firefox keeps running (it crashed
+   in its PipeWire capture when the capture was stopped before the sender let go of it).
 8. Close the tab while sharing: others see the sharer gone and the share cleared within 2 s.
 9. Disable the network for 5 s: audio freezes and then resumes without a new join (media.reconnect_grace, 15 s by default). Disable it for 30 s: the status shows reconnecting, then connected, and the server log has a `rejoin` line with the reason.
 10. The 16th participant gets "The room is full" (use `tools/loadgen -n 15`).

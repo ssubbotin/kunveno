@@ -585,12 +585,17 @@ export class Session {
     this.dropScreen();
   }
 
+  // The capture is stopped only once the sender has let go of it: Firefox on Wayland crashed
+  // tearing down a capture that the sender still read from.
   private dropScreen(): void {
-    this.screenTrack?.stop();
+    const track = this.screenTrack;
     this.screenTrack = null;
     this.screenAttached = false;
-    void this.rtc?.stopShare();
     this.onScreen(null);
+    if (!track) return;
+    track.onended = null;
+    const detached = this.rtc ? this.rtc.stopShare().catch(() => {}) : Promise.resolve();
+    void detached.then(() => track.stop());
   }
 
   private onRemoteTrack(streamId: string, track: MediaStreamTrack): void {
