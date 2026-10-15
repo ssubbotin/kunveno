@@ -206,7 +206,9 @@ disponible en «Última reunión», con el PIN de la sala.
 La página de inicio muestra «Última reunión» bajo una sala que guarda un vídeo, notas o ambos, con
 lo que hay y el vencimiento más próximo («Vídeo y notas, se guardan hasta 16/10, 14:43»). Su
 ventana pide el PIN de la sala una vez y muestra cada elemento con su propio plazo y un botón
-«Descargar».
+«Descargar». Encima del texto y en la ventana se indica cuándo fue esa reunión, cuánto duró y
+cuántas personas participaron («15/10, 11:00–11:27 · 27 min · 7 participantes»; sin nombres),
+mientras se guardan sus notas o su grabación.
 
 - El bot es el complemento comercial `kunveno-recorder`. No forma parte de este repositorio; para
   una licencia escribe a ssubbotin@gmail.com. La guía de instalación acompaña a la licencia.

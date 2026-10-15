@@ -200,7 +200,10 @@ file under "Last meeting", with the room PIN.
 
 The lobby shows "Last meeting" under a room that keeps a video, notes or both, with what is there
 and the nearest expiry ("Video and notes, kept until 10/16, 2:43 PM"). Its dialog asks for the room
-PIN once and lists each item with its own expiry and a "Download" button.
+PIN once and lists each item with its own expiry and a "Download" button. Above the caption and in
+the dialog the lobby also shows when that meeting took place, how long it lasted and how many people
+took part ("15.10, 11:00–11:27 · 27 min · 7 participants"; no names), while its notes or recording
+are kept.
 
 - The recorder is the commercial add-on `kunveno-recorder`. It is not part of this repository; for a
   licence write to ssubbotin@gmail.com. Its installation guide comes with the licence.

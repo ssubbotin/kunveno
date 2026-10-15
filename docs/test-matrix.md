@@ -134,7 +134,15 @@ Meeting recording (with the `kunveno-recorder` add-on installed and `recording.e
     offers no half-written recording, and the data directory has no `*.tmp` files.
 46. Deleting a room deletes its recording. Switching recording off and on again in the same meeting
     leaves one file, the later recording.
-47. Backup channel: in devtools, run `localStorage['kunveno.tcpUntil'] = Date.now() + 864e5` and
+47. Meeting summary: with notes or recording on, Ann and Bob join, an echo or notes bot is in the
+    room, Bob reloads the page (rejoins under the same name), then everyone leaves. The lobby shows
+    above the "Last meeting" caption a line like "15.10, 11:00–11:27 · 27 min · 2 participants":
+    the date, the start and end times, the duration and 2 people (the bot and the rejoin do not
+    count); the dialog shows the same line under the room name, in each language (Russian
+    "2 участника", Spanish "2 participantes"). After `docker compose restart server` the line is
+    still there; a room with nothing kept shows no line, and after deleting the notes and the
+    video the line goes with the button.
+48. Backup channel: in devtools, run `localStorage['kunveno.tcpUntil'] = Date.now() + 864e5` and
     rejoin: the status reads "connected (backup channel)" with "try the fast one" next to it.
     Press it: audio drops for a couple of seconds, the status reads "connected", the button is
     gone and the key is removed. With UDP 7000 blocked by a firewall rule, pressing it brings the

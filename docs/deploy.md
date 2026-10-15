@@ -201,7 +201,7 @@ meeting is a few hundred megabytes); `recording.max_size` (default 8GB) caps one
   the same block as joins. Deleting early needs the PIN too (`DELETE /api/rooms/<room>/recording`
   with `{"pin":"…"}`): 204 when deleted; 403 for a wrong PIN; 429 with `Retry-After` while the
   address is blocked; 409 while the room is being recorded; 404 when there is none. `/api/rooms`
-  shows only until when a room's recording is kept.
+  shows only until when a room's recording is kept and the summary of its meeting (see below).
 
 **The recorder bot contract.** The add-on depends on this interface of the server; it changes only
 together with the add-on (the same text is the package comment of `internal/signal/protocol.go`):
@@ -226,6 +226,22 @@ together with the add-on (the same text is the package comment of `internal/sign
    not upload.
 
 The Debian packages have no recorder add-on; with them leave `recording.enabled` off.
+
+## Meeting summaries
+
+When the last person leaves a room, the server saves the meeting's summary: its start, its end and
+the number of people who took part (a person who rejoined under the same name counts once; bots
+never count; no names are kept). The summaries live in `meetings.json` next to `rooms_file`
+(`data/meetings.json` in the Docker stack, `/var/lib/kunveno/meetings.json` with the Debian
+packages), mode 0600, replaced atomically on every change. The file keeps the last 5 meetings of each
+room, drops a meeting 30 days after its end (swept every minute), and loses a room's entries when
+the room is deleted. A file that cannot be read is logged and replaced: the server starts with no
+summaries.
+
+`/api/rooms` lists `last_meeting` (`{"start","end","people"}`, RFC 3339) for a room only while it
+keeps notes or a recording of a meeting with a saved summary (the recording's meeting first), and
+the lobby shows it as "15.10, 11:00–11:27 · 27 min · 7 participants" above the "Last meeting"
+caption and in its dialog.
 
 ## Monitoring (Prometheus and Grafana)
 
