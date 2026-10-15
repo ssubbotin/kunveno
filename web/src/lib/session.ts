@@ -333,7 +333,9 @@ export class Session {
           this.restart();
         },
         2500,
-        (t) => (this.state.transport = this.lastTransport = t),
+        (t) => {
+          if (this.sig === sig) this.state.transport = this.lastTransport = t; // a late answer of a closed connection is stale
+        },
         site.reconnectGrace * 1000,
       );
     } catch (e) {
@@ -352,7 +354,7 @@ export class Session {
 
   // noteDrop remembers why our session ended, for the next join. The first reason stays.
   private noteDrop(reason: RestartReason): void {
-    this.dropped ??= { reason, after: Math.max(0, Math.round((Date.now() - this.connectStarted) / 1000)), transport: this.lastTransport };
+    this.dropped ??= { reason, after: Math.min(86400, Math.max(0, Math.round((Date.now() - this.connectStarted) / 1000))), transport: this.lastTransport };
   }
 
   private onMessage(m: ServerMessage): void {

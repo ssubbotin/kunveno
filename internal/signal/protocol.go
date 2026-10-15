@@ -158,8 +158,8 @@ type ClientMessage struct {
 	Action    string                   `json:"action,omitempty"`
 	Role      string                   `json:"role,omitempty"`  // "echo" for the local echo helper
 	Media     string                   `json:"media,omitempty"` // "tcp" after a failed UDP path
-	// Restart is sent by a page that rejoins after its own connection dropped (never on a first
-	// join or after the person left): {"restart":{"reason":"media_disconnected","after":27,
+	// Restart is sent by a page that rejoins after its own connection dropped (never on a plain
+	// first join or after the person left; also after a failed first attempt): {"restart":{"reason":"media_disconnected","after":27,
 	// "transport":"udp"}}. reason is one of RestartReasons (ws_closed: the signaling socket closed;
 	// media_disconnected, media_failed: the peer connection stayed disconnected past the grace or
 	// failed; connect_timeout: it never connected; media_error: the server sent media_failed;

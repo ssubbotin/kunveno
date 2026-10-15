@@ -414,16 +414,18 @@ describe('Session', () => {
     expect(FakeSocket.all[0].sent[0]).not.toHaveProperty('restart');
   });
 
-  it('the report is sent once: the join after it carries none', async () => {
-    await joined();
+  it('the report is sent once: a restart that records no reason joins without one', async () => {
+    const s = await joined();
     vi.useFakeTimers();
     FakeSocket.all[0].close();
     await nextJoin(1);
     expect(FakeSocket.all[1].sent[0]).toHaveProperty('restart');
     FakeSocket.all[1].onmessage?.({ data: JSON.stringify({ type: 'joined', self: { id: 'a', name: 'Ann' }, room: { slug: 'ops', name: 'Ops' } }) });
-    FakeSocket.all[1].close();
+    (s as unknown as { preferTcp: boolean }).preferTcp = true;
+    s.tryFastChannel(); // the person's own restart: no reason
     const j = await nextJoin(2);
-    expect(j.restart).toMatchObject({ reason: 'ws_closed' });
+    expect(j).toMatchObject({ type: 'join' });
+    expect(j).not.toHaveProperty('restart');
   });
 
   it('uses the configured grace for the peer connection watch', async () => {
