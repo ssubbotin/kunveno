@@ -38,6 +38,9 @@
     errors = [];
     confirming = false;
     dialog.showModal();
+    // A known PIN needs no typing: start on the first download. Focusing the PIN field would also
+    // open the browser's saved-password list over the buttons.
+    if (pin) void tick().then(() => form.querySelector<HTMLButtonElement>('.items button')?.focus());
   }
 
   const has = (kind: LastKind) => items.some((i) => i.kind === kind);
@@ -170,7 +173,8 @@
     </div>
     <label class="field"><span>{t('last.pin')}</span>
       <span class="pin-box">
-        <input bind:this={pinInput} bind:value={pin} type={showPin ? 'text' : 'password'} maxlength="16" autocomplete="off" spellcheck="false" required />
+        <input bind:this={pinInput} bind:value={pin} type={showPin ? 'text' : 'password'} maxlength="16" spellcheck="false" required
+          autocomplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore />
         <button type="button" class="eye" aria-pressed={showPin} aria-label={showPin ? t('enter.hidePin') : t('enter.showPin')}
           title={showPin ? t('enter.hidePin') : t('enter.showPin')} onclick={() => (showPin = !showPin)}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="2.5" />{#if showPin}<path d="M3 3l18 18" />{/if}</svg>
