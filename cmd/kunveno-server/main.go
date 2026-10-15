@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/ssubbotin/kunveno/internal/backgrounds"
 	"github.com/ssubbotin/kunveno/internal/config"
 	"github.com/ssubbotin/kunveno/internal/httpapi"
+	"github.com/ssubbotin/kunveno/internal/meetings"
 	"github.com/ssubbotin/kunveno/internal/metrics"
 	"github.com/ssubbotin/kunveno/internal/notes"
 	"github.com/ssubbotin/kunveno/internal/recording"
@@ -102,10 +104,15 @@ func run(cfgPath string, log *slog.Logger) error {
 		return fmt.Errorf("recording %s: %w", cfg.Recording.Dir, err)
 	}
 	go sweepRecordings(ctx, recStore, log) // recordings expire whether or not recording is enabled
+	// Summaries of ended meetings, next to the rooms file: shown in the lobby while notes or a
+	// recording of the meeting are kept.
+	meets := meetings.Open(filepath.Join(filepath.Dir(cfg.RoomsFile), "meetings.json"), nil)
+	go sweepMeetings(ctx, meets, log)
 
 	mux := http.NewServeMux()
 	ws := sig.New(reg, engineMedia{engine}, cfg.HTTP.AllowedOrigins, log)
 	ws.SetReactions(cfg.UI.Reactions)
+	ws.SetMeetings(meets)
 	if cfg.Notes.Enabled {
 		ws.SetNotes(store, cfg.Notes.Live)
 	}
@@ -161,6 +168,22 @@ func sweepRecordings(ctx context.Context, store *recording.Store, log *slog.Logg
 	for {
 		for _, slug := range store.Sweep() {
 			log.Info("recording expired", "room", slug)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// sweepMeetings drops meeting summaries older than meetings.MaxAge every minute.
+func sweepMeetings(ctx context.Context, store *meetings.Store, log *slog.Logger) {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		if err := store.Sweep(); err != nil {
+			log.Warn("cannot save the meetings file", "err", err)
 		}
 		select {
 		case <-ctx.Done():

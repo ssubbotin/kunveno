@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"github.com/ssubbotin/kunveno/internal/config"
+	"github.com/ssubbotin/kunveno/internal/meetings"
 	"github.com/ssubbotin/kunveno/internal/metrics"
 	"github.com/ssubbotin/kunveno/internal/quality"
 	"github.com/ssubbotin/kunveno/internal/ratelimit"
@@ -65,6 +66,7 @@ type Handler struct {
 	recMu        sync.Mutex         // orders every room's recording flag and the store's active mark; taken before h.mu, never while holding it
 	recording    *recording.Store   // meeting recording (recording.enabled); nil when off
 	recStopGrace time.Duration      // how long a stopped recorder may take to upload and leave
+	meetings     *meetings.Store    // summaries of ended meetings; nil keeps none
 
 	mu   sync.Mutex
 	live map[string]*liveRoom // slug -> members
@@ -417,7 +419,11 @@ func (h *Handler) leave(s *session) {
 	delete(lr.members, s.id)
 	others := lr.membersExcept(s.id)
 	h.mu.Unlock()
+	_, wasMeeting := lr.room.Meeting()
 	lr.room.Leave(s.id)
+	if _, active := lr.room.Meeting(); wasMeeting && !active {
+		h.saveMeeting(lr, s)
+	}
 	for _, o := range others {
 		_ = o.peer.Unsubscribe(s.peer, sfu.KindAudio)
 		_ = o.peer.Unsubscribe(s.peer, sfu.KindScreen)
@@ -441,6 +447,21 @@ func (h *Handler) leave(s *session) {
 		h.stopRecorders(lr) // the last person left
 	}
 	h.broadcast(lr)
+}
+
+// SetMeetings keeps the summary of every ended meeting in store. Call before serving.
+func (h *Handler) SetMeetings(store *meetings.Store) { h.meetings = store }
+
+// saveMeeting stores the summary of the room's meeting that has just ended. Two people leaving at
+// once may both save it; the store keeps one entry per meeting start.
+func (h *Handler) saveMeeting(lr *liveRoom, s *session) {
+	m, ok := lr.room.LastMeeting()
+	if !ok || h.meetings == nil {
+		return
+	}
+	if err := h.meetings.Add(lr.room.Slug(), meetings.Summary{Start: m.Start, End: m.End, People: m.People}); err != nil {
+		s.log.Error("save meeting summary", "err", err)
+	}
 }
 
 // dropBotsIfUnwanted disconnects the echo helper once its room no longer wants it.
