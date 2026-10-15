@@ -43,6 +43,9 @@ export class RoomState {
   // The room takes meeting notes; the notes of this meeting became ready; live phrases, newest last.
   notes = $state(false);
   notesReady = $state(false);
+  // The room is being recorded; the recording of this meeting became ready.
+  recording = $state(false);
+  recordingReady = $state(false);
   phrases = $state<LivePhrase[]>([]);
   private phraseSeq = 0;
   // The emoji each participant sent last, shown on their tile for a few seconds.
@@ -86,6 +89,8 @@ export class RoomState {
     this.echo = false;
     this.notes = false;
     this.notesReady = false;
+    this.recording = false;
+    this.recordingReady = false;
     this.phrases = [];
     this.transport = '';
   }
@@ -106,6 +111,7 @@ export class RoomState {
         this.echo = msg.echo;
         if (msg.notes && !this.notes) this.notesReady = false; // a new recording; the old notice is stale
         this.notes = msg.notes;
+        this.recording = msg.recording;
         break;
       case 'error':
         this.status = 'error';
@@ -115,6 +121,9 @@ export class RoomState {
         break;
       case 'reaction':
         this.reactions[msg.from] = { emoji: msg.emoji, seq: ++this.reactionSeq };
+        break;
+      case 'recording_ready':
+        this.recordingReady = true;
         break;
       case 'notes_ready':
         this.notesReady = true;

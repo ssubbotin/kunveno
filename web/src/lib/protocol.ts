@@ -1,6 +1,6 @@
 // bot marks a server-side helper such as the echo; the parser always fills it in.
 export type Quality = 'good' | 'fair' | 'poor';
-export type BotKind = 'echo' | 'player' | 'camera' | 'notes';
+export type BotKind = 'echo' | 'player' | 'camera' | 'notes' | 'recorder';
 export type Participant = { id: string; name: string; muted: boolean; bot?: boolean; botKind?: BotKind; quality?: Quality; camera?: boolean };
 const QUALITIES: readonly string[] = ['good', 'fair', 'poor'];
 
@@ -8,10 +8,12 @@ export type ServerMessage =
   | { type: 'joined'; self: Participant; room: { slug: string; name: string } }
   | { type: 'error'; code: string; message: string; retryAfter?: number }
   | { type: 'offer'; sdp: string }
-  | { type: 'participants'; participants: Participant[]; sharer: string; echo: boolean; notes: boolean }
+  | { type: 'participants'; participants: Participant[]; sharer: string; echo: boolean; notes: boolean; recording: boolean }
   | { type: 'reaction'; from: string; emoji: string }
   // The meeting's notes can be downloaded.
   | { type: 'notes_ready' }
+  // The meeting's recording can be downloaded.
+  | { type: 'recording_ready' }
   // notes.live: a recognised phrase; start is Unix milliseconds.
   | { type: 'phrase'; name: string; start: number; text: string };
 
@@ -23,6 +25,7 @@ export type ClientMessage =
   | { type: 'share'; action: 'start' | 'stop' }
   | { type: 'echo'; on: boolean }
   | { type: 'notes'; on: boolean }
+  | { type: 'recording'; on: boolean }
   | { type: 'camera'; on: boolean }
   | { type: 'video'; receive: boolean }
   | { type: 'react'; emoji: string }
@@ -66,16 +69,19 @@ export function parseServerMessage(raw: string): ServerMessage {
           id: p.id, name: p.name, muted: p.muted, bot: p.bot === true,
           quality: QUALITIES.includes(p.quality as string) ? p.quality : undefined,
           camera: p.camera === true ? true : undefined,
-          botKind: ['echo', 'player', 'camera', 'notes'].includes((p as { bot_kind?: unknown }).bot_kind as string)
+          botKind: ['echo', 'player', 'camera', 'notes', 'recorder'].includes((p as { bot_kind?: unknown }).bot_kind as string)
             ? ((p as { bot_kind?: unknown }).bot_kind as BotKind) : undefined,
         })),
         sharer: v.sharer,
         echo: v.echo === true,
         notes: v.notes === true,
+        recording: v.recording === true,
       };
     case 'reaction':
       if (typeof v.from !== 'string' || typeof v.emoji !== 'string') bad('reaction');
       return { type: 'reaction', from: v.from, emoji: v.emoji };
+    case 'recording_ready':
+      return { type: 'recording_ready' };
     case 'notes_ready':
       return { type: 'notes_ready' };
     case 'phrase':

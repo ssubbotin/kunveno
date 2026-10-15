@@ -9,7 +9,7 @@ describe('parseServerMessage', () => {
       .toEqual({ type: 'error', code: 'bad_pin', message: 'wrong pin' });
     expect(parseServerMessage('{"type":"offer","sdp":"v=0"}')).toEqual({ type: 'offer', sdp: 'v=0' });
     expect(parseServerMessage('{"type":"participants","participants":[{"id":"a","name":"Ann","muted":true}],"sharer":""}'))
-      .toEqual({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: true, bot: false }], sharer: '', echo: false, notes: false });
+      .toEqual({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: true, bot: false }], sharer: '', echo: false, notes: false, recording: false });
   });
 
   it('rejects junk', () => {
@@ -19,9 +19,9 @@ describe('parseServerMessage', () => {
   });
   it('reads the echo flag and bot participants, defaulting both to false', () => {
     const m = parseServerMessage('{"type":"participants","participants":[{"id":"a","name":"Ann","muted":false},{"id":"e","name":"Echo","muted":false,"bot":true}],"sharer":"","echo":true}');
-    expect(m).toEqual({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: false, bot: false }, { id: 'e', name: 'Echo', muted: false, bot: true }], sharer: '', echo: true, notes: false });
+    expect(m).toEqual({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: false, bot: false }, { id: 'e', name: 'Echo', muted: false, bot: true }], sharer: '', echo: true, notes: false, recording: false });
     const old = parseServerMessage('{"type":"participants","participants":[],"sharer":""}');
-    expect(old).toEqual({ type: 'participants', participants: [], sharer: '', echo: false, notes: false });
+    expect(old).toEqual({ type: 'participants', participants: [], sharer: '', echo: false, notes: false, recording: false });
   });
   it('keeps known quality grades and drops anything else', () => {
     const m = parseServerMessage('{"type":"participants","participants":[{"id":"a","name":"Ann","muted":false,"quality":"poor"},{"id":"b","name":"Bob","muted":false,"quality":"excellent"},{"id":"c","name":"Cid","muted":false}],"sharer":""}');
@@ -55,5 +55,11 @@ describe('parseServerMessage', () => {
     for (const raw of ['{"type":"phrase","name":"Анна","start":1}', '{"type":"phrase","name":"Анна","start":"1","text":"x"}', '{"type":"phrase","start":1,"text":"x"}']) {
       expect(() => parseServerMessage(raw)).toThrow(/bad message/);
     }
+  });
+  it('parses recording state, recording_ready and the recorder bot', () => {
+    const m = parseServerMessage(JSON.stringify({ type: 'participants', sharer: '', echo: false, notes: false, recording: true,
+      participants: [{ id: 'r', name: 'Запись', muted: false, bot: true, bot_kind: 'recorder' }] }));
+    expect(m).toMatchObject({ type: 'participants', recording: true, participants: [{ botKind: 'recorder' }] });
+    expect(parseServerMessage('{"type":"recording_ready"}')).toEqual({ type: 'recording_ready' });
   });
 });

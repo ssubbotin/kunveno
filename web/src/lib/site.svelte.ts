@@ -6,10 +6,10 @@ export const DEFAULT_TITLE = 'kunveno';
 // Must match config.DefaultReactions on the server.
 export const DEFAULT_REACTIONS = ['👍', '👎', '👏', '😂', '❤️', '🎉', '😮', '🤔', '☕', '👋'];
 
-export type Info = { title: string; reactions: string[]; noiseSuppression: boolean; notesEnabled: boolean; notesLive: boolean };
+export type Info = { title: string; reactions: string[]; noiseSuppression: boolean; notesEnabled: boolean; notesLive: boolean; recordingEnabled: boolean };
 
 export function infoFrom(info: unknown): Info {
-  const v = (info ?? {}) as { title?: unknown; reactions?: unknown; noise_suppression?: unknown; notes?: unknown; notes_live?: unknown };
+  const v = (info ?? {}) as { title?: unknown; reactions?: unknown; noise_suppression?: unknown; notes?: unknown; notes_live?: unknown; recording?: unknown };
   const title = typeof v.title === 'string' && v.title.trim() !== '' ? v.title.trim() : DEFAULT_TITLE;
   const list = Array.isArray(v.reactions)
     ? v.reactions.filter((e): e is string => typeof e === 'string' && e !== '' && new TextEncoder().encode(e).length <= 16)
@@ -17,7 +17,7 @@ export function infoFrom(info: unknown): Info {
   const notesEnabled = v.notes === true;
   return {
     title, reactions: list.length > 0 ? list : DEFAULT_REACTIONS, noiseSuppression: v.noise_suppression === true,
-    notesEnabled, notesLive: notesEnabled && v.notes_live === true,
+    notesEnabled, notesLive: notesEnabled && v.notes_live === true, recordingEnabled: v.recording === true,
   };
 }
 
@@ -28,6 +28,8 @@ class Site {
   // Meeting notes (notes.enabled; the kunveno-notes add-on): false hides every notes control.
   notesEnabled = $state(false);
   notesLive = $state(false);
+  // Meeting recording (recording.enabled; the kunveno-recorder add-on)
+  recordingEnabled = $state(false);
 }
 
 export const site = new Site();
@@ -42,6 +44,7 @@ export async function loadInfo(): Promise<void> {
     site.noiseSuppression = info.noiseSuppression;
     site.notesEnabled = info.notesEnabled;
     site.notesLive = info.notesLive;
+    site.recordingEnabled = info.recordingEnabled;
   } catch {
     // keep the defaults
   }
