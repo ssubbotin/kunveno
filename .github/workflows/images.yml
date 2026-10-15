@@ -106,6 +106,14 @@ jobs:
           cache-to: type=gha,scope=${{ matrix.name }},mode=max
       - name: check for leaked sources and debug data
         run: deploy/docker/check-image.sh check/${{ matrix.name }}:ci
+      # Known vulnerabilities with a fix available fail the build, so a release never ships them.
+      - name: scan for known vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: check/${{ matrix.name }}:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
       - if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
         uses: docker/login-action@v3
         with:
