@@ -23,6 +23,14 @@ ui:
 #   keep: 1d                  # how long notes stay after they end: 90m, 12h, 1d, 2d
 #   live: false               # debug: show phrases in the room as they are recognised
 #   dir: /var/lib/kunveno/notes
+# Meeting recording: the screen and everyone's audio as one video per meeting. Needs the
+# kunveno-recorder add-on (its compose overlay); set enabled: true together with installing it,
+# then: docker compose restart server
+#recording:
+#  enabled: true
+#  keep: 1d            # how long the last meeting's recording stays: 90m, 12h, 1d, 2d
+#  dir: /var/lib/kunveno/recordings
+#  max_size: 8GB       # largest file the bot may hand over
 rooms:
   - slug: ops
     name: Operations
