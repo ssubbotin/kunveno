@@ -1,7 +1,8 @@
-// Package botclient is the signaling side of the server-side helpers (echo, player, and the notes
-// bot of the kunveno-notes add-on): join a room in a helper role and answer the server's offers on a
-// pion peer connection. It is public so that helpers built in other modules can use it; keep its API
-// stable.
+// Package botclient is the signaling side of the server-side helpers (echo, player, and the bots
+// of the kunveno-notes and kunveno-recorder add-ons): join a room in a helper role and answer the
+// server's offers on a pion peer connection, and (Rooms) keep a helper in every room the server
+// lists on a control endpoint. It is public so that helpers built in other modules can use it;
+// keep its API stable.
 package botclient
 
 import (

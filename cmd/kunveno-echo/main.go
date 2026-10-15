@@ -6,11 +6,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
-	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -62,76 +59,16 @@ func main() {
 	log.Info("kunveno-echo started", "version", version, "url", *url, "control", *control, "delay", delay.String())
 
 	// One goroutine per room that wants the echo; cancelled when the room stops asking.
-	running := map[string]context.CancelFunc{}
-	client := &http.Client{Timeout: 3 * time.Second}
-	tick := time.NewTicker(2 * time.Second)
-	defer tick.Stop()
-	for {
-		if want, err := wanted(ctx, client, *control); err != nil {
-			log.Warn("control poll", "err", err)
-		} else {
-			for slug, cancel := range running {
-				if !want[slug] {
-					cancel()
-					delete(running, slug)
-				}
-			}
-			for slug := range want {
-				if running[slug] == nil {
-					rctx, cancel := context.WithCancel(ctx)
-					running[slug] = cancel
-					go serveRoom(rctx, log.With("room", slug), *url, slug, *name, *delay, *minSpeech, *insecure)
-				}
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-tick.C:
-		}
+	rooms := &botclient.Rooms{Control: *control, Poll: 2 * time.Second, Retry: 3 * time.Second, Log: log, CancelUnlisted: true}
+	rooms.Serve = func(ctx context.Context, slug string) {
+		log := log.With("room", slug)
+		log.Info("echo on")
+		defer log.Info("echo off")
+		rooms.Stay(ctx, slug, log, func(ctx context.Context) (bool, error) {
+			return false, run(ctx, log, *url, slug, *name, *delay, *minSpeech, *insecure)
+		})
 	}
-}
-
-func wanted(ctx context.Context, client *http.Client, url string) (map[string]bool, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	res, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("status %s", res.Status)
-	}
-	var slugs []string
-	if err := json.NewDecoder(res.Body).Decode(&slugs); err != nil {
-		return nil, err
-	}
-	out := make(map[string]bool, len(slugs))
-	for _, s := range slugs {
-		out[s] = true
-	}
-	return out, nil
-}
-
-// serveRoom keeps the echo in one room until ctx is cancelled, rejoining after drops.
-func serveRoom(ctx context.Context, log *slog.Logger, url, room, name string, delay time.Duration, minSpeech int, insecure bool) {
-	log.Info("echo on")
-	defer log.Info("echo off")
-	for {
-		err := run(ctx, log, url, room, name, delay, minSpeech, insecure)
-		if ctx.Err() != nil {
-			return
-		}
-		log.Warn("disconnected; retrying in 3 s", "err", err)
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(3 * time.Second):
-		}
-	}
+	rooms.Run(ctx)
 }
 
 func run(ctx context.Context, log *slog.Logger, url, room, name string, delay time.Duration, minSpeech int, insecure bool) error {
