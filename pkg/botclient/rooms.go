@@ -92,8 +92,8 @@ func (r *Rooms) Update(ctx context.Context, want map[string]bool) {
 	if ctx.Err() != nil {
 		return
 	}
-	for slug := range want {
-		if r.running[slug] != nil {
+	for slug, listed := range want {
+		if !listed || r.running[slug] != nil {
 			continue
 		}
 		rctx, cancel := context.WithCancel(ctx)
