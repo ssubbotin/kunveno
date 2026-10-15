@@ -10,6 +10,7 @@
   import { nextIndex } from './roving';
   import { tick, untrack } from 'svelte';
   import { fetchNotes, notesErrorText, saveFile } from './notes';
+  import { recordingErrorText, recordingLink, startDownload } from './recording';
   import Announcer from './Announcer.svelte';
   import ShortcutsDialog from './ShortcutsDialog.svelte';
   import { ariaShortcut, isMac, matchShortcut, shortcutLabel, type ShortcutAction } from './shortcuts';
@@ -220,6 +221,32 @@
     if (on !== notesSeen) untrack(() => announce(on ? t('notes.recording') : t('notes.stopped')));
     notesSeen = on;
   });
+  const recorderPresent = $derived(rs.participants.some((p) => p.botKind === 'recorder'));
+  // The recording state is announced on joining and on every change.
+  let recordingSeen = false;
+  $effect(() => {
+    const on = rs.recording;
+    if (on !== recordingSeen) untrack(() => announce(on ? t('recording.starting') : t('recording.stopped')));
+    recordingSeen = on;
+  });
+  let recordingError = $state('');
+  let recordingBusy = $state(false);
+  async function downloadRecording() {
+    if (recordingBusy) return;
+    recordingBusy = true;
+    recordingError = '';
+    try {
+      const r = await recordingLink(fetch, rs.roomSlug, session.pin);
+      if (r.ok) startDownload(r.url);
+      else recordingError = recordingErrorText(r, t);
+    } finally {
+      recordingBusy = false;
+    }
+  }
+  function dismissRecording() {
+    rs.recordingReady = false;
+    recordingError = '';
+  }
   let notesError = $state('');
   let notesBusy = $state(false);
   async function downloadNotes() {
@@ -284,6 +311,9 @@
     {#if site.notesEnabled && rs.notes}
       <span class="notes-mark" role="status"><span class="rec" aria-hidden="true"></span>{t('notes.recording')}</span>
     {/if}
+    {#if site.recordingEnabled && rs.recording}
+      <span class="notes-mark" role="status"><span class="rec" aria-hidden="true"></span>{t('recording.mark')}</span>
+    {/if}
     <span class="invite"><CopyLink link={roomLink(location.origin, rs.roomSlug, session.pin)} label={t('control.invite')} /></span>
     <span class="count">{people(rs.peopleCount)}</span>
   </header>
@@ -302,6 +332,15 @@
       <button type="button" class="btn primary" disabled={notesBusy} onclick={downloadNotes}>{t('notes.download')}</button>
       <button type="button" class="btn quiet" onclick={dismissNotes}>{t('notes.dismiss')}</button>
       {#if notesError}<span class="notes-error" role="alert">{notesError}</span>{/if}
+    </div>
+  {/if}
+
+  {#if site.recordingEnabled && rs.recordingReady}
+    <div class="notes-ready" class:stacked={site.notesEnabled && rs.notesReady} role="status">
+      <span>{t('recording.ready')}</span>
+      <button type="button" class="btn primary" disabled={recordingBusy} onclick={downloadRecording}>{t('recording.download')}</button>
+      <button type="button" class="btn quiet" onclick={dismissRecording}>{t('recording.dismiss')}</button>
+      {#if recordingError}<span class="notes-error" role="alert">{recordingError}</span>{/if}
     </div>
   {/if}
 
@@ -357,7 +396,7 @@
       </div>
 
       <div class="popover-anchor">
-        <button class="btn" class:active={more} class:flag={!more && (rs.echo || !rs.receiveVideo || rs.notes)} aria-expanded={more} aria-controls="more-menu" title={t('control.more')}
+        <button class="btn" class:active={more} class:flag={!more && (rs.echo || !rs.receiveVideo || rs.notes || rs.recording)} aria-expanded={more} aria-controls="more-menu" title={t('control.more')}
           bind:this={moreBtn} onclick={openMore}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="19" cy="12" r="1.3" /></svg>
           <span class="label">{t('control.more')}</span>
@@ -376,6 +415,14 @@
                 disabled={rs.status !== 'connected'} onclick={() => session.setNotes(!rs.notes)}>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6zM9 9h6M9 13h6M9 17h4" /></svg>
                 <span class="text">{t('control.notes')}<small id="notes-hint">{rs.notes && !notesPresent ? t('notes.starting') : t('control.notesHint')}</small></span>
+                <span class="switch" aria-hidden="true"></span>
+              </button>
+            {/if}
+            {#if site.recordingEnabled}
+              <button type="button" class="row" role="switch" aria-checked={rs.recording} aria-label={t('control.recording')} aria-describedby="recording-hint"
+                disabled={rs.status !== 'connected'} onclick={() => session.setRecording(!rs.recording)}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" fill="currentColor" /></svg>
+                <span class="text">{t('control.recording')}<small id="recording-hint">{rs.recording && !recorderPresent ? t('recording.starting') : t('control.recordingHint')}</small></span>
                 <span class="switch" aria-hidden="true"></span>
               </button>
             {/if}
@@ -504,6 +551,7 @@
     padding: .7rem 1rem; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-2);
     box-shadow: 0 6px 20px rgba(0, 0, 0, .35);
   }
+  .notes-ready.stacked { bottom: 9.5rem; }
   .notes-error { color: #f1b5b3; font-size: .9rem; }
   @media (max-width: 1024px) {
     .controls .label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }

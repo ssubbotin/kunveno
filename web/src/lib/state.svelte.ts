@@ -111,6 +111,7 @@ export class RoomState {
         this.echo = msg.echo;
         if (msg.notes && !this.notes) this.notesReady = false; // a new recording; the old notice is stale
         this.notes = msg.notes;
+        if (msg.recording && !this.recording) this.recordingReady = false; // a new recording; the old notice is stale
         this.recording = msg.recording;
         break;
       case 'error':

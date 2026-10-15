@@ -7,10 +7,11 @@
   import { formatDate, i18n, setLang, t } from './i18n/i18n.svelte';
   import { LANGS, LANG_NAMES, LANG_TAGS, type Lang } from './i18n/messages';
   import { deleteNotes, fetchNotes, notesErrorText, notesUntil, saveFile } from './notes';
+  import { deleteRecording, recordingErrorText, recordingLink, recordingUntil, startDownload } from './recording';
   import { loadInfo, site } from './site.svelte';
   import MicCheck from './MicCheck.svelte';
 
-  type RoomItem = { slug: string; name: string; participants: number; capacity: number; created: boolean; notes_until?: string };
+  type RoomItem = { slug: string; name: string; participants: number; capacity: number; created: boolean; notes_until?: string; recording_until?: string };
   let { onJoin, error = '' }: { onJoin: (room: string, pin: string, name: string) => void; error?: string } = $props();
 
   let rooms = $state<RoomItem[]>([]);
@@ -109,6 +110,82 @@
       }
     } finally {
       notesBusy = false;
+    }
+  }
+  const selectedRecording = $derived(site.recordingEnabled && selected ? recordingUntil(selected.recording_until) : null);
+  // The recording download and deletion: a PIN dialog for the chosen room, filled in from the PINs this
+  // browser knows. Deleting asks for a confirmation inside the dialog first.
+  let recordingDialog: HTMLDialogElement;
+  let recordingForm: HTMLFormElement;
+  // Focus targets: the confirmation replaces the buttons, so focus moves explicitly.
+  let recordingPinInput: HTMLInputElement;
+  let recordingDeleteButton = $state<HTMLButtonElement>();
+  let recordingCancelButton = $state<HTMLButtonElement>();
+  let recordingConfirm = $state(false);
+  let recordingSlug = $state('');
+  let recordingKeptUntil = $state('');
+  let recordingPin = $state('');
+  let recordingError = $state('');
+  let recordingBusy = $state(false);
+  function openRecording() {
+    if (!selected) return;
+    recordingSlug = selected.slug;
+    recordingKeptUntil = selectedRecording ? t('recording.until', { time: untilText(selectedRecording) }) : '';
+    recordingPin = pinFor(localStorage, selected.slug) || pin;
+    recordingError = '';
+    recordingConfirm = false;
+    recordingDialog.showModal();
+  }
+  async function downloadRecording(ev: Event) {
+    ev.preventDefault();
+    if (recordingBusy || recordingConfirm) return;
+    recordingBusy = true;
+    recordingError = '';
+    try {
+      const r = await recordingLink(fetch, recordingSlug, recordingPin);
+      if (r.ok) {
+        startDownload(r.url);
+        recordingDialog.close();
+      } else {
+        recordingError = recordingErrorText(r, t);
+        if (r.error === 'gone') void loadRooms(room);
+      }
+    } finally {
+      recordingBusy = false;
+    }
+  }
+  async function askDeleteRecording() {
+    if (!recordingForm.reportValidity()) return;
+    recordingError = '';
+    recordingConfirm = true;
+    await tick();
+    recordingCancelButton?.focus(); // the safe choice
+  }
+  async function cancelDeleteRecording() {
+    recordingConfirm = false;
+    await tick();
+    recordingDeleteButton?.focus();
+  }
+  async function removeRecording() {
+    if (recordingBusy) return;
+    recordingBusy = true;
+    recordingError = '';
+    try {
+      const r = await deleteRecording(fetch, recordingSlug, recordingPin);
+      if (r.ok) {
+        recordingDialog.close();
+        void loadRooms(room);
+      } else {
+        recordingConfirm = false;
+        recordingError = recordingErrorText(r, t, 'recording.deleteFailed');
+        if (r.error === 'gone') void loadRooms(room);
+        recordingBusy = false;
+        await tick();
+        if (r.error === 'bad_pin') recordingPinInput.focus();
+        else recordingDeleteButton?.focus();
+      }
+    } finally {
+      recordingBusy = false;
     }
   }
   function untilText(d: Date): string {
@@ -217,6 +294,7 @@
           <span class="room-name">{r.name}</span>
           <span class="count">
             {#if saved.includes(r.slug)}<svg class="key" viewBox="0 0 24 24" role="img" aria-label={t('rooms.pinKnown')}><title>{t('rooms.pinKnown')}</title><circle cx="8" cy="12" r="4" /><path d="M12 12h9M18 12v3M21 12v2" /></svg>{/if}
+            {#if site.recordingEnabled && recordingUntil(r.recording_until)}<svg class="key" viewBox="0 0 24 24" role="img" aria-label={t('recording.last')}><title>{t('recording.last')}</title><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" fill="currentColor" /></svg>{/if}
             {#if site.notesEnabled && notesUntil(r.notes_until)}<svg class="key" viewBox="0 0 24 24" role="img" aria-label={t('notes.last')}><title>{t('notes.last')}</title><path d="M6 3h9l3 3v15H6zM9 9h6M9 13h6M9 17h4" /></svg>{/if}
             {occupancy(r)}
           </span>
@@ -245,6 +323,10 @@
       {#if selectedNotes}
         <button class="btn" type="button" aria-haspopup="dialog" onclick={openNotes}>{t('notes.last')}</button>
         <p class="hint">{t('notes.until', { time: untilText(selectedNotes) })}</p>
+      {/if}
+      {#if selectedRecording}
+        <button class="btn" type="button" aria-haspopup="dialog" onclick={openRecording}>{t('recording.last')}</button>
+        <p class="hint">{t('recording.until', { time: untilText(selectedRecording) })}</p>
       {/if}
       {#if selected?.created}
         <button class="btn danger" type="button" disabled={selected.participants > 0} onclick={deleteRoom}>
@@ -301,6 +383,35 @@
           <button class="btn quiet remove" type="button" disabled={notesBusy} bind:this={notesDeleteButton} onclick={askDeleteNotes}>{t('notes.deleteYes')}</button>
           <button class="btn quiet" type="button" onclick={() => notesDialog.close()}>{t('notes.cancel')}</button>
           <button class="btn primary" type="submit" disabled={notesBusy}>{t('notes.download')}</button>
+        </div>
+      {/if}
+    </form>
+  </dialog>
+
+  <dialog class="recording-dialog" bind:this={recordingDialog} aria-labelledby="recording-title" onclose={() => (recordingConfirm = false)}>
+    <form bind:this={recordingForm} onsubmit={downloadRecording}>
+      <div class="head">
+        <h2 id="recording-title">{t('recording.last')}</h2>
+        {#if recordingConfirm}
+          <p class="confirm" role="alert">{t('recording.deleteConfirm')}</p>
+        {:else if recordingKeptUntil}
+          <p class="kept">{recordingKeptUntil}</p>
+        {/if}
+      </div>
+      <label class="field"><span>{t('recording.pin')}</span>
+        <input bind:this={recordingPinInput} bind:value={recordingPin} type="password" maxlength="16" autocomplete="off" spellcheck="false" required /></label>
+      {#if recordingError}<p class="error" role="alert">{recordingError}</p>{/if}
+      <!-- One row: the irreversible delete keeps to the far edge, away from the main action. -->
+      {#if recordingConfirm}
+        <div class="actions">
+          <button class="btn quiet" type="button" disabled={recordingBusy} bind:this={recordingCancelButton} onclick={cancelDeleteRecording}>{t('recording.cancel')}</button>
+          <button class="btn danger solid" type="button" disabled={recordingBusy} onclick={removeRecording}>{t('recording.deleteYes')}</button>
+        </div>
+      {:else}
+        <div class="actions">
+          <button class="btn quiet remove" type="button" disabled={recordingBusy} bind:this={recordingDeleteButton} onclick={askDeleteRecording}>{t('recording.deleteYes')}</button>
+          <button class="btn quiet" type="button" onclick={() => recordingDialog.close()}>{t('recording.cancel')}</button>
+          <button class="btn primary" type="submit" disabled={recordingBusy}>{t('recording.download')}</button>
         </div>
       {/if}
     </form>
@@ -402,4 +513,22 @@
   .notes-dialog .remove { margin-right: auto; border-color: transparent; color: #f1b5b3; padding-inline: .5rem; }
   .notes-dialog .remove:hover:not(:disabled) { border-color: var(--danger); }
   .notes-dialog .danger.solid { background: var(--danger); color: #fff; }
+  .recording-dialog {
+    width: min(26rem, 92vw); padding: 1.25rem 1.5rem; border: 1px solid var(--line); border-radius: var(--radius);
+    background: var(--panel-2); color: var(--text);
+  }
+  .recording-dialog::backdrop { background: rgba(0, 0, 0, .55); }
+  .recording-dialog form { display: grid; gap: 1rem; }
+  .recording-dialog .head { display: grid; gap: .3rem; }
+  .recording-dialog h2 { color: var(--text); font-size: 1.1rem; margin: 0; }
+  .recording-dialog .kept { color: var(--muted); font-size: .85rem; margin: 0; }
+  .recording-dialog .confirm { color: var(--text); margin: 0; }
+  .recording-dialog .actions {
+    display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: .5rem;
+    padding-top: 1rem; border-top: 1px solid var(--line);
+  }
+  /* Delete reads as a quiet red word at the far edge; its confirmation is the filled red button. */
+  .recording-dialog .remove { margin-right: auto; border-color: transparent; color: #f1b5b3; padding-inline: .5rem; }
+  .recording-dialog .remove:hover:not(:disabled) { border-color: var(--danger); }
+  .recording-dialog .danger.solid { background: var(--danger); color: #fff; }
 </style>

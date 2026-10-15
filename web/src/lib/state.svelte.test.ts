@@ -75,6 +75,11 @@ describe('RoomState', () => {
     expect(s.recording).toBe(true);
     s.apply({ type: 'recording_ready' });
     expect(s.recordingReady).toBe(true);
+    s.apply({ type: 'participants', participants: [], sharer: '', echo: false, notes: false, recording: false });
+    expect(s.recordingReady).toBe(true); // switching off keeps the notice
+    s.apply({ type: 'participants', participants: [], sharer: '', echo: false, notes: false, recording: true });
+    expect(s.recordingReady).toBe(false); // a new recording hides the old notice
+    s.apply({ type: 'recording_ready' });
     s.reset();
     expect(s.recording).toBe(false);
     expect(s.recordingReady).toBe(false);
