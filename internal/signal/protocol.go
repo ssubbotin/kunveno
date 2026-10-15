@@ -26,6 +26,24 @@
 //     one.
 //
 // The bot uses pkg/botclient for the join and the offer/answer exchange.
+//
+// The recording bot contract (the commercial kunveno-recorder add-on), stable like the notes one:
+//
+//   - GET /internal/recording (loopback only) returns the slugs of rooms that want a recording;
+//     empty while recording.enabled is off. The bot polls it every 2 s.
+//   - The bot joins with {"type":"join","room":slug,"name":...,"role":"recorder"} (no PIN). The
+//     join is refused unless the room wants a recording, and while another recorder of the room
+//     that was not told to stop is there. The joined message carries "meeting": the start of the
+//     meeting (RFC 3339), which the upload names. The bot sends no media and receives every
+//     person's audio (stream id = participant id) and the current sharer's screen; no cameras,
+//     nothing from other helpers.
+//   - When the room no longer wants a recording the server sends {"type":"stop"}. The bot finishes
+//     the file, uploads it with PUT /internal/recording/<slug> (loopback only, body video/mp4,
+//     header X-Kunveno-Meeting: the meeting start from joined) and sends {"type":"leave"}. A bot
+//     still there 60 s after the stop is closed; its upload is still accepted.
+//   - Upload answers: 204 stored (the room hears recording_ready), 400 no meeting header, 404
+//     recording off or no such room, 409 a later meeting's recording is stored, 413 larger than
+//     recording.max_size. An upload for the same meeting replaces the stored one.
 package signal
 
 import (
@@ -57,13 +75,14 @@ const (
 )
 
 const (
-	MaxNameLen = 32
-	RoleEcho   = "echo"
-	RolePlayer = "player" // a media file in a loop
-	RoleCamera = "camera" // a live RTSP feed, through the same player service
-	RoleNotes  = "notes"  // the meeting-notes bot (kunveno-notes add-on)
-	MediaTCP   = "tcp"
-	MaxSDPLen  = 256 * 1024
+	MaxNameLen   = 32
+	RoleEcho     = "echo"
+	RolePlayer   = "player"   // a media file in a loop
+	RoleCamera   = "camera"   // a live RTSP feed, through the same player service
+	RoleNotes    = "notes"    // the meeting-notes bot (kunveno-notes add-on)
+	RoleRecorder = "recorder" // the meeting recording bot (kunveno-recorder add-on)
+	MediaTCP     = "tcp"
+	MaxSDPLen    = 256 * 1024
 )
 
 // Phrase limits of the notes bot contract.
@@ -92,7 +111,7 @@ type ClientMessage struct {
 	// Client identifies the page: a join with the same client id replaces that page's earlier
 	// session, so a page never shows up twice.
 	Client  string `json:"client,omitempty"`
-	On      *bool  `json:"on,omitempty"`      // echo, camera, notes
+	On      *bool  `json:"on,omitempty"`      // echo, camera, notes, recording
 	Receive *bool  `json:"receive,omitempty"` // video: whether to receive cameras
 	Emoji   string `json:"emoji,omitempty"`   // react: one of Reactions
 
@@ -119,7 +138,7 @@ func ParseClient(data []byte) (ClientMessage, error) {
 			return m, fmt.Errorf("%w: join.client", ErrBadMessage)
 		case m.Media != "" && m.Media != MediaTCP:
 			return m, fmt.Errorf("%w: join.media", ErrBadMessage)
-		case m.Role != "" && m.Role != RoleEcho && m.Role != RolePlayer && m.Role != RoleCamera && m.Role != RoleNotes:
+		case m.Role != "" && m.Role != RoleEcho && m.Role != RolePlayer && m.Role != RoleCamera && m.Role != RoleNotes && m.Role != RoleRecorder:
 			return m, fmt.Errorf("%w: join.role", ErrBadMessage)
 		case m.Role == "" && (len(m.PIN) < 1 || len(m.PIN) > 16):
 			return m, fmt.Errorf("%w: join.pin", ErrBadMessage)
@@ -135,7 +154,7 @@ func ParseClient(data []byte) (ClientMessage, error) {
 		if m.Candidate == nil {
 			return m, fmt.Errorf("%w: candidate", ErrBadMessage)
 		}
-	case "echo", "camera", "notes":
+	case "echo", "camera", "notes", "recording":
 		if m.On == nil {
 			return m, fmt.Errorf("%w: %s.on", ErrBadMessage, m.Type)
 		}
@@ -174,7 +193,7 @@ type ParticipantInfo struct {
 	Name  string `json:"name"`
 	Muted bool   `json:"muted"`
 	Bot   bool   `json:"bot,omitempty"`
-	// BotKind: "echo", "player", "camera" or "notes" for helpers.
+	// BotKind: "echo", "player", "camera", "notes" or "recorder" for helpers.
 	BotKind string `json:"bot_kind,omitempty"`
 	// Quality is the connection grade: "good", "fair" or "poor"; absent until measured.
 	Quality string `json:"quality,omitempty"`
@@ -190,6 +209,8 @@ type joinedMsg struct {
 	Type string          `json:"type"`
 	Self ParticipantInfo `json:"self"`
 	Room roomInfo        `json:"room"`
+	// Meeting is set for a recorder only: the start of the meeting, RFC 3339 (ms).
+	Meeting string `json:"meeting,omitempty"`
 }
 
 type errorMsg struct {
@@ -209,11 +230,17 @@ type participantsMsg struct {
 	Participants []ParticipantInfo `json:"participants"`
 	Sharer       string            `json:"sharer"`
 	Echo         bool              `json:"echo"`
-	Notes        bool              `json:"notes"` // the room takes meeting notes
+	Notes        bool              `json:"notes"`     // the room takes meeting notes
+	Recording    bool              `json:"recording"` // the room's meeting is being recorded
 }
 
 func Joined(self ParticipantInfo, slug, name string) any {
 	return joinedMsg{Type: "joined", Self: self, Room: roomInfo{Slug: slug, Name: name}}
+}
+
+// JoinedRecorder is joined for a recorder: it also carries the start of the meeting.
+func JoinedRecorder(self ParticipantInfo, slug, name string, meeting time.Time) any {
+	return joinedMsg{Type: "joined", Self: self, Room: roomInfo{Slug: slug, Name: name}, Meeting: meeting.UTC().Format(time.RFC3339Nano)}
 }
 
 func ErrorMsg(code, message string) any {
@@ -237,11 +264,11 @@ type reactionMsg struct {
 // Reaction tells the room that a participant sent an emoji; it is not part of the room state.
 func Reaction(from, emoji string) any { return reactionMsg{Type: "reaction", From: from, Emoji: emoji} }
 
-func Participants(list []ParticipantInfo, sharer string, echo, notes bool) any {
+func Participants(list []ParticipantInfo, sharer string, echo, notes, recording bool) any {
 	if list == nil {
 		list = []ParticipantInfo{}
 	}
-	return participantsMsg{Type: "participants", Participants: list, Sharer: sharer, Echo: echo, Notes: notes}
+	return participantsMsg{Type: "participants", Participants: list, Sharer: sharer, Echo: echo, Notes: notes, Recording: recording}
 }
 
 // validPhrase checks a phrase's content: text of 1..MaxPhraseLen characters once every whitespace
@@ -268,6 +295,9 @@ func Stop() any { return typeOnlyMsg{Type: "stop"} }
 
 // NotesReady tells the people in a room that its notes can be downloaded.
 func NotesReady() any { return typeOnlyMsg{Type: "notes_ready"} }
+
+// RecordingReady tells the people in a room that its recording can be downloaded.
+func RecordingReady() any { return typeOnlyMsg{Type: "recording_ready"} }
 
 type livePhraseMsg struct {
 	Type  string `json:"type"`
