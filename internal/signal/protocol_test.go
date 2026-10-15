@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ssubbotin/kunveno/internal/room"
 )
 
 func TestParseClientAccepts(t *testing.T) {
@@ -222,6 +224,15 @@ func TestParseClientJoinRestart(t *testing.T) {
 	} {
 		if m := join(bad); m.Restart != nil {
 			t.Errorf("%s: restart kept: %+v", bad, m.Restart)
+		}
+	}
+}
+
+// The roles on the wire are the room's helper kinds: the conference compares them directly.
+func TestRolesAreRoomBotKinds(t *testing.T) {
+	for role, kind := range map[string]string{RoleEcho: room.BotEcho, RolePlayer: room.BotPlayer, RoleCamera: room.BotCamera, RoleNotes: room.BotNotes, RoleRecorder: room.BotRecorder} {
+		if role != kind {
+			t.Errorf("role %q, room bot kind %q", role, kind)
 		}
 	}
 }

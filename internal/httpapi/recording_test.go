@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ssubbotin/kunveno/internal/lobby"
 	"github.com/ssubbotin/kunveno/internal/ratelimit"
 	"github.com/ssubbotin/kunveno/internal/recording"
 	"github.com/ssubbotin/kunveno/internal/room"
@@ -228,7 +229,7 @@ func TestRoomsListRecordingUntilAndDelete(t *testing.T) {
 	reg.Add(room.New("dev", "Dev", "5678", 15))
 	list := func(rec *recording.Store) []map[string]any {
 		w := httptest.NewRecorder()
-		Rooms(reg, nil, nil, nil, false, rec, rec != nil, nil).ServeHTTP(w, httptest.NewRequest("GET", "/api/rooms", nil))
+		Rooms(RoomsConfig{Registry: reg, Kept: lobby.Kept{Recordings: rec, RecordingEnabled: rec != nil}}).ServeHTTP(w, httptest.NewRequest("GET", "/api/rooms", nil))
 		var out []map[string]any
 		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
 			t.Fatal(err)
@@ -265,7 +266,7 @@ func TestDeletingARoomDeletesItsRecording(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := httptest.NewRecorder()
-	Rooms(e.reg, nil, nil, nil, false, e.store, true, nil).ServeHTTP(w, httptest.NewRequest("DELETE", "/api/rooms/"+slug, strings.NewReader(`{"pin":"432100"}`)))
+	Rooms(RoomsConfig{Registry: e.reg, Kept: lobby.Kept{Recordings: e.store, RecordingEnabled: true}}).ServeHTTP(w, httptest.NewRequest("DELETE", "/api/rooms/"+slug, strings.NewReader(`{"pin":"432100"}`)))
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("delete room %d", w.Code)
 	}
@@ -284,7 +285,7 @@ func TestDeletingARoomDeletesItsRecordingWhileRecordingIsOff(t *testing.T) {
 	if _, err := e.store.Put(slug, meeting, strings.NewReader("v"), 1<<20); err != nil {
 		t.Fatal(err)
 	}
-	h := Rooms(e.reg, nil, nil, nil, false, e.store, false, nil)
+	h := Rooms(RoomsConfig{Registry: e.reg, Kept: lobby.Kept{Recordings: e.store}})
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/rooms", nil))
 	if strings.Contains(w.Body.String(), "recording_until") {

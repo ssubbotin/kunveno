@@ -14,9 +14,9 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/ssubbotin/kunveno/internal/media"
 	"github.com/ssubbotin/kunveno/internal/notes"
 	"github.com/ssubbotin/kunveno/internal/room"
-	"github.com/ssubbotin/kunveno/internal/sfu"
 )
 
 func newNotesEnv(t *testing.T, live bool) (*env, *notes.Store) {
@@ -27,8 +27,8 @@ func newNotesEnv(t *testing.T, live bool) (*env, *notes.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.h.SetNotes(store, live)
-	e.h.stopGrace = 300 * time.Millisecond
+	e.conf.SetNotes(store, live)
+	e.conf.NotesStopGrace = 300 * time.Millisecond
 	return e, store
 }
 
@@ -131,7 +131,7 @@ func TestNotesSwitchAndBotRole(t *testing.T) {
 		t.Fatalf("notes role before anyone asked: %q", m.Code)
 	}
 	notesOn(t, ca, true)
-	if got := e.h.reg.NotesRooms(); len(got) != 1 || got[0] != "ops" {
+	if got := e.reg.NotesRooms(); len(got) != 1 || got[0] != "ops" {
 		t.Fatalf("NotesRooms = %v", got)
 	}
 	proxied := dialWith(t, e, http.Header{"X-Forwarded-For": {"10.8.0.5"}})
@@ -152,7 +152,7 @@ func TestNotesSwitchAndBotRole(t *testing.T) {
 	if m := expect(t, ca, "phrase"); m.Text != "Проверка." || m.Name != "Ann" {
 		t.Fatalf("live phrase = %+v", m)
 	}
-	r, _ := e.h.reg.Get("ops")
+	r, _ := e.reg.Get("ops")
 	if !r.Notes() {
 		t.Fatal("a helper switched notes off")
 	}
@@ -172,7 +172,7 @@ func TestNotesDisabledIgnoresTheSwitchAndTheRole(t *testing.T) {
 			break
 		}
 	}
-	if got := e.h.reg.NotesRooms(); len(got) != 0 {
+	if got := e.reg.NotesRooms(); len(got) != 0 {
 		t.Fatalf("NotesRooms = %v", got)
 	}
 	bot := dial(t, e)
@@ -184,7 +184,7 @@ func TestNotesDisabledIgnoresTheSwitchAndTheRole(t *testing.T) {
 
 func TestPhraseOnlyFromTheNotesBot(t *testing.T) {
 	e, _ := newNotesEnv(t, true)
-	r, _ := e.h.reg.Get("ops")
+	r, _ := e.reg.Get("ops")
 	r.SetPlayer(true)
 	ca, ida := join(t, e, "Ann")
 	notesOn(t, ca, true)
@@ -255,8 +255,8 @@ func TestNotesBotClosedAfterGrace(t *testing.T) {
 	stopped := time.Now()
 	// The bot never leaves on its own and does not read: closing must not wait for its answer.
 	expect(t, ca, "notes_ready")
-	if took := time.Since(stopped); took < e.h.stopGrace-50*time.Millisecond || took > e.h.stopGrace+2*time.Second {
-		t.Fatalf("notes ready %v after the stop; grace %v", took, e.h.stopGrace)
+	if took := time.Since(stopped); took < e.conf.NotesStopGrace-50*time.Millisecond || took > e.conf.NotesStopGrace+2*time.Second {
+		t.Fatalf("notes ready %v after the stop; grace %v", took, e.conf.NotesStopGrace)
 	}
 	expectClosed(t, bot)
 	waitReady(t, store)
@@ -334,7 +334,7 @@ func TestNewMeetingReplacesNotes(t *testing.T) {
 // Review focus: switched back on before the old bot has left.
 func TestNotesBackOnWhileTheOldBotFlushes(t *testing.T) {
 	e, store := newNotesEnv(t, false)
-	e.h.stopGrace = 5 * time.Second
+	e.conf.NotesStopGrace = 5 * time.Second
 	ca, ida := join(t, e, "Ann")
 	notesOn(t, ca, true)
 	bot, _ := joinNotesBot(t, e)
@@ -393,25 +393,25 @@ func TestNotesBotDropWhileWanted(t *testing.T) {
 func TestNotesBotHearsPeopleOnly(t *testing.T) {
 	e, _ := newNotesEnv(t, false)
 	ca, ida := join(t, e, "Ann")
-	e.media.peer(ida).setTrack(t, sfu.KindAudio)
-	e.media.peer(ida).setTrack(t, sfu.KindCamera)
-	r, _ := e.h.reg.Get("ops")
+	e.media.peer(ida).setTrack(t, media.KindAudio)
+	e.media.peer(ida).setTrack(t, media.KindCamera)
+	r, _ := e.reg.Get("ops")
 	r.SetPlayer(true)
 	player := dial(t, e)
 	send(t, player, `{"type":"join","room":"ops","name":"Видео","role":"player"}`)
 	pid := expect(t, player, "joined").Self.ID
-	e.media.peer(pid).setTrack(t, sfu.KindAudio)
+	e.media.peer(pid).setTrack(t, media.KindAudio)
 	notesOn(t, ca, true)
 	_, nid := joinNotesBot(t, e)
 	np := e.media.peer(nid)
-	if np.subCount(ida, sfu.KindAudio) != 1 || np.subCount(ida, sfu.KindCamera) != 0 || np.subCount(pid, sfu.KindAudio) != 0 {
+	if np.subCount(ida, media.KindAudio) != 1 || np.subCount(ida, media.KindCamera) != 0 || np.subCount(pid, media.KindAudio) != 0 {
 		t.Fatalf("notes bot subscriptions: ann audio %d, ann camera %d, player audio %d",
-			np.subCount(ida, sfu.KindAudio), np.subCount(ida, sfu.KindCamera), np.subCount(pid, sfu.KindAudio))
+			np.subCount(ida, media.KindAudio), np.subCount(ida, media.KindCamera), np.subCount(pid, media.KindAudio))
 	}
 	_, idb := join(t, e, "Bob")
-	e.media.peer(idb).setTrack(t, sfu.KindCamera)
-	e.h.onPublisher(e.media.peer(idb), sfu.KindCamera)
-	if np.subCount(idb, sfu.KindCamera) != 0 || e.media.peer(ida).subCount(idb, sfu.KindCamera) != 1 {
+	e.media.peer(idb).setTrack(t, media.KindCamera)
+	e.media.peer(idb).publish(media.KindCamera)
+	if np.subCount(idb, media.KindCamera) != 0 || e.media.peer(ida).subCount(idb, media.KindCamera) != 1 {
 		t.Fatal("a camera published later reached the notes bot, or missed a person")
 	}
 }
@@ -483,7 +483,7 @@ func TestNotesDeletedFromTheLobbyBeginAgain(t *testing.T) {
 // still finishing; it never resumes the previous one.
 func TestNewMeetingWhileTheOldBotFlushesBegins(t *testing.T) {
 	e, store := newNotesEnv(t, false)
-	e.h.stopGrace = 5 * time.Second
+	e.conf.NotesStopGrace = 5 * time.Second
 	ca, ida := join(t, e, "Ann")
 	notesOn(t, ca, true)
 	bot, _ := joinNotesBot(t, e)
@@ -513,16 +513,20 @@ func TestNewMeetingWhileTheOldBotFlushesBegins(t *testing.T) {
 // Ruling C5: people who leave a room that never took notes are not remembered.
 func TestDepartedKeptOnlyWhileTakingNotes(t *testing.T) {
 	e, _ := newNotesEnv(t, false)
-	ca, _ := join(t, e, "Ann")
+	ca, ida := join(t, e, "Ann")
 	cb, idb := join(t, e, "Bob")
 	_ = cb.Close(websocket.StatusNormalClosure, "")
 	for len(expect(t, ca, "participants").Participants) != 1 {
 	}
-	lr, _ := e.h.lookup("ops")
-	e.h.notesMu.Lock()
-	_, kept := lr.notes.departed[idb]
-	e.h.notesMu.Unlock()
-	if kept {
+	notesOn(t, ca, true)
+	bot, _ := joinNotesBot(t, e)
+	send(t, bot, phrase(idb, "Фраза Боба.", time.Second))
+	send(t, bot, phrase(ida, "Фраза Анны.", 0))
+	waitFor(t, func() bool { // phrases are taken in order: Bob's has been handled once Ann's is stored
+		data, _ := os.ReadFile(filepath.Join(e.notesDir, "ops.jsonl"))
+		return strings.Contains(string(data), "Фраза Анны.")
+	})
+	if data, _ := os.ReadFile(filepath.Join(e.notesDir, "ops.jsonl")); strings.Contains(string(data), "Фраза Боба.") {
 		t.Fatal("a person who left a room without notes was remembered")
 	}
 }
@@ -531,13 +535,13 @@ func TestDepartedKeptOnlyWhileTakingNotes(t *testing.T) {
 func TestNotesBotCannotAskForVideo(t *testing.T) {
 	e, _ := newNotesEnv(t, true)
 	ca, ida := join(t, e, "Ann")
-	e.media.peer(ida).setTrack(t, sfu.KindCamera)
+	e.media.peer(ida).setTrack(t, media.KindCamera)
 	notesOn(t, ca, true)
 	bot, nid := joinNotesBot(t, e)
 	send(t, bot, `{"type":"video","receive":true}`)
 	send(t, bot, phrase(ida, "Видео не нужно.", 0)) // read after the video message
 	expect(t, ca, "phrase")
-	if n := e.media.peer(nid).subCount(ida, sfu.KindCamera); n != 0 {
+	if n := e.media.peer(nid).subCount(ida, media.KindCamera); n != 0 {
 		t.Fatalf("notes bot subscribed to a camera %d times", n)
 	}
 }
@@ -546,7 +550,7 @@ func TestNotesBotCannotAskForVideo(t *testing.T) {
 // meeting's transcript, which ends when it leaves; the new meeting's people hear nothing of it.
 func TestOldBotFlushAfterANewMeetingBegan(t *testing.T) {
 	e, store := newNotesEnv(t, true)
-	e.h.stopGrace = 5 * time.Second
+	e.conf.NotesStopGrace = 5 * time.Second
 	ca, ida := join(t, e, "Ann")
 	notesOn(t, ca, true)
 	bot, _ := joinNotesBot(t, e)
@@ -571,7 +575,7 @@ func TestOldBotFlushAfterANewMeetingBegan(t *testing.T) {
 // does not make the old meeting's notes ready to the new meeting's people.
 func TestNewMeetingIsNotToldOfTheOldNotes(t *testing.T) {
 	e, store := newNotesEnv(t, false)
-	e.h.stopGrace = 5 * time.Second
+	e.conf.NotesStopGrace = 5 * time.Second
 	ca, ida := join(t, e, "Ann")
 	notesOn(t, ca, true)
 	bot, _ := joinNotesBot(t, e)

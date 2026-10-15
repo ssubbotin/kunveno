@@ -57,7 +57,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/pion/webrtc/v4"
+	"github.com/ssubbotin/kunveno/internal/media"
 )
 
 // ErrBadMessage wraps every validation failure of a client message.
@@ -148,16 +148,16 @@ func (r *Restart) valid() bool {
 
 // ClientMessage is the union of every client-to-server message.
 type ClientMessage struct {
-	Type      string                   `json:"type"`
-	Room      string                   `json:"room,omitempty"`
-	PIN       string                   `json:"pin,omitempty"`
-	Name      string                   `json:"name,omitempty"`
-	SDP       string                   `json:"sdp,omitempty"`
-	Candidate *webrtc.ICECandidateInit `json:"candidate,omitempty"`
-	Muted     *bool                    `json:"muted,omitempty"`
-	Action    string                   `json:"action,omitempty"`
-	Role      string                   `json:"role,omitempty"`  // "echo" for the local echo helper
-	Media     string                   `json:"media,omitempty"` // "tcp" after a failed UDP path
+	Type      string           `json:"type"`
+	Room      string           `json:"room,omitempty"`
+	PIN       string           `json:"pin,omitempty"`
+	Name      string           `json:"name,omitempty"`
+	SDP       string           `json:"sdp,omitempty"`
+	Candidate *media.Candidate `json:"candidate,omitempty"`
+	Muted     *bool            `json:"muted,omitempty"`
+	Action    string           `json:"action,omitempty"`
+	Role      string           `json:"role,omitempty"`  // "echo" for the local echo helper
+	Media     string           `json:"media,omitempty"` // "tcp" after a failed UDP path
 	// Restart is sent by a page that rejoins after its own connection dropped (never on a plain
 	// first join or after the person left; also after a failed first attempt): {"restart":{"reason":"media_disconnected","after":27,
 	// "transport":"udp"}}. reason is one of RestartReasons (ws_closed: the signaling socket closed;

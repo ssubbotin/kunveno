@@ -249,7 +249,7 @@ PIN комнаты. Файл в формате Markdown: комната, дат�
 |---|---|
 | `cmd/kunveno-server` | процесс сервера: конфигурация, HTTP, сигнализация, медиа |
 | `cmd/kunveno-echo`, `cmd/kunveno-player` | эхо и проигрыватель видеофайлов и RTSP-камер |
-| `internal/room`, `internal/signal`, `internal/sfu` | состояние комнат, сигнализация по WebSocket, SFU |
+| `internal/room`, `internal/conference`, `internal/signal`, `internal/sfu` | состояние комнат, встречи, сигнализация по WebSocket, SFU |
 | `internal/config`, `internal/httpapi`, `internal/metrics` | конфигурация, HTTP API, метрики Prometheus |
 | `internal/quality`, `internal/ratelimit`, `internal/roomstore` | оценки связи, ограничение попыток PIN, сохранённые комнаты |
 | `internal/echo`, `internal/player`, `pkg/botclient` | внутренности вспомогательных сервисов |

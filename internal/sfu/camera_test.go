@@ -7,11 +7,13 @@ import (
 	"time"
 
 	"github.com/pion/webrtc/v4"
-	"github.com/pion/webrtc/v4/pkg/media"
+	pionmedia "github.com/pion/webrtc/v4/pkg/media"
+
+	"github.com/ssubbotin/kunveno/internal/media"
 )
 
 func TestKindForMid(t *testing.T) {
-	for mid, want := range map[string]Kind{"0": KindAudio, "1": KindScreen, "2": KindCamera} {
+	for mid, want := range map[string]media.Kind{"0": media.KindAudio, "1": media.KindScreen, "2": media.KindCamera} {
 		if got, ok := kindForMid(mid); !ok || got != want {
 			t.Errorf("mid %s: %v %v, want %v", mid, got, ok, want)
 		}
@@ -19,8 +21,8 @@ func TestKindForMid(t *testing.T) {
 	if _, ok := kindForMid("7"); ok {
 		t.Error("unknown mid accepted")
 	}
-	if KindCamera.String() != "camera" {
-		t.Errorf("KindCamera = %q", KindCamera.String())
+	if media.KindCamera.String() != "camera" {
+		t.Errorf("KindCamera = %q", media.KindCamera.String())
 	}
 }
 
@@ -30,7 +32,7 @@ func TestPeerHasThreeReceiveSlots(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer eng.Close()
-	p, err := eng.NewPeer("x", &chanSignaler{offers: make(chan string, 1)}, Handlers{})
+	p, err := eng.NewPeer("x", &chanSignaler{offers: make(chan string, 1)}, media.Handlers{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,13 +55,13 @@ func TestCameraFlowsBetweenTwoPeers(t *testing.T) {
 	var peerA, peerB *Peer
 	var once sync.Once
 	published := make(chan struct{})
-	peerA, _ = eng.NewPeer("a", sigA, Handlers{OnPublisher: func(src Source, k Kind) {
-		if k == KindCamera {
+	peerA, _ = eng.NewPeer("a", sigA, media.Handlers{OnPublisher: func(src media.Source, k media.Kind) {
+		if k == media.KindCamera {
 			once.Do(func() { close(published) })
-			_ = peerB.Subscribe(src, KindCamera)
+			_ = peerB.Subscribe(src, media.KindCamera)
 		}
 	}})
-	peerB, _ = eng.NewPeer("b", sigB, Handlers{})
+	peerB, _ = eng.NewPeer("b", sigB, media.Handlers{})
 	defer peerA.Close()
 	defer peerB.Close()
 
@@ -99,8 +101,8 @@ func TestCameraFlowsBetweenTwoPeers(t *testing.T) {
 			case <-done:
 				return
 			case <-tick.C:
-				_ = cam.WriteSample(media.Sample{Data: []byte{0x10, 0x02, 0x00, 0x9d, 0x01, 0x2a}, Duration: 33 * time.Millisecond})
-				_ = screen.WriteSample(media.Sample{Data: []byte{0x10, 0x02, 0x00, 0x9d, 0x01, 0x2a}, Duration: 33 * time.Millisecond})
+				_ = cam.WriteSample(pionmedia.Sample{Data: []byte{0x10, 0x02, 0x00, 0x9d, 0x01, 0x2a}, Duration: 33 * time.Millisecond})
+				_ = screen.WriteSample(pionmedia.Sample{Data: []byte{0x10, 0x02, 0x00, 0x9d, 0x01, 0x2a}, Duration: 33 * time.Millisecond})
 			}
 		}
 	}()
@@ -111,10 +113,10 @@ func TestCameraFlowsBetweenTwoPeers(t *testing.T) {
 	}
 	// Both slots carry VP8; only the slot tells them apart.
 	deadline := time.Now().Add(5 * time.Second)
-	for peerA.Track(KindScreen) == nil && time.Now().Before(deadline) {
+	for peerA.Track(media.KindScreen) == nil && time.Now().Before(deadline) {
 		time.Sleep(50 * time.Millisecond)
 	}
-	if peerA.Track(KindScreen) == nil || peerA.Track(KindCamera) == nil || peerA.Track(KindScreen) == peerA.Track(KindCamera) {
+	if peerA.Track(media.KindScreen) == nil || peerA.Track(media.KindCamera) == nil || peerA.Track(media.KindScreen) == peerA.Track(media.KindCamera) {
 		t.Error("screen (mid 1) and camera (mid 2) were not published as two separate tracks")
 	}
 	select {

@@ -21,7 +21,7 @@ Everything builds and tests on this laptop through the Makefile. Never copy sour
 make test        # test-go (go vet + go test -race -count=1) and test-web (vitest --run)
 make test-go
 make test-web
-make build       # CGO_ENABLED=0 bin/kunveno-server, plus web/dist via npm run build
+make build       # CGO_ENABLED=0 bin/kunveno-server and bin/kunveno-echo, plus web/dist via npm run build
 make deb         # nfpm: dist/kunveno-server_*.deb and dist/kunveno-web_*.deb
 make deploy-bundle  # dist/kunveno.tgz: the stack directory deploy/kunveno with the version stamped in
 make fmt         # gofmt + go mod tidy
@@ -31,7 +31,11 @@ cd web && npx vitest run src/lib/protocol.test.ts        # single web test file
 cd web && npm run check                                  # svelte-check (run in CI)
 cd web && npm run dev                                    # Vite proxies /ws and /api to 127.0.0.1:8080
 go run ./tools/loadgen -url wss://host/ws -room ops -pin 1234 -n 14 -duration 10m [-insecure]
+go run ./tools/backgrounds -out deploy/kunveno/backgrounds   # redraw the built-in virtual backgrounds
 ```
+
+CI (`.github/workflows/ci.yml`) also runs shellcheck and `deploy/docker/check-nginx.sh` on the deploy
+scripts, plus `npm run check` and `npm run build`. `internal/player` tests skip when `ffmpeg` is not installed.
 
 Local smoke run: copy `deploy/kunveno/config.yaml`, set `advertise_ip` to this laptop's LAN address
 (`ip -4 route get 1.1.1.1`), start `bin/kunveno-server -config <file>`, then `curl localhost:8080/healthz`,
@@ -49,19 +53,40 @@ Three deployables on one Ubuntu host (24.04/26.04):
    It is never embedded in the Go binary.
 3. nginx: TLS, static files, reverse proxy of `/ws` and `/api/` to the Go server.
 
+The compose stack (`deploy/kunveno/docker-compose.yml`) adds helper containers that join rooms as
+participants over loopback: `echo` (`cmd/kunveno-echo`, sound check: polls loopback-only
+`GET /internal/echo` and plays one speaker back with a delay) and `player` (`cmd/kunveno-player`,
+a room's configured `player:` media file in a loop or an RTSP feed, via ffmpeg, on the camera slot).
+Prometheus, node-exporter and Grafana read `internal/metrics`.
+
 Go packages are separated so each is tested alone:
 
 - `internal/room`: pure state machine (participants, mute, share lock, capacity, PIN), no I/O.
 - `internal/sfu`: pion engine (codecs, interceptors, ICE lite, UDP mux) and one `Peer` per
   participant. The server is the only SDP offerer; `Negotiate` coalesces concurrent
   subscribe/unsubscribe so at most one offer is outstanding per peer.
-- `internal/signal`: WebSocket sessions, message validation, snapshot fan-out, and coordination
-  between `room` and media. It depends on the `Media`/`MediaPeer` interfaces, so handler tests use a
-  fake media layer; `cmd/kunveno-server` adapts the real `sfu.Engine` to it.
-- `internal/httpapi`: `GET /api/rooms` (never returns PINs), `GET /healthz`.
+- `internal/media`: the vocabulary shared by `sfu` and `conference` (`Kind`, `Source`, `Signaler`,
+  `Handlers`, `Candidate`), so neither depends on the other.
+- `internal/conference`: the meetings themselves, with no WebSocket: live rooms and members, who
+  receives which track, the share lock, the helpers and the notes bot / recorder lifecycles. It
+  talks to a member's client through the `Conn` interface and `Event` values, and to media through
+  `Media`/`MediaPeer`; `cmd/kunveno-server` adapts the real `sfu.Engine` to it. Lock order:
+  `recMu` and `notesMu` are taken before `mu`, never while holding it.
+- `internal/signal`: the WebSocket transport: frame validation (`protocol.go`, also the bot
+  contract), the wrong-PIN limiter, turning frames into `conference` calls and events into
+  protocol messages. Its tests drive the whole stack over a real socket with a fake media layer.
+- `internal/httpapi`: `GET /api/rooms` (never returns PINs), `GET /healthz`, notes and recording
+  downloads; `internal/lobby` decides what the lobby lists of the notes, recording and meeting
+  summary each room keeps, and removes them with a deleted room.
 - `internal/config`: YAML at `/etc/kunveno/config.yaml`, with `KUNVENO_LISTEN` and
   `KUNVENO_ADVERTISE_IP` filling gaps; configured rooms need a restart to change, rooms created in
-  the lobby are kept in `rooms_file`.
+  the lobby are kept in `rooms_file` (`internal/roomstore`). `media.reconnect_grace` (3..120 s,
+  default 15) is served in `/api/info`.
+- Smaller packages: `ratelimit` (blocks addresses after repeated wrong PINs), `quality` (connection
+  grade for the participant list), `meetings` (per-room summaries of recent meetings, never names),
+  `backgrounds` (virtual background presets read from a directory on each request), `metrics`
+  (Prometheus; room state read from the registry at scrape time), `echo` and `player` (the logic
+  behind the two helper commands).
 - `internal/notes`: meeting notes: the append-only transcript store, Markdown rendering, expiry.
   The notes bot itself is the closed `kunveno-notes` add-on (another repository); it depends on the
   bot contract documented in `internal/signal/protocol.go` and on `pkg/botclient`, so change those
@@ -93,6 +118,9 @@ Web client logic lives in `web/src/lib/` (`protocol.ts` validating parser, `stat
 state, `signaling.ts` reconnect with 1 to 10 s backoff, `rtc.ts`, `levels.ts`, `session.ts`,
 `link.ts`, `pins.ts`). The pure modules have unit tests (vitest); browser behaviour is covered by the
 manual checklist in `docs/test-matrix.md`. Rune state must stay in files named `*.svelte.ts`.
+Interface strings live in `web/src/lib/i18n/messages.ts`: Russian is the source and its keys define
+the set the other languages must match. Virtual backgrounds (segmentation in a worker, compositor)
+are in `web/src/lib/background/`.
 
 ## Hard constraints
 

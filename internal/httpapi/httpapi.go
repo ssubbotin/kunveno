@@ -4,18 +4,15 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
-	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/ssubbotin/kunveno/internal/meetings"
+	"github.com/ssubbotin/kunveno/internal/lobby"
 	"github.com/ssubbotin/kunveno/internal/metrics"
-	"github.com/ssubbotin/kunveno/internal/notes"
 	"github.com/ssubbotin/kunveno/internal/ratelimit"
-	"github.com/ssubbotin/kunveno/internal/recording"
 	"github.com/ssubbotin/kunveno/internal/room"
 )
 
@@ -39,82 +36,58 @@ type meetingItem struct {
 	People int    `json:"people"`
 }
 
+// RoomsConfig is what the room API works with.
+type RoomsConfig struct {
+	Registry *room.Registry
+	Persist  func() error       // saves the created rooms after every change; may be nil
+	PINs     *ratelimit.Limiter // wrong PINs per client address, shared with joining; may be nil
+	Kept     lobby.Kept         // the notes, recordings and meeting summaries the rooms keep
+}
+
 // Rooms serves the room list and its changes. PINs never leave the server.
 //
 //	GET    /api/rooms          list with live participant counts, notes_until, recording_until, last_meeting
 //	POST   /api/rooms          {"name","pin"} creates a room, 201 {"slug","name"}
 //	DELETE /api/rooms/{slug}   {"pin"} deletes an empty created room, its notes, its recording and its meetings, 204
 //
-// persist (may be nil) is called after every change to save the created rooms. pins (may be
-// nil) limits wrong PINs per client address, shared with joining. store (may be nil) holds the
-// meeting notes: it is passed even while notes.enabled is off so that deleting a room always
-// deletes its notes; notesEnabled alone decides whether notes_until is listed. rec holds the
-// recordings and is passed even while recording.enabled is off so that deleting a room always
-// deletes its recording; recEnabled alone decides whether recording_until is listed. meets (may be
-// nil) holds the summaries of ended meetings: a room lists last_meeting when it keeps notes or a
-// recording (of the enabled features) of a meeting with a stored summary; deleting a room deletes
-// its summaries.
-func Rooms(reg *room.Registry, persist func() error, pins *ratelimit.Limiter, store *notes.Store, notesEnabled bool, rec *recording.Store, recEnabled bool, meets *meetings.Store) http.Handler {
+// notes_until and recording_until are listed for the enabled features only. A room lists
+// last_meeting when it keeps notes or a recording (of the enabled features) of a meeting with a
+// stored summary. Deleting a room deletes all it keeps, whatever is enabled.
+func Rooms(cfg RoomsConfig) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		slug := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/rooms"), "/")
 		switch {
 		case r.Method == http.MethodGet && slug == "":
-			list(w, reg, store, notesEnabled, rec, recEnabled, meets)
+			list(w, cfg)
 		case r.Method == http.MethodPost && slug == "":
-			create(w, r, reg, persist)
+			create(w, r, cfg)
 		case r.Method == http.MethodDelete && slug != "":
-			remove(w, r, reg, persist, pins, store, rec, meets, slug)
+			remove(w, r, cfg, slug)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
 	})
 }
 
-func list(w http.ResponseWriter, reg *room.Registry, store *notes.Store, notesEnabled bool, rec *recording.Store, recEnabled bool, meets *meetings.Store) {
-	rooms := reg.All()
+func list(w http.ResponseWriter, cfg RoomsConfig) {
+	rooms := cfg.Registry.All()
 	items := make([]roomItem, 0, len(rooms))
 	for _, rm := range rooms {
 		item := roomItem{Slug: rm.Slug(), Name: rm.Name(), Participants: rm.Count(), Capacity: rm.Capacity(), Created: rm.Created()}
-		if notesEnabled && store != nil {
-			if until, ok := store.Until(rm.Slug()); ok {
-				item.NotesUntil = until.Format(time.RFC3339)
-			}
+		kept := cfg.Kept.Of(rm.Slug())
+		if !kept.NotesUntil.IsZero() {
+			item.NotesUntil = kept.NotesUntil.Format(time.RFC3339)
 		}
-		if recEnabled && rec != nil {
-			if until, ok := rec.Until(rm.Slug()); ok {
-				item.RecordingUntil = until.Format(time.RFC3339)
-			}
+		if !kept.RecordingUntil.IsZero() {
+			item.RecordingUntil = kept.RecordingUntil.Format(time.RFC3339)
 		}
-		item.LastMeeting = lastMeeting(rm.Slug(), store, notesEnabled, rec, recEnabled, meets)
+		if m := kept.Meeting; m != nil {
+			item.LastMeeting = &meetingItem{Start: m.Start.Format(time.RFC3339), End: m.End.Format(time.RFC3339), People: m.People}
+		}
 		items = append(items, item)
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, items)
-}
-
-// lastMeeting finds the summary of the meeting whose recording or notes the room keeps, the
-// recording's meeting first; nil when there is none.
-func lastMeeting(slug string, store *notes.Store, notesEnabled bool, rec *recording.Store, recEnabled bool, meets *meetings.Store) *meetingItem {
-	if meets == nil {
-		return nil
-	}
-	var starts []time.Time
-	if recEnabled && rec != nil {
-		if m, ok := rec.Meeting(slug); ok {
-			starts = append(starts, m)
-		}
-	}
-	if notesEnabled && store != nil {
-		if m, ok := store.Meeting(slug); ok {
-			starts = append(starts, m)
-		}
-	}
-	for _, start := range starts {
-		if m, ok := meets.Find(slug, start); ok {
-			return &meetingItem{Start: m.Start.Format(time.RFC3339), End: m.End.Format(time.RFC3339), People: m.People}
-		}
-	}
-	return nil
 }
 
 type roomRequest struct {
@@ -131,24 +104,25 @@ func decode(w http.ResponseWriter, r *http.Request) (roomRequest, bool) {
 	return req, true
 }
 
-func create(w http.ResponseWriter, r *http.Request, reg *room.Registry, persist func() error) {
+func create(w http.ResponseWriter, r *http.Request, cfg RoomsConfig) {
 	req, ok := decode(w, r)
 	if !ok {
 		return
 	}
-	rm, err := reg.Create(req.Name, req.PIN)
+	rm, err := cfg.Registry.Create(req.Name, req.PIN)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	if !save(w, persist) {
+	if !save(w, cfg.Persist) {
 		return
 	}
 	metrics.RoomsCreated.Inc()
 	writeJSON(w, http.StatusCreated, map[string]string{"slug": rm.Slug(), "name": rm.Name()})
 }
 
-func remove(w http.ResponseWriter, r *http.Request, reg *room.Registry, persist func() error, pins *ratelimit.Limiter, store *notes.Store, rec *recording.Store, meets *meetings.Store, slug string) {
+func remove(w http.ResponseWriter, r *http.Request, cfg RoomsConfig, slug string) {
+	pins := cfg.PINs
 	ip := ratelimit.ClientIP(r)
 	if pins != nil {
 		if ok, wait := pins.Allow(ip); !ok {
@@ -161,7 +135,7 @@ func remove(w http.ResponseWriter, r *http.Request, reg *room.Registry, persist 
 	if !ok {
 		return
 	}
-	err := reg.Delete(slug, req.PIN)
+	err := cfg.Registry.Delete(slug, req.PIN)
 	if errors.Is(err, room.ErrBadPIN) {
 		metrics.PINFailures.WithLabelValues("delete").Inc()
 		if pins != nil && pins.Fail(ip) {
@@ -181,22 +155,8 @@ func remove(w http.ResponseWriter, r *http.Request, reg *room.Registry, persist 
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	default:
 		metrics.RoomsDeleted.Inc()
-		if store != nil {
-			// The store forgets the notes even when the file stays. A file left behind is ignored
-			// until a restart, when the store reads it again and it expires by its own end time.
-			if err := store.Delete(slug); err != nil {
-				slog.Warn("cannot delete the notes file of a deleted room", "room", slug, "err", err)
-			}
-		}
-		if rec != nil {
-			if err := rec.Remove(slug); err != nil {
-				slog.Warn("cannot delete the recording of a deleted room", "room", slug, "err", err)
-			}
-		}
-		if err := meets.Delete(slug); err != nil {
-			slog.Warn("cannot delete the meetings of a deleted room", "room", slug, "err", err)
-		}
-		if save(w, persist) {
+		cfg.Kept.Forget(slug)
+		if save(w, cfg.Persist) {
 			w.WriteHeader(http.StatusNoContent)
 		}
 	}

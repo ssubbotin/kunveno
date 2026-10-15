@@ -10,8 +10,8 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/ssubbotin/kunveno/internal/media"
 	"github.com/ssubbotin/kunveno/internal/recording"
-	"github.com/ssubbotin/kunveno/internal/sfu"
 )
 
 func newRecordingEnv(t *testing.T) (*env, *recording.Store) {
@@ -21,8 +21,8 @@ func newRecordingEnv(t *testing.T) (*env, *recording.Store) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.h.SetRecording(store)
-	e.h.recStopGrace = 300 * time.Millisecond
+	e.conf.SetRecording(store)
+	e.conf.RecordingStopGrace = 300 * time.Millisecond
 	return e, store
 }
 
@@ -53,7 +53,7 @@ func TestRecordingSwitchAndRecorderRole(t *testing.T) {
 		t.Fatalf("code %q", m.Code)
 	}
 	recordingOn(t, ca, true)
-	if got := e.h.reg.RecordingRooms(); len(got) != 1 {
+	if got := e.reg.RecordingRooms(); len(got) != 1 {
 		t.Fatalf("rooms %v", got)
 	}
 	_, joined := joinRecorder(t, e)
@@ -88,27 +88,27 @@ func TestRecordingDisabledIgnoresTheSwitchAndTheRole(t *testing.T) {
 func TestRecorderReceivesPeoplesAudioAndScreenOnly(t *testing.T) {
 	e, _ := newRecordingEnv(t)
 	ca, ida := join(t, e, "Ann")
-	e.media.peer(ida).setTrack(t, sfu.KindAudio)
-	e.media.peer(ida).setTrack(t, sfu.KindCamera)
-	r, _ := e.h.reg.Get("ops")
+	e.media.peer(ida).setTrack(t, media.KindAudio)
+	e.media.peer(ida).setTrack(t, media.KindCamera)
+	r, _ := e.reg.Get("ops")
 	r.SetPlayer(true)
 	player := dial(t, e)
 	send(t, player, `{"type":"join","room":"ops","name":"Видео","role":"player"}`)
 	pid := expect(t, player, "joined").Self.ID
-	e.media.peer(pid).setTrack(t, sfu.KindAudio)
+	e.media.peer(pid).setTrack(t, media.KindAudio)
 	recordingOn(t, ca, true)
 	_, joined := joinRecorder(t, e)
 	rp := e.media.peer(joined.Self.ID)
-	if rp.subCount(ida, sfu.KindAudio) != 1 || rp.subCount(ida, sfu.KindCamera) != 0 || rp.subCount(pid, sfu.KindAudio) != 0 {
+	if rp.subCount(ida, media.KindAudio) != 1 || rp.subCount(ida, media.KindCamera) != 0 || rp.subCount(pid, media.KindAudio) != 0 {
 		t.Fatalf("recorder subscriptions: ann audio %d, ann camera %d, player audio %d",
-			rp.subCount(ida, sfu.KindAudio), rp.subCount(ida, sfu.KindCamera), rp.subCount(pid, sfu.KindAudio))
+			rp.subCount(ida, media.KindAudio), rp.subCount(ida, media.KindCamera), rp.subCount(pid, media.KindAudio))
 	}
 	send(t, ca, `{"type":"share","action":"start"}`)
 	for expect(t, ca, "participants").Sharer != ida {
 	}
-	e.media.peer(ida).setTrack(t, sfu.KindScreen)
-	e.h.onPublisher(e.media.peer(ida), sfu.KindScreen)
-	waitFor(t, func() bool { return rp.subCount(ida, sfu.KindScreen) == 1 })
+	e.media.peer(ida).setTrack(t, media.KindScreen)
+	e.media.peer(ida).publish(media.KindScreen)
+	waitFor(t, func() bool { return rp.subCount(ida, media.KindScreen) == 1 })
 }
 
 func TestRecordingStopGraceAndActiveMark(t *testing.T) {
@@ -134,13 +134,13 @@ func TestLastPersonLeavingStopsTheRecorder(t *testing.T) {
 func TestRecordingStoredTellsThePeople(t *testing.T) {
 	e, _ := newRecordingEnv(t)
 	ca, _ := join(t, e, "Ann")
-	e.h.RecordingStored("ops")
+	e.conf.RecordingStored("ops")
 	expect(t, ca, "recording_ready")
 }
 
 func TestRecordingBackOnWhileRecorderStoppingKeepsTheMark(t *testing.T) {
 	e, store := newRecordingEnv(t)
-	e.h.recStopGrace = time.Minute
+	e.conf.RecordingStopGrace = time.Minute
 	ca, _ := join(t, e, "Ann")
 	recordingOn(t, ca, true)
 	first, _ := joinRecorder(t, e)
@@ -155,7 +155,7 @@ func TestRecordingBackOnWhileRecorderStoppingKeepsTheMark(t *testing.T) {
 
 func TestRecorderLeavingAfterLastPersonClearsTheMark(t *testing.T) {
 	e, store := newRecordingEnv(t)
-	e.h.recStopGrace = time.Minute
+	e.conf.RecordingStopGrace = time.Minute
 	ca, _ := join(t, e, "Ann")
 	recordingOn(t, ca, true)
 	bot, _ := joinRecorder(t, e)
@@ -167,7 +167,7 @@ func TestRecorderLeavingAfterLastPersonClearsTheMark(t *testing.T) {
 
 func TestRecordingToggleRace(t *testing.T) {
 	e, store := newRecordingEnv(t)
-	e.h.recStopGrace = time.Minute
+	e.conf.RecordingStopGrace = time.Minute
 	ca, _ := join(t, e, "Ann")
 	cb, _ := join(t, e, "Bob")
 	recordingOn(t, ca, true)

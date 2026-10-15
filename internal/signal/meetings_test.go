@@ -13,7 +13,7 @@ import (
 func TestEndedMeetingIsSaved(t *testing.T) {
 	e := newEnv(t, 15)
 	store := meetings.Open(filepath.Join(t.TempDir(), "meetings.json"), nil)
-	e.h.SetMeetings(store)
+	e.conf.SetMeetings(store)
 	ca, _ := join(t, e, "Ann")
 	cb, _ := join(t, e, "Bob")
 	_ = ca.Close(websocket.StatusNormalClosure, "")
