@@ -98,7 +98,32 @@ without it):
     same answer comes right after a switch-off while the Notes participant is still leaving). Deleting the notes of a
     meeting still in progress (notes switched off) and switching notes on again starts a fresh file
     holding only the new phrases.
-38. Backup channel: in devtools, run `localStorage['kunveno.tcpUntil'] = Date.now() + 864e5` and
+Meeting recording (with the `kunveno-recorder` add-on installed and `recording.enabled: true`; check
+39 also without it):
+
+39. With `recording.enabled: false` the More menu has no recording item, the lobby shows no
+    recording button, and `curl -s 127.0.0.1:8080/internal/recording` on the host prints `[]`.
+40. More → "Recording": within 10 s the "Recording" participant (bot) appears, the header shows
+    "● Recording" for everyone, a screen reader announces the change, and the switch is on for
+    everyone in the room.
+41. Share a screen, speak, stop the share: the recording shows the screen while it is shared and a
+    slate with the room name, the date and the speaker's name while nobody shares; no cameras.
+42. Switching recording off: the Recording participant leaves, and within a minute everyone in the
+    room gets "The meeting's recording is ready" with "Download"; the file plays with the screen and
+    the audio of all.
+43. Lobby: the room shows the recording mark and "Recording of the last meeting" with the time it is
+    kept until. The dialog: a wrong PIN shows "Wrong PIN"; the right one downloads the file. A large
+    file (a meeting of an hour or more) downloads with progress, and a download interrupted in
+    devtools (go offline, then online) resumes with a `Range` request instead of starting over.
+44. Lobby → "Delete" with the right PIN and a confirmation removes the file and the button. While
+    the room is being recorded, "Delete" shows "The meeting is still being recorded: switch the
+    recording off or try again in a minute" (409) and the file stays.
+45. The last person leaving ends the recording; the file appears in the lobby within a minute.
+46. Restarting the server during a recording leaves no broken file: after the restart the lobby
+    offers no half-written recording, and the data directory has no `*.tmp` files.
+47. Deleting a room deletes its recording.
+
+48. Backup channel: in devtools, run `localStorage['kunveno.tcpUntil'] = Date.now() + 864e5` and
     rejoin: the status reads "connected (backup channel)" with "try the fast one" next to it.
     Press it: audio drops for a couple of seconds, the status reads "connected", the button is
     gone and the key is removed. With UDP 7000 blocked by a firewall rule, pressing it brings the

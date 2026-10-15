@@ -176,6 +176,54 @@ together with the add-on (the same text is the package comment of `internal/sign
 
 The Debian packages have no notes add-on; with them leave `notes.enabled` off.
 
+## Meeting recording
+
+Recording needs the commercial `kunveno-recorder` add-on, which ships its own image and a compose
+overlay with an installation guide. With the add-on installed, set `recording.enabled: true` in
+`config.yaml` and run `docker compose restart server`; with `false` (the default) the server
+ignores the recording switch, refuses the recorder, lists no rooms at `/internal/recording`, leaves
+`recording_until` out of `/api/rooms`, answers downloads with 404, and the client shows nothing
+about recording. The recorder needs CPU for the video encoder and disk for the file (an hour of
+meeting is a few hundred megabytes); `recording.max_size` (default 8GB) caps one file.
+
+- **Storage.** The server writes `data/recordings/<room>.mp4` and `<room>.json` (the meeting's
+  start and end), both mode 0600, in a directory of mode 0700. An upload in progress is a `*.tmp`
+  file; the server removes leftover ones at start, so a restart during an upload leaves no broken
+  recording. Recordings expire `recording.keep` after the meeting ends and are swept every minute,
+  also while `recording.enabled` is off; deleting a room deletes its recording.
+- **Access.** Downloading needs the room PIN: `POST /api/rooms/<room>/recording` with
+  `{"pin":"…"}` returns a link, valid for 5 minutes, of the form
+  `/api/rooms/<room>/recording/<token>`. The GET on that link streams the file and supports
+  `Range`, so an interrupted download resumes. nginx streams the response without temporary files
+  (both the Docker and the Debian nginx configs have a dedicated location for it). The token is part
+  of the URL and so appears in nginx access logs; it is a 5-minute link. Wrong PINs count toward
+  the same block as joins. Deleting early needs the PIN too (`DELETE /api/rooms/<room>/recording`
+  with `{"pin":"…"}`): 204 when deleted; 403 for a wrong PIN; 429 with `Retry-After` while the
+  address is blocked; 409 while the room is being recorded; 404 when there is none. `/api/rooms`
+  shows only until when a room's recording is kept.
+
+**The recorder bot contract.** The add-on depends on this interface of the server; it changes only
+together with the add-on (the same text is the package comment of `internal/signal/protocol.go`):
+
+1. `GET /internal/recording` on loopback (never proxied by nginx) returns a JSON list of the slugs
+   of rooms that want a recording; the bot polls it every 2 s. The list is empty while
+   `recording.enabled` is off.
+2. The bot joins with `{"type":"join","room":…,"name":…,"role":"recorder"}` (no PIN). The join is
+   refused unless the room wants a recording, and while another recorder of the room that was not
+   told to stop is there. The `joined` message carries `meeting`: the start of the meeting
+   (RFC 3339), which the upload names. The bot sends no media and receives every person's audio
+   (stream id = participant id) and the current sharer's screen; no cameras, nothing from other
+   helpers.
+3. When the room no longer wants a recording the server sends `{"type":"stop"}`. The bot finishes
+   the file, uploads it with `PUT /internal/recording/<slug>` (loopback only, body `video/mp4`,
+   header `X-Kunveno-Meeting`: the meeting start from `joined`) and sends `{"type":"leave"}`. A bot
+   still there 60 s after the stop is closed; its upload is still accepted.
+4. Upload answers: 204 stored (the room hears `recording_ready`), 400 no meeting header, 404
+   recording off or no such room, 409 a later meeting's recording is stored, 413 larger than
+   `recording.max_size`. An upload for the same meeting replaces the stored one.
+
+The Debian packages have no recorder add-on; with them leave `recording.enabled` off.
+
 ## Monitoring (Prometheus and Grafana)
 
 `kunveno-server` exposes Prometheus metrics at `/metrics` to loopback clients only (nginx does not
@@ -198,6 +246,17 @@ bot's `/metrics`) with `job: kunveno-notes`. The stack ships no target file, so 
 nothing is scraped and nothing shows as down. The row covers queue delay, recognition speed,
 queue length, rooms and tracks, phrases, errors, rejoins, the loaded model and the add-on version.
 Without the add-on the row has no data.
+
+The "Запись" row (collapsed) shows the optional kunveno-recorder add-on the same way: its target
+file points at `127.0.0.1:9102` (the recorder's `/metrics`) with `job: kunveno-recorder`, and the
+add-on's compose overlay registers it like the notes one. The row covers rooms being recorded, the
+encoder in use, frames per second by source (screen or slate), dropped frames, the pacing lag,
+uploads by result and the add-on's errors by stage. The metrics are `kunveno_recorder_rooms`,
+`kunveno_recorder_encoder_info{encoder}`, `kunveno_recorder_frames_total{source}`,
+`kunveno_recorder_frames_dropped_total`, `kunveno_recorder_audio_tracks`,
+`kunveno_recorder_pacing_lag_seconds`, `kunveno_recorder_uploads_total{result}`,
+`kunveno_recorder_upload_bytes_total`, `kunveno_recorder_raw_bytes_total` and
+`kunveno_recorder_errors_total{stage}`. Without the add-on the row has no data.
 
 ## Virtual backgrounds
 
