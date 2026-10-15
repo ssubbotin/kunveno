@@ -62,6 +62,7 @@ type Handler struct {
 	notesLive    bool               // send each phrase to the room as it is recognised
 	stopGrace    time.Duration      // how long a stopped notes bot may take to leave
 	notesMu      sync.Mutex         // orders every room's notes state and the store's writes
+	recMu        sync.Mutex         // orders every room's recording flag and the store's active mark; taken before h.mu, never while holding it
 	recording    *recording.Store   // meeting recording (recording.enabled); nil when off
 	recStopGrace time.Duration      // how long a stopped recorder may take to upload and leave
 

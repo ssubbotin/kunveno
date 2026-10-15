@@ -19,11 +19,13 @@ func (h *Handler) SetRecording(store *recording.Store) { h.recording = store }
 // switchRecording turns the room's recording on or off at a person's request.
 func (h *Handler) switchRecording(s *session, on bool) {
 	lr, _ := h.lookup(s.slug)
+	h.recMu.Lock()
 	was := lr.room.Recording()
 	lr.room.SetRecording(on)
 	if on {
 		h.recording.SetActive(s.slug, true)
 	}
+	h.recMu.Unlock() // before any socket write
 	if on != was {
 		s.log.Info("recording", "on", on)
 	}
@@ -87,7 +89,12 @@ func (h *Handler) recorderLeft(lr *liveRoom, s *session) {
 // settleRecording clears the room's recording mark once it no longer wants a recording and no
 // recorder is left to upload one.
 func (h *Handler) settleRecording(lr *liveRoom) {
-	if h.recording == nil || lr.room.Recording() {
+	if h.recording == nil {
+		return
+	}
+	h.recMu.Lock()
+	defer h.recMu.Unlock()
+	if lr.room.Recording() {
 		return
 	}
 	h.mu.Lock()
