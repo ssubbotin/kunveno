@@ -228,7 +228,7 @@ func TestRoomsListRecordingUntilAndDelete(t *testing.T) {
 	reg.Add(room.New("dev", "Dev", "5678", 15))
 	list := func(rec *recording.Store) []map[string]any {
 		w := httptest.NewRecorder()
-		Rooms(reg, nil, nil, nil, false, rec).ServeHTTP(w, httptest.NewRequest("GET", "/api/rooms", nil))
+		Rooms(reg, nil, nil, nil, false, rec, rec != nil).ServeHTTP(w, httptest.NewRequest("GET", "/api/rooms", nil))
 		var out []map[string]any
 		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
 			t.Fatal(err)
@@ -265,11 +265,53 @@ func TestDeletingARoomDeletesItsRecording(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := httptest.NewRecorder()
-	Rooms(e.reg, nil, nil, nil, false, e.store).ServeHTTP(w, httptest.NewRequest("DELETE", "/api/rooms/"+slug, strings.NewReader(`{"pin":"432100"}`)))
+	Rooms(e.reg, nil, nil, nil, false, e.store, true).ServeHTTP(w, httptest.NewRequest("DELETE", "/api/rooms/"+slug, strings.NewReader(`{"pin":"432100"}`)))
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("delete room %d", w.Code)
 	}
 	if _, ok := e.store.Until(slug); ok {
 		t.Fatal("recording stays after the room is deleted")
+	}
+}
+
+func TestDeletingARoomDeletesItsRecordingWhileRecordingIsOff(t *testing.T) {
+	e := newRecEnv(t)
+	rm, err := e.reg.Create("Retro", "432100")
+	if err != nil {
+		t.Fatal(err)
+	}
+	slug := rm.Slug()
+	if _, err := e.store.Put(slug, meeting, strings.NewReader("v"), 1<<20); err != nil {
+		t.Fatal(err)
+	}
+	h := Rooms(e.reg, nil, nil, nil, false, e.store, false)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("GET", "/api/rooms", nil))
+	if strings.Contains(w.Body.String(), "recording_until") {
+		t.Fatal("recording_until listed while recording is off")
+	}
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest("DELETE", "/api/rooms/"+slug, strings.NewReader(`{"pin":"432100"}`)))
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("delete room %d", w.Code)
+	}
+	if _, ok := e.store.Until(slug); ok {
+		t.Fatal("recording stays after the room is deleted while recording is off")
+	}
+}
+
+func TestUploadLargerThanTheLimitIsRefusedBeforeReading(t *testing.T) {
+	e := newRecEnv(t)
+	r := httptest.NewRequest(http.MethodPut, "/internal/recording/ops", strings.NewReader("x"))
+	r.RemoteAddr = "127.0.0.1:5000"
+	r.ContentLength = 1<<20 + 1
+	r.Header.Set("X-Kunveno-Meeting", meeting.Format(time.RFC3339Nano))
+	w := httptest.NewRecorder()
+	e.mux.ServeHTTP(w, r)
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status %d", w.Code)
+	}
+	if _, ok := e.store.Until("ops"); ok {
+		t.Fatal("something was stored")
 	}
 }

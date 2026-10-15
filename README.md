@@ -202,8 +202,11 @@ meeting", with the room PIN.
 - Without the add-on keep `recording.enabled: false` (the default): rooms and the lobby show nothing
   about recording.
 - Only the last meeting of each room is kept, for `recording.keep` (one day by default) after it
-  ends; the next recording replaces it. Deleting a room deletes its recording. Downloading needs
-  the room PIN, and wrong PINs count toward the same block as joins. The download can be resumed.
+  ends; the next recording replaces it. Switching recording on again in the same meeting also replaces what
+  was recorded before: a meeting has one recording, and the later one wins. Deleting a room deletes
+  its recording. Downloading needs the room PIN, and wrong PINs count toward the same block as
+  joins. An interrupted download can be resumed while its link is valid (5 minutes); afterwards start
+  the download again from the room or the lobby.
 - The recording can be deleted earlier from the lobby: "Recording of the last meeting" → "Delete" with the room
   PIN, then a confirmation. A recording in progress cannot be deleted: switch it off first.
 - A file larger than `recording.max_size` (8 GB by default) is refused by the server and stays in the

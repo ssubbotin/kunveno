@@ -88,10 +88,9 @@ func NotesDelete(reg *room.Registry, store *notes.Store, enabled bool, pins *rat
 
 // pinAccess runs the checks shared by the PIN-protected requests of notes and recording (suffix is
 // the path after the slug, what is the word in the 404 body and the PIN metric label), in order: the
-// method (405), the feature on
-// (404 before anything else), the path, the per-address PIN limit (429), the body (400), the room
-// (404) and its PIN (403, counted toward the limit). It writes the answer and reports false when a
-// check fails.
+// method (405), the feature on (404 before anything else), the path, the per-address PIN limit
+// (429), the body (400), the room (404) and its PIN (403, counted toward the limit). It writes the
+// answer and reports false when a check fails.
 func pinAccess(w http.ResponseWriter, r *http.Request, method, suffix, what string, reg *room.Registry, enabled bool, pins *ratelimit.Limiter) (string, notesRequest, bool) {
 	var req notesRequest
 	if r.Method != method {

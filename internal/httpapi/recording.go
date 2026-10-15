@@ -44,6 +44,10 @@ func RecordingUpload(reg *room.Registry, store *recording.Store, max int64, stor
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "no recording"})
 			return
 		}
+		if r.ContentLength > max {
+			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": recording.ErrTooLarge.Error()})
+			return
+		}
 		meeting, err := time.Parse(time.RFC3339Nano, r.Header.Get("X-Kunveno-Meeting"))
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "X-Kunveno-Meeting must be RFC 3339"})

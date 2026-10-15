@@ -39,15 +39,15 @@ type roomItem struct {
 // persist (may be nil) is called after every change to save the created rooms. pins (may be
 // nil) limits wrong PINs per client address, shared with joining. store (may be nil) holds the
 // meeting notes: it is passed even while notes.enabled is off so that deleting a room always
-// deletes its notes; notesEnabled alone decides whether notes_until is listed. rec (nil while
-// recording is off) holds the recordings: recording_until is listed for a stored recording and
-// deleting a room deletes its recording.
-func Rooms(reg *room.Registry, persist func() error, pins *ratelimit.Limiter, store *notes.Store, notesEnabled bool, rec *recording.Store) http.Handler {
+// deletes its notes; notesEnabled alone decides whether notes_until is listed. rec holds the
+// recordings and is passed even while recording.enabled is off so that deleting a room always
+// deletes its recording; recEnabled alone decides whether recording_until is listed.
+func Rooms(reg *room.Registry, persist func() error, pins *ratelimit.Limiter, store *notes.Store, notesEnabled bool, rec *recording.Store, recEnabled bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		slug := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/rooms"), "/")
 		switch {
 		case r.Method == http.MethodGet && slug == "":
-			list(w, reg, store, notesEnabled, rec)
+			list(w, reg, store, notesEnabled, rec, recEnabled)
 		case r.Method == http.MethodPost && slug == "":
 			create(w, r, reg, persist)
 		case r.Method == http.MethodDelete && slug != "":
@@ -58,7 +58,7 @@ func Rooms(reg *room.Registry, persist func() error, pins *ratelimit.Limiter, st
 	})
 }
 
-func list(w http.ResponseWriter, reg *room.Registry, store *notes.Store, notesEnabled bool, rec *recording.Store) {
+func list(w http.ResponseWriter, reg *room.Registry, store *notes.Store, notesEnabled bool, rec *recording.Store, recEnabled bool) {
 	rooms := reg.All()
 	items := make([]roomItem, 0, len(rooms))
 	for _, rm := range rooms {
@@ -68,7 +68,7 @@ func list(w http.ResponseWriter, reg *room.Registry, store *notes.Store, notesEn
 				item.NotesUntil = until.Format(time.RFC3339)
 			}
 		}
-		if rec != nil {
+		if recEnabled && rec != nil {
 			if until, ok := rec.Until(rm.Slug()); ok {
 				item.RecordingUntil = until.Format(time.RFC3339)
 			}

@@ -194,7 +194,8 @@ meeting is a few hundred megabytes); `recording.max_size` (default 8GB) caps one
 - **Access.** Downloading needs the room PIN: `POST /api/rooms/<room>/recording` with
   `{"pin":"…"}` returns a link, valid for 5 minutes, of the form
   `/api/rooms/<room>/recording/<token>`. The GET on that link streams the file and supports
-  `Range`, so an interrupted download resumes. nginx streams the response without temporary files
+  `Range`, so an interrupted download resumes while the link is valid; after the 5 minutes the download
+  starts again from the room or the lobby. nginx streams the response without temporary files
   (both the Docker and the Debian nginx configs have a dedicated location for it). The token is part
   of the URL and so appears in nginx access logs; it is a 5-minute link. Wrong PINs count toward
   the same block as joins. Deleting early needs the PIN too (`DELETE /api/rooms/<room>/recording`
@@ -220,7 +221,9 @@ together with the add-on (the same text is the package comment of `internal/sign
    still there 60 s after the stop is closed; its upload is still accepted.
 4. Upload answers: 204 stored (the room hears `recording_ready`), 400 no meeting header, 404
    recording off or no such room, 409 a later meeting's recording is stored, 413 larger than
-   `recording.max_size`. An upload for the same meeting replaces the stored one.
+   `recording.max_size`. An upload for the same meeting replaces the stored one, so a recorder that
+   recorded nothing (no audio and no screen received, for example stopped right after joining) must
+   not upload.
 
 The Debian packages have no recorder add-on; with them leave `recording.enabled` off.
 

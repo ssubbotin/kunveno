@@ -116,7 +116,7 @@ func run(cfgPath string, log *slog.Logger) error {
 	}
 	links := httpapi.NewLinks(5 * time.Minute)
 	mux.Handle("/ws", ws)
-	rooms := httpapi.Rooms(reg, persist, ws.PINLimiter(), store, cfg.Notes.Enabled, rec)
+	rooms := httpapi.Rooms(reg, persist, ws.PINLimiter(), store, cfg.Notes.Enabled, recStore, cfg.Recording.Enabled)
 	mux.Handle("/api/rooms", rooms)
 	mux.Handle("/api/rooms/", rooms)
 	mux.Handle("POST /api/rooms/{slug}/notes", httpapi.NotesDownload(reg, store, cfg.Notes.Enabled, ws.PINLimiter(), time.Local))

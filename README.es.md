@@ -207,9 +207,11 @@ reunión», con el PIN de la sala.
 - Sin el complemento deja `recording.enabled: false` (por defecto): las salas y la página de inicio
   no muestran nada de la grabación.
 - Solo se guarda la grabación de la última reunión de cada sala, durante `recording.keep` desde que
-  termina (un día por defecto); la grabación siguiente la sustituye. Eliminar una sala elimina su
-  grabación. Descargarla exige el PIN de la sala, y los PIN erróneos cuentan para el mismo bloqueo
-  que al entrar. La descarga se puede reanudar.
+  termina (un día por defecto); la grabación siguiente la sustituye. Volver a activar la grabación en la misma reunión también
+  sustituye lo grabado antes: una reunión tiene una sola grabación y gana la posterior. Eliminar una
+  sala elimina su grabación. Descargarla exige el PIN de la sala, y los PIN erróneos cuentan para el
+  mismo bloqueo que al entrar. Una descarga interrumpida se puede reanudar mientras el enlace sea
+  válido (5 minutos); después hay que empezar la descarga de nuevo desde la sala o la página de inicio.
 - La grabación se puede eliminar antes desde la página de inicio: «Grabación de la última reunión» →
   «Eliminar» con el PIN de la sala y una confirmación. Una grabación en curso no se puede eliminar:
   primero hay que desactivarla.

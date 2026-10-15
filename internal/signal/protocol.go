@@ -43,7 +43,9 @@
 //     still there 60 s after the stop is closed; its upload is still accepted.
 //   - Upload answers: 204 stored (the room hears recording_ready), 400 no meeting header, 404
 //     recording off or no such room, 409 a later meeting's recording is stored, 413 larger than
-//     recording.max_size. An upload for the same meeting replaces the stored one.
+//     recording.max_size. An upload for the same meeting replaces the stored one, so a recorder
+//     that recorded nothing (no audio and no screen received, for example stopped right after
+//     joining) must not upload.
 package signal
 
 import (
@@ -209,7 +211,7 @@ type joinedMsg struct {
 	Type string          `json:"type"`
 	Self ParticipantInfo `json:"self"`
 	Room roomInfo        `json:"room"`
-	// Meeting is set for a recorder only: the start of the meeting, RFC 3339 (ms).
+	// Meeting is set for a recorder only: the start of the meeting, RFC 3339 with fractional seconds (RFC3339Nano).
 	Meeting string `json:"meeting,omitempty"`
 }
 
