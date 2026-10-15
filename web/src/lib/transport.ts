@@ -1,6 +1,6 @@
 // Choosing the media transport for participants whose UDP path to the server is unreliable.
 
-type Store = Pick<Storage, 'getItem' | 'setItem'>;
+type Store = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
 const KEY = 'kunveno.tcpUntil';
 const REMEMBER_MS = 7 * 24 * 3600_000;
@@ -16,6 +16,11 @@ export function prefersTcp(store: Store, now = Date.now()): boolean {
 // first join of every morning lost ~40 s on the broken UDP path.
 export function rememberTcp(store: Store, now = Date.now()): void {
   store.setItem(KEY, String(now + REMEMBER_MS));
+}
+
+// forgetTcp drops the remembered failure, so the next join tries UDP again.
+export function forgetTcp(store: Store): void {
+  store.removeItem(KEY);
 }
 
 // watchConnection turns peer connection states into a single failure report: at once on

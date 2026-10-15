@@ -98,3 +98,8 @@ without it):
     same answer comes right after a switch-off while the Notes participant is still leaving). Deleting the notes of a
     meeting still in progress (notes switched off) and switching notes on again starts a fresh file
     holding only the new phrases.
+38. Backup channel: in devtools, run `localStorage['kunveno.tcpUntil'] = Date.now() + 864e5` and
+    rejoin: the status reads "connected (backup channel)" with "try the fast one" next to it.
+    Press it: audio drops for a couple of seconds, the status reads "connected", the button is
+    gone and the key is removed. With UDP 7000 blocked by a firewall rule, pressing it brings the
+    browser back to the backup channel within about 10 s.

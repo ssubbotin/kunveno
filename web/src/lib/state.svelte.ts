@@ -49,6 +49,8 @@ export class RoomState {
   reactions = $state<Record<string, { emoji: string; seq: number }>>({});
   private reactionSeq = 0;
   transport = $state<'udp' | 'tcp' | ''>(''); // media path of this browser, once connected
+  // This browser joins over TCP because its UDP path failed before (see transport.ts).
+  tcpForced = $state(false);
 
   get isSharing(): boolean {
     return this.sharer !== '' && this.sharer === this.selfId;

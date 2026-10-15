@@ -6,7 +6,7 @@ import { watchLevel } from './levels';
 import { MIC_KEY, noiseFilterOn } from './micLevel';
 import { openMic, type MicInput } from './micInput';
 import { site } from './site.svelte';
-import { prefersTcp, rememberTcp } from './transport';
+import { forgetTcp, prefersTcp, rememberTcp } from './transport';
 import { Reconnector, newClientId } from './reconnect';
 import { forgetPin, rememberPin } from './pins';
 import { loadPrefs, savePrefs, splitStream } from './media';
@@ -53,12 +53,13 @@ export class Session {
   private background: BackgroundChoice = NONE;
   // Set when the stored image was gone at join: the camera stays off until another choice.
   private lost = false;
-  // Set after our media connection failed, and remembered for a day; joins then ask the server
+  // Set after our media connection failed, and remembered for a week; joins then ask the server
   // for ICE over TCP only, since a UDP path that broke once tends to break again (NAT or
-  // firewall on a gateway).
+  // firewall on a gateway). The participant can try UDP again (tryFastChannel).
   private preferTcp = prefersTcp(localStorage);
 
   constructor() {
+    this.state.tcpForced = this.preferTcp;
     this.useBackground(loadPrefs(localStorage).background ?? NONE);
   }
 
@@ -316,8 +317,10 @@ export class Session {
         (m) => sig.send(m),
         (pid, track) => this.onRemoteTrack(pid, track),
         () => {
+          // pc.close() fires no state change, so a closed connection's watch can still go off.
+          if (this.sig !== sig) return;
           this.useTcp();
-          if (this.sig === sig) this.restart();
+          this.restart();
         },
         2500,
         (t) => (this.state.transport = t),
@@ -424,7 +427,18 @@ export class Session {
 
   private useTcp(): void {
     this.preferTcp = true;
+    this.state.tcpForced = true;
     rememberTcp(localStorage);
+  }
+
+  // tryFastChannel rejoins over UDP after an earlier failure sent this browser to TCP. If UDP
+  // fails again, the connection watch falls back to TCP as before.
+  tryFastChannel(): void {
+    if (!this.preferTcp) return;
+    this.preferTcp = false;
+    this.state.tcpForced = false;
+    forgetTcp(localStorage);
+    this.restart();
   }
 
   // setCamera turns our camera on or off and remembers the choice for the next visit.

@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { prefersTcp, rememberTcp, transportFromStats, watchConnection } from './transport';
+import { forgetTcp, prefersTcp, rememberTcp, transportFromStats, watchConnection } from './transport';
 
 class MemoryStorage {
   private m = new Map<string, string>();
   getItem(k: string) { return this.m.get(k) ?? null; }
   setItem(k: string, v: string) { this.m.set(k, v); }
+  removeItem(k: string) { this.m.delete(k); }
 }
 
 describe('TCP preference', () => {
@@ -16,6 +17,13 @@ describe('TCP preference', () => {
     rememberTcp(s, now);
     expect(prefersTcp(s, now + 6 * day)).toBe(true);
     expect(prefersTcp(s, now + 8 * day)).toBe(false);
+  });
+
+  it('is off again once forgotten', () => {
+    const s = new MemoryStorage();
+    rememberTcp(s, 0);
+    forgetTcp(s);
+    expect(prefersTcp(s, 1)).toBe(false);
   });
 
   it('ignores garbage in storage', () => {

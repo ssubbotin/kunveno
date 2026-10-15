@@ -278,6 +278,9 @@
       title={rs.transport === 'tcp' ? t('status.backupHint') : ''}>
       <span class="dot" aria-hidden="true"></span>{statusText}
     </span>
+    {#if rs.status === 'connected' && rs.transport === 'tcp' && rs.tcpForced}
+      <button type="button" class="try-fast" title={t('status.tryFastHint')} onclick={() => session.tryFastChannel()}>{t('status.tryFast')}</button>
+    {/if}
     {#if site.notesEnabled && rs.notes}
       <span class="notes-mark" role="status"><span class="rec" aria-hidden="true"></span>{t('notes.recording')}</span>
     {/if}
@@ -424,6 +427,8 @@
   .status.connected.backup .dot { background: var(--caution); }
   .status.reconnecting .dot, .status.connecting .dot { background: var(--caution); }
   .status.error { color: #f1b5b3; }
+  .try-fast { background: none; border: 0; padding: 0; color: var(--muted); font: inherit; font-size: .9rem; text-decoration: underline; cursor: pointer; }
+  .try-fast:hover, .try-fast:focus-visible { color: inherit; }
   .status.error .dot { background: var(--danger); }
   .invite { margin-left: auto; }
   .invite :global(.btn) { padding: .45rem .9rem; }
