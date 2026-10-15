@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -36,6 +37,9 @@ func TestParseAppliesDefaults(t *testing.T) {
 	}
 	if cfg.Media.ShareMaxKbps != 2500 {
 		t.Errorf("share_max_kbps default = %d, want 2500", cfg.Media.ShareMaxKbps)
+	}
+	if cfg.Media.ReconnectGrace != DefaultReconnectGrace || DefaultReconnectGrace != 15 {
+		t.Errorf("reconnect_grace default = %d, want 15", cfg.Media.ReconnectGrace)
 	}
 	if cfg.Rooms[0].MaxParticipants != 15 {
 		t.Errorf("ops max = %d, want 15", cfg.Rooms[0].MaxParticipants)
@@ -344,6 +348,22 @@ func TestRecordingSettings(t *testing.T) {
 	for _, bad := range []string{"keep: 1w", "keep: \"\"", "max_size: 0GB", "max_size: 8gb", "max_size: 1.5GB", "max_size: 9999999GB"} {
 		if _, err := Parse([]byte("media:\n  advertise_ip: 10.0.0.1\nrecording:\n  " + bad + "\n")); err == nil {
 			t.Errorf("%q accepted", bad)
+		}
+	}
+}
+
+func TestReconnectGraceRange(t *testing.T) {
+	parse := func(v string) (*Config, error) {
+		return Parse([]byte("media: {advertise_ip: 10.8.0.1, reconnect_grace: " + v + "}\nrooms: [{slug: a, name: A, pin: \"1234\"}]\n"))
+	}
+	for _, v := range []string{"3", "30", "120"} {
+		if cfg, err := parse(v); err != nil || fmt.Sprint(cfg.Media.ReconnectGrace) != v {
+			t.Errorf("%s: err = %v", v, err)
+		}
+	}
+	for _, v := range []string{"1", "2", "121", "-5"} {
+		if _, err := parse(v); err == nil || !strings.Contains(err.Error(), "media.reconnect_grace") {
+			t.Errorf("%s: err = %v, want media.reconnect_grace", v, err)
 		}
 	}
 }

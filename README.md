@@ -287,6 +287,7 @@ through the manual checks in [docs/test-matrix.md](docs/test-matrix.md).
 | `media.advertise_ip` | the address browsers send media to (default `KUNVENO_ADVERTISE_IP` from `.env`, else the host's primary IPv4 address) |
 | `media.udp_port`, `media.tcp_port` | media ports (7000 by default; `tcp_port: -1` turns the TCP fallback off) |
 | `media.share_max_kbps` | bitrate cap for screen sharing |
+| `media.reconnect_grace` | seconds a client waits on a dropped media connection before it rejoins (3..120; 15 by default). Outages shorter than this only freeze the audio |
 | `ui.title` | title shown in the lobby and the browser tab |
 | `ui.reactions` | emoji participants can send as reactions (1..16; ten by default) |
 | `ui.noise_suppression` | `true` turns the client's noise filter (GTCRN) on for participants who have not chosen themselves (default `false`) |

@@ -298,6 +298,7 @@ repasa las comprobaciones manuales de [docs/test-matrix.md](docs/test-matrix.md)
 | `media.advertise_ip` | la dirección a la que los navegadores envían audio y vídeo (por defecto `KUNVENO_ADVERTISE_IP` de `.env`, si no la dirección IPv4 principal del equipo) |
 | `media.udp_port`, `media.tcp_port` | puertos de audio y vídeo (7000 por defecto; `tcp_port: -1` desactiva la reserva por TCP) |
 | `media.share_max_kbps` | tope de bitrate de la pantalla compartida |
+| `media.reconnect_grace` | segundos que el cliente espera a que se recupere una conexión de medios caída antes de volver a entrar (3..120; 15 por defecto). Los cortes más breves solo congelan el audio |
 | `ui.title` | título que se muestra en la página de inicio y en la pestaña del navegador |
 | `ui.reactions` | emojis que los participantes pueden enviar como reacciones (1..16; diez por defecto) |
 | `ui.noise_suppression` | `true` activa la supresión de ruido (GTCRN) del cliente para quien no haya elegido (por defecto `false`) |

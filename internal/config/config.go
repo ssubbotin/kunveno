@@ -54,6 +54,9 @@ type Config struct {
 		TCPPort      int    `yaml:"tcp_port"` // ICE-TCP fallback; -1 disables
 		AdvertiseIP  string `yaml:"advertise_ip"`
 		ShareMaxKbps int    `yaml:"share_max_kbps"`
+		// ReconnectGrace is how many seconds a client lets its media connection stay
+		// "disconnected" before it restarts the session; served in /api/info.
+		ReconnectGrace int `yaml:"reconnect_grace"`
 	} `yaml:"media"`
 	UI struct {
 		// Title names the service in the lobby and the browser tab, e.g. a company's name.
@@ -114,6 +117,7 @@ const (
 	DefaultRecordingMaxSize = "8GB"
 	DefaultUDPPort          = 7000
 	DefaultShareMaxKbps     = 2500
+	DefaultReconnectGrace   = 15
 	DefaultMaxParticipants  = 15
 	MaxParticipantsLimit    = 50
 )
@@ -221,6 +225,9 @@ func (c *Config) applyDefaults() {
 	if c.Media.ShareMaxKbps == 0 {
 		c.Media.ShareMaxKbps = DefaultShareMaxKbps
 	}
+	if c.Media.ReconnectGrace == 0 {
+		c.Media.ReconnectGrace = DefaultReconnectGrace
+	}
 	for i := range c.Rooms {
 		if p := c.Rooms[i].Player; p != nil && strings.TrimSpace(p.Name) == "" {
 			if p.URL != "" {
@@ -258,6 +265,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Media.ShareMaxKbps < 200 || c.Media.ShareMaxKbps > 20000 {
 		errs = append(errs, fmt.Errorf("media.share_max_kbps %d out of range 200..20000", c.Media.ShareMaxKbps))
+	}
+	if c.Media.ReconnectGrace < 3 || c.Media.ReconnectGrace > 120 {
+		errs = append(errs, fmt.Errorf("media.reconnect_grace %d out of range 3..120", c.Media.ReconnectGrace))
 	}
 	if c.Notes.Keep != nil {
 		if _, err := notes.ParseKeep(*c.Notes.Keep); err != nil {
