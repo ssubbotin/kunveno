@@ -1959,6 +1959,53 @@
               "mode": "multi"
             }
           }
+        },
+        {
+          "id": 41,
+          "type": "timeseries",
+          "title": "Ошибки по этапам",
+          "description": "Ошибки дополнения за последний час по этапам работы. Без дополнения kunveno-recorder данных нет.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 99,
+            "w": 12,
+            "h": 8
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "expr": "sum by (stage) (increase(kunveno_recorder_errors_total[1h]))",
+              "legendFormat": "{{stage}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "min": 0,
+              "custom": {
+                "lineWidth": 2,
+                "fillOpacity": 10
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          }
         }
       ],
       "description": "Строка заполняется, только если установлено дополнение kunveno-recorder."

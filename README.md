@@ -206,8 +206,8 @@ meeting", with the room PIN.
   the room PIN, and wrong PINs count toward the same block as joins. The download can be resumed.
 - The recording can be deleted earlier from the lobby: "Recording of the last meeting" → "Delete" with the room
   PIN, then a confirmation. A recording in progress cannot be deleted: switch it off first.
-- A file larger than `recording.max_size` (8 GB by default) is refused by the server and lost, so
-  size the limit for the longest meeting and keep free disk space for it.
+- A file larger than `recording.max_size` (8 GB by default) is refused by the server and stays in the
+  add-on's volume, so size the limit for the longest meeting and keep free disk space for it.
 
 ## How it works
 

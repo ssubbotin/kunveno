@@ -213,7 +213,8 @@ reunión», con el PIN de la sala.
 - La grabación se puede eliminar antes desde la página de inicio: «Grabación de la última reunión» →
   «Eliminar» con el PIN de la sala y una confirmación. Una grabación en curso no se puede eliminar:
   primero hay que desactivarla.
-- Un archivo mayor que `recording.max_size` (8 GB por defecto) lo rechaza el servidor y se pierde;
+- Un archivo mayor que `recording.max_size` (8 GB por defecto) lo rechaza el servidor y el archivo se queda
+  en el volumen del complemento;
   conviene fijar el límite según la reunión más larga y dejar espacio libre en el disco.
 
 ## Cómo funciona

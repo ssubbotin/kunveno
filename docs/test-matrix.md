@@ -122,7 +122,6 @@ Meeting recording (with the `kunveno-recorder` add-on installed and `recording.e
 46. Restarting the server during a recording leaves no broken file: after the restart the lobby
     offers no half-written recording, and the data directory has no `*.tmp` files.
 47. Deleting a room deletes its recording.
-
 48. Backup channel: in devtools, run `localStorage['kunveno.tcpUntil'] = Date.now() + 864e5` and
     rejoin: the status reads "connected (backup channel)" with "try the fast one" next to it.
     Press it: audio drops for a couple of seconds, the status reads "connected", the button is
