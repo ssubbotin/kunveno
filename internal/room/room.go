@@ -5,6 +5,7 @@ package room
 import (
 	"crypto/subtle"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 )
@@ -55,6 +56,9 @@ type Room struct {
 	notes     bool
 	recording bool
 	meeting   time.Time        // start of the current meeting, or of the last one
+	people    map[string]bool  // trimmed names of the people who joined the current meeting
+	last      Summary          // the most recently ended meeting
+	hasLast   bool             // some meeting has ended
 	now       func() time.Time // time.Now; tests replace it
 }
 
@@ -130,6 +134,10 @@ func (r *Room) add(p *Participant) error {
 	}
 	if !p.Bot && !r.hasPeopleLocked() {
 		r.meeting = r.now() // the first person in a room without people starts a meeting
+		r.people = map[string]bool{}
+	}
+	if !p.Bot {
+		r.people[strings.TrimSpace(p.Name)] = true // a person who reconnects counts once
 	}
 	r.members[p.ID] = p
 	r.order = append(r.order, p.ID)
@@ -184,12 +192,30 @@ func (r *Room) Meeting() (start time.Time, active bool) {
 	return r.meeting, r.hasPeopleLocked()
 }
 
+// Summary describes an ended meeting: its start and end and how many people took part (people
+// who joined under the same name count once; bots never count).
+type Summary struct {
+	Start, End time.Time
+	People     int
+}
+
+// LastMeeting returns the summary of the most recently ended meeting; false before any ended.
+func (r *Room) LastMeeting() (Summary, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.last, r.hasLast
+}
+
 // Leave removes id. It reports whether id held the share lock, which is now released.
 func (r *Room) Leave(id string) (releasedShare bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.members[id]; !ok {
+	p, ok := r.members[id]
+	if !ok {
 		return false
+	}
+	if !p.Bot {
+		defer r.endMeetingLocked()
 	}
 	delete(r.members, id)
 	for i, o := range r.order {
@@ -208,6 +234,15 @@ func (r *Room) Leave(id string) (releasedShare bool) {
 		return true
 	}
 	return false
+}
+
+// endMeetingLocked records the meeting's summary once its last person has left.
+func (r *Room) endMeetingLocked() {
+	if r.hasPeopleLocked() {
+		return
+	}
+	r.last = Summary{Start: r.meeting, End: r.now(), People: len(r.people)}
+	r.hasLast = true
 }
 
 func (r *Room) hasPeopleLocked() bool {
