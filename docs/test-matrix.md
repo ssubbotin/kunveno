@@ -13,7 +13,7 @@ pull request.
 6. While sharing, another participant's Share button is disabled.
 7. Stop sharing from the app button and from the browser's own bar: the view clears for others.
 8. Close the tab while sharing: others see the sharer gone and the share cleared within 2 s.
-9. Disable the network for 5 s: the status shows reconnecting, then connected, and audio resumes.
+9. Disable the network for 5 s: audio freezes and then resumes without a new join (media.reconnect_grace, 15 s by default). Disable it for 30 s: the status shows reconnecting, then connected, and the server log has a `rejoin` line with the reason.
 10. The 16th participant gets "The room is full" (use `tools/loadgen -n 15`).
 11. 15 participants (14 from loadgen plus one browser) for 10 minutes: no audio dropouts; note the
     server's CPU.

@@ -1,6 +1,6 @@
 import { CAMERA_MAX_KBPS } from './media';
 import type { ClientMessage } from './protocol';
-import { transportFromStats, watchConnection } from './transport';
+import { transportFromStats, watchConnection, type FailReason } from './transport';
 
 export class Rtc {
   private readonly pc: RTCPeerConnection;
@@ -15,9 +15,10 @@ export class Rtc {
     private mic: MediaStreamTrack,
     private readonly send: (m: ClientMessage) => void,
     private readonly onTrack: (participantId: string, track: MediaStreamTrack) => void,
-    private readonly onFailed: () => void,
+    private readonly onFailed: (reason: FailReason) => void,
     private readonly shareMaxKbps = 2500,
     private readonly onTransport: (t: 'udp' | 'tcp' | '') => void = () => {},
+    graceMs?: number,
   ) {
     this.pc = new RTCPeerConnection({ iceServers: [] });
     this.pc.onicecandidate = (ev) => {
@@ -28,7 +29,7 @@ export class Rtc {
       const stream = ev.streams[0];
       this.onTrack(stream ? stream.id : '', ev.track);
     };
-    const watch = watchConnection(() => this.onFailed());
+    const watch = watchConnection((reason) => this.onFailed(reason), graceMs);
     watch(this.pc.connectionState); // "new": starts the window for the connection to come up
     this.pc.onconnectionstatechange = () => {
       watch(this.pc.connectionState);

@@ -87,6 +87,14 @@ listen on 127.0.0.1, and Grafana is served through 443 at `/grafana/`.
   participant whose connection drops to `disconnected` after a few seconds over UDP has a broken
   UDP path (NAT or firewall on a gateway); the browser falls back to TCP 7000 when UDP fails
   outright.
+- A page that drops its own session reports why in its next join. The server logs it at INFO as
+  `rejoin` (room, participant, name, reason, after in seconds, transport) and counts it in
+  `kunveno_client_restarts_total{reason}`. Reasons: `ws_closed` (signaling socket closed),
+  `media_disconnected` (the media connection stayed down past `media.reconnect_grace`, 15 s by
+  default), `media_failed`, `connect_timeout` (no media connection within 8 s), `media_error` (the
+  server reported `media_failed`), `rtc_error` (the browser could not create the peer connection).
+  Frequent `media_disconnected` from one participant points at a lossy path (VPN); raise
+  `media.reconnect_grace` if their outages last longer than the default.
 - Users join but hear and see nothing: the server advertises an address they cannot reach. Set
   `KUNVENO_ADVERTISE_IP` in `.env` to the address users actually use (the VPN one, for example)
   and run `docker compose up -d`; the `started` log line shows `advertise_ip`.

@@ -109,6 +109,13 @@ class FakePeerConnection {
     if (networkDown) throw new DOMException("Can't create RTCPeerConnections when the network is down", 'UnknownError');
   }
   close() {}
+  async getStats() {
+    return new Map([
+      ['T', { id: 'T', type: 'transport', selectedCandidatePairId: 'P' }],
+      ['P', { id: 'P', type: 'candidate-pair', localCandidateId: 'L' }],
+      ['L', { id: 'L', type: 'local-candidate', protocol: 'udp' }],
+    ]);
+  }
   // Enough of an offer/answer for the send slots to bind, so rtc.ready resolves.
   async setRemoteDescription() {}
   async createAnswer() {
@@ -326,6 +333,116 @@ describe('Session', () => {
     // A browser already on UDP has nothing to retry.
     s.tryFastChannel();
     expect(FakeSocket.all[2].closed).toBe(false);
+  });
+
+  // reconnects opens the next socket after the backoff and returns what its join carried.
+  async function nextJoin(index: number): Promise<Record<string, unknown>> {
+    await vi.advanceTimersByTimeAsync(10_000);
+    FakeSocket.all[index].open();
+    await vi.advanceTimersByTimeAsync(0);
+    return FakeSocket.all[index].sent[0] as Record<string, unknown>;
+  }
+
+  it('a first join carries no restart report', async () => {
+    await joined();
+    expect(FakeSocket.all[0].sent[0]).toMatchObject({ type: 'join' });
+    expect(FakeSocket.all[0].sent[0]).not.toHaveProperty('restart');
+  });
+
+  it('reports ws_closed with the session length and transport on the next join', async () => {
+    const s = await joined();
+    const pc = (s as unknown as { rtc: { pc: { connectionState: string; onconnectionstatechange: () => void } } }).rtc.pc;
+    pc.connectionState = 'connected';
+    pc.onconnectionstatechange();
+    await flush();
+    vi.useFakeTimers();
+    FakeSocket.all[0].close();
+    const j = await nextJoin(1);
+    expect(j.restart).toEqual({ reason: 'ws_closed', after: expect.any(Number), transport: 'udp' });
+  });
+
+  it('reports the reason the connection watch gives: disconnected, failed, connect_timeout', async () => {
+    for (const reason of ['media_disconnected', 'media_failed', 'connect_timeout']) {
+      FakeSocket.all = [];
+      const s = await joined();
+      vi.useFakeTimers();
+      (s as unknown as { rtc: { onFailed: (r: string) => void } }).rtc.onFailed(reason);
+      await vi.advanceTimersByTimeAsync(10_000);
+      FakeSocket.all[1].open();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(FakeSocket.all[1].sent[0], reason).toMatchObject({ type: 'join', restart: { reason } });
+      s.leave();
+      vi.useRealTimers();
+    }
+  });
+
+  it('reports media_error when the server sends media_failed, even though the socket closes after', async () => {
+    await joined();
+    vi.useFakeTimers();
+    FakeSocket.all[0].onmessage?.({ data: JSON.stringify({ type: 'error', code: 'media_failed', message: 'x' }) });
+    FakeSocket.all[0].close();
+    const j = await nextJoin(1);
+    expect(j.restart).toMatchObject({ reason: 'media_error' });
+  });
+
+  it('reports rtc_error when the peer connection cannot be created', async () => {
+    const s = new Session();
+    networkDown = true;
+    const joining = s.join('ops', '1234', 'Ann');
+    await flush();
+    vi.useFakeTimers();
+    FakeSocket.all[0].open();
+    await joining;
+    networkDown = false;
+    await vi.advanceTimersByTimeAsync(1000);
+    FakeSocket.all[1].open();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(FakeSocket.all[1].sent[0]).toMatchObject({ type: 'join', restart: { reason: 'rtc_error', after: 0 } });
+  });
+
+  it('a join after the person left carries no restart report', async () => {
+    const s = await joined();
+    vi.useFakeTimers();
+    FakeSocket.all[0].close();
+    s.leave();
+    FakeSocket.all = [];
+    const p = s.join('ops', '1234', 'Ann');
+    await vi.advanceTimersByTimeAsync(0);
+    FakeSocket.all[0].open();
+    await p;
+    expect(FakeSocket.all[0].sent[0]).toMatchObject({ type: 'join' });
+    expect(FakeSocket.all[0].sent[0]).not.toHaveProperty('restart');
+  });
+
+  it('the report is sent once: the join after it carries none', async () => {
+    await joined();
+    vi.useFakeTimers();
+    FakeSocket.all[0].close();
+    await nextJoin(1);
+    expect(FakeSocket.all[1].sent[0]).toHaveProperty('restart');
+    FakeSocket.all[1].onmessage?.({ data: JSON.stringify({ type: 'joined', self: { id: 'a', name: 'Ann' }, room: { slug: 'ops', name: 'Ops' } }) });
+    FakeSocket.all[1].close();
+    const j = await nextJoin(2);
+    expect(j.restart).toMatchObject({ reason: 'ws_closed' });
+  });
+
+  it('uses the configured grace for the peer connection watch', async () => {
+    site.reconnectGrace = 30;
+    try {
+      const s = await joined();
+      vi.useFakeTimers();
+      const pc = (s as unknown as { rtc: { pc: { connectionState: string; onconnectionstatechange: () => void } } }).rtc.pc;
+      pc.connectionState = 'connected';
+      pc.onconnectionstatechange();
+      pc.connectionState = 'disconnected';
+      pc.onconnectionstatechange();
+      await vi.advanceTimersByTimeAsync(29_000);
+      expect(FakeSocket.all[0].closed).toBe(false);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(FakeSocket.all[0].closed).toBe(true);
+    } finally {
+      site.reconnectGrace = 15;
+    }
   });
 
   it('starts forced to TCP when a failure is remembered', () => {
