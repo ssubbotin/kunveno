@@ -44,10 +44,10 @@ func receives(to, from *Member, kind media.Kind) bool {
 	return true
 }
 
-// SwitchNotes turns the room's notes on or off at a person's request. Helpers cannot switch them,
-// and with notes.enabled off the switch does not exist.
+// SwitchNotes turns the room's notes on or off at a person's request. Helpers and guests cannot
+// switch them, and with notes.enabled off the switch does not exist.
 func (c *Conference) SwitchNotes(s *Member, on bool) {
-	if s.bot || c.notes == nil {
+	if s.bot || s.guest || c.notes == nil {
 		return
 	}
 	lr, _ := c.lookup(s.slug)

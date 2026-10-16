@@ -50,6 +50,9 @@ func (g *Gate) provider(typ string) Provider {
 
 func (g *Gate) Session(r *http.Request) (Identity, bool) { return g.Sessions.Read(r) }
 
+// CheckInvite finds the usable invitation of room with token; with Session it is signal.Access.
+func (g *Gate) CheckInvite(room, token string) (Invite, error) { return g.Invites.Check(room, token) }
+
 // SameOrigin reports whether the request comes from our own pages.
 func (g *Gate) SameOrigin(r *http.Request) bool { return r.Header.Get("Origin") == g.PublicURL }
 

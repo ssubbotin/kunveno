@@ -30,6 +30,7 @@ type Participant struct {
 	Camera  bool // the participant's camera is on
 	// DeclinesVideo: the participant declined other cameras; for metrics, not sent to clients.
 	DeclinesVideo bool
+	Guest         bool // joined by an invitation link, without a PIN
 }
 
 // Snapshot is the full public state of a room.
@@ -94,6 +95,11 @@ func (r *Room) Join(id, name, pin string) error {
 		return ErrBadPIN
 	}
 	return r.add(&Participant{ID: id, Name: name})
+}
+
+// JoinGuest admits a guest who came by an invitation link: no PIN, the room's capacity applies.
+func (r *Room) JoinGuest(id, name string) error {
+	return r.add(&Participant{ID: id, Name: name, Guest: true})
 }
 
 // Helper kinds that join rooms as bots.

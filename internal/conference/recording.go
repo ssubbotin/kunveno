@@ -15,10 +15,10 @@ const DefaultRecordingStopGrace = 60 * time.Second
 // the recorder may join, and the store knows which rooms are recording. Call before serving.
 func (c *Conference) SetRecording(store *recording.Store) { c.recording = store }
 
-// SwitchRecording turns the room's recording on or off at a person's request. Helpers cannot switch
-// it, and with recording.enabled off the switch does not exist.
+// SwitchRecording turns the room's recording on or off at a person's request. Helpers and guests
+// cannot switch it, and with recording.enabled off the switch does not exist.
 func (c *Conference) SwitchRecording(s *Member, on bool) {
-	if s.bot || c.recording == nil {
+	if s.bot || s.guest || c.recording == nil {
 		return
 	}
 	lr, _ := c.lookup(s.slug)

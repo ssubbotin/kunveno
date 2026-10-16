@@ -236,3 +236,15 @@ func TestRolesAreRoomBotKinds(t *testing.T) {
 		}
 	}
 }
+
+func TestJoinWithInviteNeedsNoPIN(t *testing.T) {
+	if _, err := ParseClient([]byte(`{"type":"join","room":"ops","invite":"abc","name":"G"}`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseClient([]byte(`{"type":"join","room":"ops","invite":"` + strings.Repeat("a", 200) + `","name":"G"}`)); err == nil {
+		t.Fatal("an overlong invite was accepted")
+	}
+	if _, err := ParseClient([]byte(`{"type":"join","room":"ops","invite":"abc","pin":"1234","name":"G"}`)); err == nil {
+		t.Fatal("invite and pin together were accepted")
+	}
+}

@@ -1,5 +1,14 @@
 // Package signal implements the WebSocket signaling protocol described in the spec.
 //
+// Sign-in (auth.enabled). With it on, a person's join needs the session cookie and the room's PIN;
+// the name comes from the account, not from the join. Without a session the join is refused with
+// auth_required. A guest joins with {"type":"join","room":slug,"invite":<token from the link>,
+// "name":...} and no PIN; an unknown, expired or revoked invitation, or one for another room, is
+// refused with bad_invite, which counts toward the same per-address limit as bad_pin. Guests are
+// marked "guest":true in the participants list and cannot switch the echo, notes or recording. A
+// revoked invitation disconnects its guests. With sign-in off a join with "invite" is a
+// bad_message. Helpers (a role, over loopback) join as before either way.
+//
 // The notes bot contract. The meeting-notes bot (the commercial kunveno-notes add-on, built in
 // another repository) depends on this exact protocol; treat it as a stable interface and change
 // it only together with the bot:
@@ -75,6 +84,10 @@ const (
 	CodeMediaFailed = "media_failed"
 	// CodeTooManyAttempts: too many wrong PINs from this address; retry_after says when to try again.
 	CodeTooManyAttempts = "too_many_attempts"
+	// CodeAuthRequired: sign-in is on and the join came without a session.
+	CodeAuthRequired = "auth_required"
+	// CodeBadInvite: the invitation is unknown, for another room, expired or revoked.
+	CodeBadInvite = "bad_invite"
 )
 
 const (
@@ -159,6 +172,8 @@ type ClientMessage struct {
 	Action    string           `json:"action,omitempty"`
 	Role      string           `json:"role,omitempty"`  // "echo" for the local echo helper
 	Media     string           `json:"media,omitempty"` // "tcp" after a failed UDP path
+	// Invite is a guest's invitation token from the link (sign-in on); it replaces the PIN.
+	Invite string `json:"invite,omitempty"`
 	// Restart is sent by a page that rejoins after its own connection dropped (never on a plain
 	// first join or after the person left; also after a failed first attempt): {"restart":{"reason":"media_disconnected","after":27,
 	// "transport":"udp"}}. reason is one of RestartReasons (ws_closed: the signaling socket closed;
@@ -204,7 +219,9 @@ func ParseClient(data []byte) (ClientMessage, error) {
 			return m, fmt.Errorf("%w: join.media", ErrBadMessage)
 		case m.Role != "" && m.Role != RoleEcho && m.Role != RolePlayer && m.Role != RoleCamera && m.Role != RoleNotes && m.Role != RoleRecorder:
 			return m, fmt.Errorf("%w: join.role", ErrBadMessage)
-		case m.Role == "" && (len(m.PIN) < 1 || len(m.PIN) > 16):
+		case m.Invite != "" && (m.Role != "" || m.PIN != "" || len(m.Invite) > 64):
+			return m, fmt.Errorf("%w: join.invite", ErrBadMessage)
+		case m.Role == "" && m.Invite == "" && (len(m.PIN) < 1 || len(m.PIN) > 16):
 			return m, fmt.Errorf("%w: join.pin", ErrBadMessage)
 		case m.Name == "" || utf8.RuneCountInString(m.Name) > MaxNameLen:
 			return m, fmt.Errorf("%w: join.name", ErrBadMessage)
@@ -262,6 +279,7 @@ type ParticipantInfo struct {
 	// Quality is the connection grade: "good", "fair" or "poor"; absent until measured.
 	Quality string `json:"quality,omitempty"`
 	Camera  bool   `json:"camera,omitempty"`
+	Guest   bool   `json:"guest,omitempty"` // joined by an invitation link
 }
 
 type roomInfo struct {
