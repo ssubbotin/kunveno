@@ -73,7 +73,7 @@
   }
 
   onMount(() => {
-    void loadInfo();
+    if (!site.loaded) void loadInfo(); // App loaded it at start; again only if that failed
     void loadRooms(fromLink?.room).then(() => {
       if (fromLink && room !== fromLink.room) linkRoomMissing = true;
     });

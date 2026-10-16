@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { DEFAULT_REACTIONS, infoFrom } from './site.svelte';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_REACTIONS, STARTUP_TIMEOUT_MS, infoFrom, loadInfo, requireSignIn, site } from './site.svelte';
 
 const off = { enabled: false, providers: [] };
 
@@ -72,5 +72,66 @@ describe('infoFrom auth', () => {
       { type: 'b', label: 'x'.repeat(41) }, { type: 'c', label: 'x'.repeat(40) }, null, 'yandex'];
     expect(infoFrom({ auth: { enabled: true, providers: mixed } }).auth.providers).toEqual([{ type: 'yandex', label: 'Yandex 360' }, { type: 'c', label: 'x'.repeat(40) }]);
     expect(infoFrom({ auth: { enabled: true, providers: 'yandex' } }).auth).toEqual({ enabled: true, providers: [] });
+  });
+});
+
+describe('loading the details', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    site.auth = off;
+    site.loaded = false;
+  });
+
+  // A server that never answers, but gives up when the request is aborted.
+  function hanging() {
+    vi.stubGlobal('fetch', vi.fn((_url: string, init?: RequestInit) => new Promise((_res, rej) => {
+      init?.signal?.addEventListener('abort', () => rej(new DOMException('aborted', 'AbortError')));
+    })));
+  }
+  const answer = (body: unknown, status = 200) => vi.fn(async () => new Response(JSON.stringify(body), { status }));
+
+  it('gives up on a server that does not answer and keeps the defaults', async () => {
+    vi.useFakeTimers();
+    hanging();
+    let done = false;
+    void loadInfo().then(() => (done = true));
+    await vi.advanceTimersByTimeAsync(STARTUP_TIMEOUT_MS - 1);
+    expect(done).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(done).toBe(true);
+    expect(site.loaded).toBe(false);
+    expect(site.auth).toEqual(off);
+  });
+
+  it('remembers that the details arrived', async () => {
+    vi.stubGlobal('fetch', answer({ title: 'x', auth: { enabled: true, providers: [{ type: 'yandex', label: 'Yandex 360' }] } }));
+    await loadInfo();
+    expect(site.loaded).toBe(true);
+    expect(site.auth.enabled).toBe(true);
+  });
+
+  it('a refusal for want of a session turns sign-in on, keeping known providers', async () => {
+    const f = answer({});
+    vi.stubGlobal('fetch', f);
+    site.auth = { enabled: false, providers: [{ type: 'yandex', label: 'Yandex 360' }] };
+    await requireSignIn();
+    expect(site.auth).toEqual({ enabled: true, providers: [{ type: 'yandex', label: 'Yandex 360' }] });
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it('fetches the providers again when none are known', async () => {
+    vi.stubGlobal('fetch', answer({ auth: { enabled: true, providers: [{ type: 'yandex', label: 'Yandex 360' }] } }));
+    await requireSignIn();
+    expect(site.auth).toEqual({ enabled: true, providers: [{ type: 'yandex', label: 'Yandex 360' }] });
+  });
+
+  it('stays on with no providers when the details still cannot be read, or say sign-in is off', async () => {
+    vi.stubGlobal('fetch', answer('bad gateway', 502));
+    await requireSignIn();
+    expect(site.auth).toEqual({ enabled: true, providers: [] });
+    vi.stubGlobal('fetch', answer({ auth: { enabled: false } }));
+    await requireSignIn();
+    expect(site.auth).toEqual({ enabled: true, providers: [] });
   });
 });

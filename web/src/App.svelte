@@ -9,10 +9,11 @@
   import { errorText } from './lib/i18n/errors';
   import { INVITE_KEY, fetchMe, guestFrom, restoreHash, type Me } from './lib/auth';
   import { parseJoinLink } from './lib/link';
-  import { loadInfo, site } from './lib/site.svelte';
+  import { loadInfo, requireSignIn, site } from './lib/site.svelte';
 
   // A room link's fragment comes back after the sign-in redirect, before anything reads it.
   restoreHash(location, sessionStorage, (u) => history.replaceState(null, '', u));
+  const startLink = parseJoinLink(location.pathname, location.hash);
 
   const session = new Session();
   const rs = session.state;
@@ -29,12 +30,20 @@
     void (async () => {
       await loadInfo();
       if (site.auth.enabled) {
-        guest = guestFrom(parseJoinLink(location.pathname, location.hash), sessionStorage);
+        guest = guestFrom(startLink, sessionStorage);
         if (!guest) me = await fetchMe();
       }
       ready = true;
     })();
   });
+
+  // A 401 auth_required means sign-in is on, even when /api/info failed at start and the defaults
+  // said otherwise: the sign-in screen (or the guest page of an invitation link) comes up.
+  function authRequired() {
+    me = null;
+    void requireSignIn();
+    if (!guest && rs.status === 'idle') guest = guestFrom(startLink, sessionStorage);
+  }
 
   const inRoom = $derived(!(rs.status === 'idle' || (rs.status === 'error' && rs.selfId === '')));
   const joinError = $derived(rs.errorCode ? errorText(i18n.lang, rs.errorCode, { retryAfter: rs.retryAfter, detail: rs.errorMessage }) : '');
@@ -51,8 +60,8 @@
         guestExpired = true;
         sessionStorage.removeItem(INVITE_KEY);
       } else {
-        me = null;
         signInCode = code;
+        authRequired();
       }
     });
   });
@@ -83,5 +92,5 @@
 {:else if site.auth.enabled && !me}
   <SignIn notice={signInCode ? errorText(i18n.lang, signInCode, {}) : ''} />
 {:else}
-  <Lobby onJoin={join} error={joinError} {me} onAuthRequired={() => (me = null)} />
+  <Lobby onJoin={join} error={joinError} {me} onAuthRequired={authRequired} />
 {/if}

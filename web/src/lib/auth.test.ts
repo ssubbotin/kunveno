@@ -71,3 +71,20 @@ describe('auth', () => {
     expect(guestFrom(null, s)).toBeNull();
   });
 });
+
+describe('fetchMe at start-up', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+  it('gives up on a server that does not answer', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn((_url: string, init?: RequestInit) => new Promise((_res, rej) => {
+      init?.signal?.addEventListener('abort', () => rej(new DOMException('aborted', 'AbortError')));
+    })));
+    let me: unknown = 'pending';
+    void fetchMe().then((v) => (me = v));
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(me).toBeNull();
+  });
+});

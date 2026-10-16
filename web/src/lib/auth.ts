@@ -1,6 +1,7 @@
 // Sign-in (auth.enabled on the server): who is signed in, the way to the provider and back, and the
 // guest's invitation. With sign-in off none of this is used.
 import type { JoinLink } from './link';
+import { STARTUP_TIMEOUT_MS, timeoutSignal } from './site.svelte';
 
 export type Me = { name: string; login: string; provider: string };
 
@@ -14,10 +15,10 @@ const ROOM_KEY = 'kunveno.room';
 const MAX_NAME = 32;
 
 // fetchMe returns the signed-in person; null without a session (401), on a malformed answer or
-// when the server cannot be reached.
+// when the server cannot be reached or does not answer within STARTUP_TIMEOUT_MS.
 export async function fetchMe(): Promise<Me | null> {
   try {
-    const res = await fetch('/auth/me', { cache: 'no-store' });
+    const res = await fetch('/auth/me', { cache: 'no-store', signal: timeoutSignal(STARTUP_TIMEOUT_MS) });
     if (!res.ok) return null;
     const v = (await res.json()) as Partial<Record<keyof Me, unknown>> | null;
     if (typeof v?.name !== 'string' || typeof v.login !== 'string' || typeof v.provider !== 'string') return null;

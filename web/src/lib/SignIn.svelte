@@ -4,10 +4,21 @@
   import { signInURL } from './auth';
   import { i18n, setLang, t } from './i18n/i18n.svelte';
   import { LANGS, LANG_NAMES, type Lang } from './i18n/messages';
-  import { site } from './site.svelte';
+  import { requireSignIn, site } from './site.svelte';
 
   // notice: why the person is here again (a join refused for want of a session).
   let { notice = '' }: { notice?: string } = $props();
+
+  // No providers known: /api/info could not be read; Retry asks again.
+  let retrying = $state(false);
+  async function retry() {
+    retrying = true;
+    try {
+      await requireSignIn();
+    } finally {
+      retrying = false;
+    }
+  }
 
   function go(type: string) {
     location.href = signInURL(type, location, sessionStorage);
@@ -27,7 +38,8 @@
     <h1 id="signin-title">{t('auth.signInTitle')}</h1>
     {#if notice}<p class="error" role="alert">{notice}</p>{/if}
     {#if site.auth.providers.length === 0}
-      <p class="error">{t('auth.unavailable')}</p>
+      <p class="error" role="alert">{t('auth.unavailable')}</p>
+      <button class="btn wide" type="button" disabled={retrying} onclick={retry}>{t('auth.retry')}</button>
     {:else}
       <p class="hint">{t('auth.signInHint')}</p>
       <div class="providers">

@@ -62,12 +62,26 @@ class Site {
   reconnectGrace = $state(DEFAULT_RECONNECT_GRACE);
   // Sign-in (auth.enabled): off keeps the lobby open to everyone, as without it.
   auth = $state<Auth>({ enabled: false, providers: [] });
+  // The details arrived at least once; until then the defaults are guesses.
+  loaded = $state(false);
 }
 
 export const site = new Site();
 
-// loadInfo fetches the details and names the browser tab after the title; on failure the
-// defaults stay and the lobby still works. Calls made while one is under way share it.
+// How long the page waits at start-up for /api/info and /auth/me before going on with what it has,
+// so a server that hangs never leaves the page empty.
+export const STARTUP_TIMEOUT_MS = 3000;
+
+// timeoutSignal aborts a request after ms; a plain timer, so tests can drive it.
+export function timeoutSignal(ms: number): AbortSignal {
+  const c = new AbortController();
+  setTimeout(() => c.abort(new DOMException('timed out', 'TimeoutError')), ms);
+  return c.signal;
+}
+
+// loadInfo fetches the details and names the browser tab after the title; on failure or after
+// STARTUP_TIMEOUT_MS the defaults stay and the lobby still works. Calls made while one is under
+// way share it.
 let loading: Promise<void> | null = null;
 export function loadInfo(): Promise<void> {
   loading ??= fetchInfo().finally(() => (loading = null));
@@ -76,7 +90,9 @@ export function loadInfo(): Promise<void> {
 
 async function fetchInfo(): Promise<void> {
   try {
-    const info = infoFrom(await (await fetch('/api/info')).json());
+    const res = await fetch('/api/info', { signal: timeoutSignal(STARTUP_TIMEOUT_MS) });
+    if (!res.ok) throw new Error(`info ${res.status}`);
+    const info = infoFrom(await res.json());
     site.title = info.title;
     site.reactions = info.reactions;
     site.noiseSuppression = info.noiseSuppression;
@@ -85,8 +101,20 @@ async function fetchInfo(): Promise<void> {
     site.recordingEnabled = info.recordingEnabled;
     site.reconnectGrace = info.reconnectGrace;
     site.auth = info.auth;
+    site.loaded = true;
   } catch {
     // keep the defaults
   }
-  document.title = site.title;
+  if (typeof document !== 'undefined') document.title = site.title;
+}
+
+// requireSignIn follows a refusal for want of a session (401 auth_required from the API or the
+// WebSocket): sign-in is on whatever the details said or failed to say. Without known providers
+// the details are fetched again for their buttons; sign-in stays on even if they still cannot be
+// read, so the sign-in screen shows its unavailable state with a retry.
+export async function requireSignIn(): Promise<void> {
+  site.auth = { enabled: true, providers: site.auth.providers };
+  if (site.auth.providers.length > 0) return;
+  await loadInfo();
+  site.auth = { enabled: true, providers: site.auth.providers };
 }
