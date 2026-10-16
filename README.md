@@ -54,20 +54,19 @@ You need a Linux server with Docker that your users can reach over the network.
 ```bash
 curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz
 cd kunveno
-sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && sudo chmod 640 config.yaml
 ```
 
-The services run as user 10001, never as root: the last line gives them `data/` and lets them read
-`config.yaml` (it stays yours to edit). Files you add to `media/` and `backgrounds/` must be readable
-by others (`chmod 644`), as files normally are.
+The services run as user 10001, never as root. What they write (rooms created in the lobby, notes,
+recordings) lives in the Docker volume `kunveno_data`; the files here only need to be readable, as
+files normally are (`config.yaml`, and what you add to `media/` and `backgrounds/`).
 
 The directory is the whole installation:
 
 ```
 docker-compose.yml
+Makefile        make up (start or update), make down (stop), make pull
 .env            settings: fill in two lines, the rest is optional
 config.yaml     rooms, PINs and the title; the defaults work as they are
-data/           rooms created in the lobby, the player's cache
 certs/          TLS certificate: self-signed on first start, or your own
 backgrounds/    images offered as virtual backgrounds
 media/          video files for rooms with a player
@@ -84,7 +83,7 @@ GRAFANA_ADMIN_PASSWORD=...      # any strong password; generate one with: openss
 **3. Start:**
 
 ```bash
-docker compose pull && docker compose up -d
+make up
 ```
 
 **4. Open `https://<PUBLIC_HOST>/`** and join a room with its PIN from `config.yaml`. The
@@ -101,27 +100,35 @@ video).
 | Read the logs | `journalctl -t kunveno-server -f` |
 | Monitoring | `https://<PUBLIC_HOST>/grafana/`, user `admin`, the password from `.env`. On a server that faces the internet set `GRAFANA_WALL_PASSWORD` in `.env`: the browser then asks for it (user `GRAFANA_WALL_USER`, default `admin`) before Grafana's login |
 | Use your own certificate | replace `certs/fullchain.pem` and `certs/privkey.pem`, then `docker compose restart web` |
-| Back up | copy the directory (`data/` belongs to user 10001, so with `sudo`) |
+| Stop | `make down`: the containers go, the volumes (rooms, notes, recordings) stay. `docker compose down -v` would delete them |
+| Back up | copy the directory, and the data volume: `docker run --rm -v kunveno_data:/d -v "$PWD":/b alpine tar czf /b/data.tgz -C /d .` |
 
 **Upgrade** to a new release, in the directory:
 
 ```bash
-docker compose pull && docker compose up -d
+make up
 ```
 
 The stack runs the `latest` images, so this fetches the new release and restarts only the
 containers whose image changed; `.env`, `config.yaml` and the data stay. To stay on one release,
-set `KUNVENO_VERSION=0.2.4` (for example) in `.env`. Coming from a release before 0.4.5 (when the
-services ran as root), run once before starting: `sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && sudo chmod 640 config.yaml`.
+set `KUNVENO_VERSION=0.2.4` (for example) in `.env`.
+
+**Coming from a release before 0.4.5** (the services ran as root and kept their data in `./data`):
+take the new stack files, start, and import the old data once:
+
+```bash
+curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz --strip-components=1 kunveno/docker-compose.yml kunveno/Makefile
+make up && make import-data && make up
+```
 
 ### If something does not work
 
 - **Users join but hear and see nothing:** the server guessed the wrong address for media. Add
   `KUNVENO_ADVERTISE_IP=<the address users reach, e.g. the VPN one>` to `.env` and run
-  `docker compose up -d`.
+  `make up`.
 - **Ports 80 or 443 are taken:** set `HTTP_PORT` and `HTTPS_PORT` in `.env`.
-- **The server stops with "is not writable by this service" or "permission denied" on `config.yaml`:**
-  run `sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && sudo chmod 640 config.yaml` in the directory and start again.
+- **The server stops with "permission denied" on `config.yaml`:** it runs as user 10001 and must be
+  able to read the file: `chmod 644 config.yaml`.
 - **The server stops with "config.yaml is a directory":** the file went missing and Docker created
   a directory in its place; remove the directory, restore `config.yaml` from the archive and start
   again.
@@ -306,10 +313,10 @@ through the manual checks in [docs/test-matrix.md](docs/test-matrix.md).
 | `notes.enabled` | `true` offers meeting notes in rooms; needs the `kunveno-notes` add-on (default `false`, which hides every notes control) |
 | `notes.keep` | how long notes stay after they end: a whole number and `m`, `h` or `d` (`90m`, `12h`, `1d`, `2d`; default `1d`) |
 | `notes.live` | `true` shows phrases in the room as they are recognised, for checking the recognition (default `false`) |
-| `notes.dir` | where the notes are kept (`/var/lib/kunveno/notes`, which is `data/notes` in the stack) |
+| `notes.dir` | where the notes are kept (`/var/lib/kunveno/notes`, in the stack's data volume) |
 | `recording.enabled` | `true` offers meeting recording in rooms; needs the `kunveno-recorder` add-on (default `false`, which hides every recording control) |
 | `recording.keep` | how long a recording stays after it ends: a whole number and `m`, `h` or `d` (`90m`, `12h`, `1d`, `2d`; default `1d`) |
-| `recording.dir` | where recordings are kept (`/var/lib/kunveno/recordings`, which is `data/recordings` in the stack) |
+| `recording.dir` | where recordings are kept (`/var/lib/kunveno/recordings`, in the stack's data volume) |
 | `recording.max_size` | the largest recording the server accepts: a whole number and `MB` or `GB` (`500MB`, `8GB`; default `8GB`) |
 
 `.env` next to the compose file sets the release (`KUNVENO_VERSION`), ports, the public host name
@@ -322,8 +329,8 @@ for Grafana and its admin password.
   its media path (UDP or TCP), quality changes and wrong PINs.
 - Metrics: `/metrics` on the server (loopback only); Grafana at `https://<host>/grafana/` with the
   provisioned "kunveno" dashboard.
-- Data to keep on the host, all next to `docker-compose.yml`: `config.yaml`, `.env`, `data/` (rooms
-  created in the lobby, the player's cache), `certs/` and `media/`.
+- Data to keep: next to `docker-compose.yml` `config.yaml`, `.env`, `certs/` and `media/`; and the
+  Docker volume `kunveno_data` (rooms created in the lobby, notes, recordings, the player's cache).
 - An RTSP camera must be reachable from the host; the player pulls it over TCP. A room whose feed is
   down keeps the player as a participant without video until the feed returns.
 

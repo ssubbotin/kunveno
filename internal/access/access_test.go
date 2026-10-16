@@ -20,8 +20,8 @@ func TestWritableCreatesAndAcceptsAnOwnDirectory(t *testing.T) {
 	}
 }
 
-// A directory the service cannot write (Docker created it as root) is named with the fix: the
-// stack's ./data, and the directory itself for installs without the stack (deb).
+// A directory the service cannot write (a bind mount Docker created as root, a deb install) is named
+// with the fix.
 func TestWritableNamesTheFix(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("root writes anywhere")
@@ -34,7 +34,7 @@ func TestWritableNamesTheFix(t *testing.T) {
 	if err == nil {
 		t.Fatal("a read-only directory passed")
 	}
-	for _, want := range []string{dir, "sudo chown -R " + me() + " data", "sudo chown -R " + me() + " " + dir} {
+	for _, want := range []string{dir, "sudo chown -R " + me() + " " + dir} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not name %q", err, want)
 		}

@@ -1,7 +1,7 @@
 #!/bin/sh
 # check-user.sh IMAGE: the server and player images run as user 10001, never as root, and need no
-# capabilities. The bind-mounted ./data must belong to 10001; when it does not, the service stops at
-# once with the command that fixes it instead of failing later. Run from the repository root.
+# capabilities. Its data directory must belong to 10001 (the stack's volume does); a bind mount that
+# does not stops the service at once with the command that fixes it. Run from the repository root.
 set -eu
 img=$1
 case $img in
@@ -43,5 +43,5 @@ echo "$out" | grep -q "\"msg\":\"$name started\"" || fail "data owned by 10001: 
 
 # ./data owned by root (as Docker creates a missing directory): it stops and names the fix.
 out=$(serve "$dir/root")
-echo "$out" | grep -q 'sudo chown -R 10001:10001 data' || fail "data owned by root: no hint to chown: $out"
+echo "$out" | grep -q 'sudo chown -R 10001:10001 /var/lib/kunveno' || fail "data owned by root: no hint to chown: $out"
 echo "check-user: $img runs as 10001 and names the fix for a root-owned ./data"

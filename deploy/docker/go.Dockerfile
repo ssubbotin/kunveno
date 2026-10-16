@@ -15,10 +15,10 @@ ARG VERSION=dev
 # -trimpath drops build paths, -s -w drops the symbol table and DWARF debug data.
 RUN CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=${VERSION}" -o /out/app ./cmd/${APP}
 
-# Every service runs as user 10001, never as root. The stack's bind-mounted ./data and config.yaml
-# must be readable (data: writable) by it; the server names the fix when they are not.
+# Every service runs as user 10001, never as root. /var/lib/kunveno belongs to it, so the stack's
+# data volume, which Docker fills from the image when it creates it, does too.
 FROM alpine:3.22 AS base
-RUN adduser -D -H -u 10001 kunveno
+RUN adduser -D -H -u 10001 kunveno && mkdir -p /var/lib/kunveno && chown 10001:10001 /var/lib/kunveno
 
 FROM base AS server
 COPY --from=build /out/app /usr/local/bin/kunveno-server

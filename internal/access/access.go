@@ -1,7 +1,8 @@
 // Package access checks, at start, that a service can use the files and directories it was given,
 // and names the fix when it cannot. The kunveno images run as user 10001, and in the Docker stack
 // ./data, config.yaml, media/ and backgrounds/ come from the host, so a file or directory that user
-// cannot use is the usual first-start failure.
+// cannot use is the usual first-start failure. What the services write lives in volumes, which Docker
+// creates owned by that user; these checks catch bind mounts and other installs.
 package access
 
 import (
@@ -26,8 +27,8 @@ func Writable(dir string) error {
 	if err != nil {
 		if errors.Is(err, fs.ErrPermission) {
 			id := ID()
-			return fmt.Errorf("%s is not writable by this service (it runs as %s): in the Docker stack run "+
-				"sudo chown -R %s data in the stack directory; otherwise sudo chown -R %s %s", dir, id, id, id, dir)
+			return fmt.Errorf("%s is not writable by this service (it runs as %s): give it to that user, "+
+				"sudo chown -R %s %s (in the Docker stack it is the data volume, which Docker creates right)", dir, id, id, dir)
 		}
 		return err
 	}

@@ -139,8 +139,9 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.name }}
 
-  # The released stack starts with this run's images and its hardening (no capabilities beyond
-  # each service's list, no new privileges): every service stays up, the site and Grafana answer, and
+  # The released stack starts with make up, this run's images and its hardening (no capabilities
+  # beyond each service's list, no new privileges): every service stays up, the site and Grafana
+  # answer, the data volume keeps a created room across make down and imports an old ./data, and
   # the server, the player and echo run as user 10001, not root.
   stack:
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
@@ -156,9 +157,7 @@ jobs:
           mkdir /tmp/stack && tar -xzf dist/kunveno.tgz -C /tmp/stack && cd /tmp/stack/kunveno
           sed -i -e 's/^PUBLIC_HOST=$/PUBLIC_HOST=127.0.0.1/' -e 's/^GRAFANA_ADMIN_PASSWORD=$/GRAFANA_ADMIN_PASSWORD=x/' .env
           echo "KUNVENO_VERSION=sha-${GITHUB_SHA::7}" >> .env
-          # As the README says after unpacking: the services run as user 10001.
-          sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && sudo chmod 640 config.yaml
-          docker compose up -d
+          make up
           for i in $(seq 1 60); do curl -skf https://127.0.0.1/healthz > /dev/null && break; sleep 2; done
           curl -skf https://127.0.0.1/healthz
           curl -skf https://127.0.0.1/api/info > /dev/null
@@ -174,6 +173,19 @@ jobs:
             echo "$s runs as uid $u"
             [ "$u" = 10001 ] || { echo "$s runs as $u, want 10001 only" >&2; exit 1; }
           done
+          # A room created in the lobby lives in the data volume: it survives make down and make up.
+          o=https://127.0.0.1
+          curl -skf -X POST -H "Origin: $o" $o/api/rooms -d '{"name":"Persist","pin":"123456"}'
+          make down
+          make up
+          for i in $(seq 1 60); do curl -skf $o/healthz > /dev/null && break; sleep 2; done
+          curl -skf $o/api/rooms | grep -q '"slug":"persist"' || { echo "the created room did not survive make down" >&2; exit 1; }
+          # A ./data of a release before 0.4.5 is imported into the volume.
+          mkdir data && printf '[{"slug":"old","name":"Old","pin":"123456","max_participants":15}]' > data/rooms.json
+          make import-data
+          make up
+          for i in $(seq 1 60); do curl -skf $o/healthz > /dev/null && break; sleep 2; done
+          curl -skf $o/api/rooms | grep -q '"slug":"old"' || { echo "make import-data did not bring the old room" >&2; exit 1; }
 
   # A version tag also gets a GitHub release, once its images are published, carrying kunveno.tgz:
   # the stack directory with docker-compose.yml pinned to that release.
