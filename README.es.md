@@ -217,10 +217,11 @@ local (cualquier servidor con una API compatible con OpenAI, como vLLM u ollama)
 - El resumen aparece junto a las notas en el diálogo «Última reunión» del vestíbulo
   aproximadamente un minuto después del final de la reunión. Hasta entonces muestra «en
   preparación», y «no se pudo redactar» si el modelo falló.
-- Se guarda con las notas y se va con ellas: el mismo `notes.keep`, el mismo PIN para descargarlo, y
-  borrar las notas o la sala lo borra. Solo la última reunión de cada sala tiene uno.
-- En el mismo diálogo se puede borrar solo el resumen: las notas se quedan y no se redacta otro
-  resumen para ellas.
+- Es un archivo propio junto a las notas, se guarda el mismo `notes.keep` después de la reunión y se
+  descarga con el mismo PIN. Las notas y el resumen se borran por separado en el diálogo: borrar las
+  notas deja el resumen, y borrar el resumen deja las notas (no se redacta otro para ellas). Una
+  nueva reunión con notas en la sala, o borrar la sala, lo quita. Solo la última reunión de cada
+  sala tiene uno.
 - Se redacta automáticamente y puede contener errores, sobre todo en nombres y términos que el
   reconocimiento deformó; el archivo lo indica y las notas siguen a su lado.
 - Las notas de la reunión salen del servidor hacia el modelo configurado. Desactivado por defecto.

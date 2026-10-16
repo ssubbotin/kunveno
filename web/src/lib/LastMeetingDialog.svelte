@@ -1,7 +1,7 @@
 <script lang="ts">
   // What is left of a room's last meeting, behind its PIN: download the video, the notes and the
-  // notes' summary, or delete any of them after a confirmation inside the dialog. The summary goes
-  // with the notes.
+  // meeting's summary, or delete any of them after a confirmation inside the dialog; each is kept and
+  // deleted on its own.
   import { tick } from 'svelte';
   import { i18n, t } from './i18n/i18n.svelte';
   import { LANG_TAGS } from './i18n/messages';
@@ -49,7 +49,7 @@
   }
 
   const has = (kind: LastKind) => items.some((i) => i.kind === kind);
-  // The summary is downloaded once ready; it can be deleted alone, and goes with the notes.
+  // The summary is downloaded once ready.
   const downloadable = $derived(items.filter((i) => i.kind !== 'summary' || i.state === 'ready'));
   const deletable = $derived(items);
   const until = (d: Date) => formatUntil(d, LANG_TAGS[i18n.lang]);
@@ -217,7 +217,7 @@
       <p class="question" id="last-question" role="alert">{t('last.deleteWhat')}</p>
       <fieldset class="choice" aria-labelledby="last-question">
         {#if has('video')}<label><input type="radio" name="last-delete" value="video" bind:group={choice} />{t('last.videoName')}</label>{/if}
-        {#if has('notes')}<label><input type="radio" name="last-delete" value="notes" bind:group={choice} />{t(has('summary') ? 'last.notesWithSummary' : 'last.notesName')}</label>{/if}
+        {#if has('notes')}<label><input type="radio" name="last-delete" value="notes" bind:group={choice} />{t('last.notesName')}</label>{/if}
         {#if has('summary')}<label><input type="radio" name="last-delete" value="summary" bind:group={choice} />{t('last.summaryName')}</label>{/if}
         {#if deletable.length > 1}<label><input type="radio" name="last-delete" value="all" bind:group={choice} />{t('last.all')}</label>{/if}
       </fieldset>
@@ -236,7 +236,7 @@
                 aria-label="{t('last.download')}: {t('last.videoName')}">{t('last.download')}</button>
             {:else if item.kind === 'summary'}
               <svg class="icon sheet" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6zM9 9h6M9 13h3M14 16l2 2 3-4" /></svg>
-              <span class="what">{t('last.summaryName')}<small>{t(item.state === 'ready' ? 'last.summaryReady' : item.state === 'pending' ? 'last.summaryPending' : 'last.summaryFailed')}</small></span>
+              <span class="what">{t('last.summaryName')}<small>{item.state === 'ready' ? t('last.summaryReady', { time: until(item.until) }) : t(item.state === 'pending' ? 'last.summaryPending' : 'last.summaryFailed')}</small></span>
               {#if item.state === 'ready'}
                 <button class="btn" type="button" disabled={busy.summary} onclick={downloadSummary}
                   aria-label="{t('last.download')}: {t('last.summaryName')}">{t('last.download')}</button>

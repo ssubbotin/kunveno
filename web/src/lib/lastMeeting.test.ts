@@ -30,20 +30,25 @@ describe('lastItems', () => {
 });
 
 describe('lastItems with a summary', () => {
-  it('adds the summary after the notes, with its state and the notes expiry', () => {
-    const items = lastItems({ notes_until: notes, summary: 'pending' }, both, now);
-    expect(items).toEqual([
+  const summary = '2026-10-16T10:00:00Z';
+  it('lists the summary after the notes, with its state and its own expiry', () => {
+    expect(lastItems({ notes_until: notes, summary: 'pending', summary_until: notes }, both, now)).toEqual([
       { kind: 'notes', until: new Date(notes) },
       { kind: 'summary', until: new Date(notes), state: 'pending' },
     ]);
   });
-  it('has no summary without notes or with an unknown state', () => {
-    expect(lastItems({ summary: 'ready' }, both, now)).toEqual([]);
-    expect(lastItems({ notes_until: notes, summary: 'done' }, both, now).map((i) => i.kind)).toEqual(['notes']);
-    expect(lastItems({ notes_until: notes, summary: 'ready' }, { notesEnabled: false, recordingEnabled: true }, now)).toEqual([]);
+  it('lists a summary that outlived its notes', () => {
+    expect(lastItems({ summary: 'ready', summary_until: summary }, both, now)).toEqual([{ kind: 'summary', until: new Date(summary), state: 'ready' }]);
   });
-  it('leaves the caption to the video and the notes', () => {
-    expect(lastCaption(lastItems({ notes_until: notes, summary: 'ready' }, both, now))).toEqual({ key: 'last.notes', until: new Date(notes) });
+  it('has no summary with an unknown state, a bad or past expiry, or notes off', () => {
+    expect(lastItems({ summary: 'done', summary_until: summary }, both, now)).toEqual([]);
+    expect(lastItems({ summary: 'ready', summary_until: 'soon' }, both, now)).toEqual([]);
+    expect(lastItems({ summary: 'ready', summary_until: '2026-10-14T08:00:00Z' }, both, now)).toEqual([]);
+    expect(lastItems({ summary: 'ready', summary_until: summary }, { notesEnabled: false, recordingEnabled: true }, now)).toEqual([]);
+  });
+  it('names a summary left alone in the caption', () => {
+    expect(lastCaption(lastItems({ summary: 'ready', summary_until: summary }, both, now))).toEqual({ key: 'last.summary', until: new Date(summary) });
+    expect(lastCaption(lastItems({ notes_until: notes, summary: 'ready', summary_until: notes }, both, now))).toEqual({ key: 'last.notes', until: new Date(notes) });
   });
 });
 
@@ -147,22 +152,19 @@ describe('formatSummary', () => {
 });
 
 describe('withoutKinds', () => {
-  const items = lastItems({ recording_until: video, notes_until: notes, summary: 'ready' }, both, now);
-  it('takes the summary away with the notes', () => {
-    expect(withoutKinds(items, ['notes']).map((i) => i.kind)).toEqual(['video']);
-  });
-  it('removes only what is named otherwise', () => {
-    expect(withoutKinds(items, ['video']).map((i) => i.kind)).toEqual(['notes', 'summary']);
+  const items = lastItems({ recording_until: video, notes_until: notes, summary: 'ready', summary_until: notes }, both, now);
+  it('removes only what is named: notes and summary live apart', () => {
+    expect(withoutKinds(items, ['notes']).map((i) => i.kind)).toEqual(['video', 'summary']);
     expect(withoutKinds(items, ['summary']).map((i) => i.kind)).toEqual(['video', 'notes']);
+    expect(withoutKinds(items, ['video', 'notes', 'summary'])).toEqual([]);
   });
 });
 
 describe('deleteRequests', () => {
-  const items = lastItems({ recording_until: video, notes_until: notes, summary: 'ready' }, both, now);
-  it('asks for each chosen item, the summary not again when the notes go', () => {
-    expect(deleteRequests('all', items)).toEqual(['video', 'notes']);
+  const items = lastItems({ recording_until: video, notes_until: notes, summary: 'ready', summary_until: notes }, both, now);
+  it('asks for each chosen item on its own', () => {
+    expect(deleteRequests('all', items)).toEqual(['video', 'notes', 'summary']);
     expect(deleteRequests('notes', items)).toEqual(['notes']);
     expect(deleteRequests('summary', items)).toEqual(['summary']);
-    expect(deleteRequests('all', lastItems({ notes_until: notes, summary: 'pending' }, both, now))).toEqual(['notes']);
   });
 });

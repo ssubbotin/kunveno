@@ -8,13 +8,14 @@ import { summaryState, type SummaryState } from './summary';
 type Translate = (key: Key, vars?: Record<string, string | number>) => string;
 
 export type LastKind = 'video' | 'notes' | 'summary';
-// state: the summary's; it is kept with the notes, so it shares their expiry.
+// state: the summary's. The summary lives apart from the notes, with an expiry of its own.
 export type LastItem = { kind: LastKind; until: Date; state?: SummaryState };
 
 // lastItems lists what the room keeps, video first: an item counts when its feature is on for the
-// site and its expiry is a valid future time. The notes' summary follows the notes.
+// site and its expiry is a valid future time. The meeting's summary counts with notes on, whether
+// or not the notes are still there.
 export function lastItems(
-  room: { notes_until?: unknown; recording_until?: unknown; summary?: unknown } | undefined,
+  room: { notes_until?: unknown; recording_until?: unknown; summary?: unknown; summary_until?: unknown } | undefined,
   flags: { notesEnabled: boolean; recordingEnabled: boolean },
   now = Date.now(),
 ): LastItem[] {
@@ -23,33 +24,33 @@ export function lastItems(
   const video = flags.recordingEnabled ? recordingUntil(room.recording_until, now) : null;
   if (video) items.push({ kind: 'video', until: video });
   const notes = flags.notesEnabled ? notesUntil(room.notes_until, now) : null;
-  if (notes) {
-    items.push({ kind: 'notes', until: notes });
-    const state = summaryState(room.summary);
-    if (state) items.push({ kind: 'summary', until: notes, state });
-  }
+  if (notes) items.push({ kind: 'notes', until: notes });
+  const state = flags.notesEnabled ? summaryState(room.summary) : null;
+  const summaryUntil = state ? notesUntil(room.summary_until, now) : null;
+  if (state && summaryUntil) items.push({ kind: 'summary', until: summaryUntil, state });
   return items;
 }
 
-// withoutKinds removes items that are gone; the summary is kept with the notes, so it goes with them.
+// withoutKinds removes items that are gone; each goes alone.
 export function withoutKinds(items: LastItem[], kinds: LastKind[]): LastItem[] {
-  const gone = kinds.includes('notes') ? [...kinds, 'summary'] : kinds;
-  return items.filter((i) => !gone.includes(i.kind));
+  return items.filter((i) => !kinds.includes(i.kind));
 }
 
-// deleteRequests lists the delete requests a choice in the dialog needs: the summary goes with the
-// notes, so it is asked for only when chosen alone.
+// deleteRequests lists the delete requests a choice in the dialog needs, one per item.
 export function deleteRequests(choice: LastKind | 'all', items: LastItem[]): LastKind[] {
-  const kinds = choice === 'all' ? items.map((i) => i.kind) : [choice];
-  return kinds.includes('notes') ? kinds.filter((k) => k !== 'summary') : kinds;
+  return choice === 'all' ? items.map((i) => i.kind) : [choice];
 }
 
 // lastCaption says what is there and the nearest expiry; null when there is nothing.
 export function lastCaption(items: LastItem[]): { key: Key; until: Date } | null {
   if (items.length === 0) return null;
-  const until = new Date(Math.min(...items.map((i) => i.until.getTime())));
-  const kinds = new Set(items.map((i) => i.kind));
-  const key: Key = kinds.has('video') && kinds.has('notes') ? 'last.both' : kinds.has('video') ? 'last.video' : 'last.notes';
+  // The video and the notes name the caption; the summary does only when nothing else is left.
+  const main = items.filter((i) => i.kind !== 'summary');
+  const shown = main.length > 0 ? main : items;
+  const until = new Date(Math.min(...shown.map((i) => i.until.getTime())));
+  const kinds = new Set(shown.map((i) => i.kind));
+  const key: Key = main.length === 0 ? 'last.summary'
+    : kinds.has('video') && kinds.has('notes') ? 'last.both' : kinds.has('video') ? 'last.video' : 'last.notes';
   return { key, until };
 }
 

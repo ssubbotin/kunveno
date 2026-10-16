@@ -212,10 +212,11 @@ with an OpenAI-compatible API, such as vLLM or ollama).
 - The summary appears next to the notes in the lobby's "Last meeting" dialog about a minute after the
   meeting ends. Until then it reads "being prepared", and "could not be written" when the model
   failed.
-- It is kept with the notes and goes with them: the same `notes.keep`, the same PIN to download, and
-  deleting the notes or the room deletes it. Only the last meeting of each room has one.
-- The summary alone can be deleted in the same dialog: the notes stay, and no new summary is written
-  for them.
+- It is a file of its own next to the notes, kept for the same `notes.keep` after the meeting and
+  downloaded with the same PIN. The notes and the summary are deleted separately in the dialog:
+  deleting the notes keeps the summary, and deleting the summary keeps the notes (no new summary is
+  written for them). A new meeting with notes in the room, or deleting the room, removes it. Only
+  the last meeting of each room has one.
 - It is written automatically and may contain mistakes, mostly in names and terms the recognition
   garbled; the file says so, and the notes stay next to it.
 - The meeting's notes leave the server for the model you configured. Off by default.
