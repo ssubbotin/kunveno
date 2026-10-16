@@ -91,6 +91,12 @@ Go packages are separated so each is tested alone:
   The notes bot itself is the closed `kunveno-notes` add-on (another repository); it depends on the
   bot contract documented in `internal/signal/protocol.go` and on `pkg/botclient`, so change those
   only together with it. `notes.enabled` (default false) hides every notes control.
+- `internal/auth`: the optional sign-in, with no provider specifics: the `Provider` interface and
+  `Identity`, `allow` login patterns, signed session cookies (`__Host-kunveno`, key in `auth.key`),
+  the guest invitation store (`invites.json`, only token hashes) and the `Gate` that guards `/api/`
+  and serves `/auth/`. Nothing here runs while `auth.enabled` is false.
+- `internal/auth/yandex`: the Yandex ID provider (OAuth code flow, `login:info`); endpoints are
+  configurable so tests use a fake Yandex. Its secret comes from `KUNVENO_AUTH_YANDEX_SECRET`.
 - `internal/recording`: the store of meeting recordings (`<slug>.mp4` and `<slug>.json`), uploaded by
   the closed `kunveno-recorder` add-on over `PUT /internal/recording/{slug}`. Its bot contract is
   documented in `internal/signal/protocol.go` next to the notes one and changes only together with
@@ -132,6 +138,8 @@ are in `web/src/lib/background/`.
   `^[a-z0-9-]{1,32}$`. PIN comparison is constant time.
 - The first frame on a socket must be a valid `join`; anything else gets `bad_message`, a closed
   socket and no leftover room state.
+- Sign-in is optional: `auth.enabled: false` (the default) keeps everything exactly as before, and
+  every existing test passes unchanged with it off. Provider secrets come only from the environment.
 - pion stays on v4.2.x (patch upgrades only).
 - Commits: English, conventional prefixes (`feat:`, `fix:`, `test:`, `chore:`, `docs:`), identity
   from the repo's git config (personal: `Sergey Subbotin <ssubbotin@gmail.com>`).
