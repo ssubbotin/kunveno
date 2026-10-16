@@ -381,3 +381,63 @@ func TestLoadNamesTheFixForAnUnreadableFile(t *testing.T) {
 		t.Fatalf("error %v does not name the fix", err)
 	}
 }
+
+func TestAuthOffByDefault(t *testing.T) {
+	cfg, err := Parse([]byte("media:\n  advertise_ip: 10.0.0.1\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Auth.Enabled || cfg.Auth.SessionTTL != 12*time.Hour || cfg.Auth.InviteMaxTTL != 168*time.Hour {
+		t.Fatalf("auth defaults %+v", cfg.Auth)
+	}
+}
+
+const authOn = `media:
+  advertise_ip: 10.0.0.1
+auth:
+  enabled: true
+  public_url: https://meet.example.com
+  providers:
+    - type: yandex
+      name: Yandex 360
+      client_id: cid
+      allow: ["*@example.com"]
+`
+
+func TestAuthSecretFromTheEnvironment(t *testing.T) {
+	env := map[string]string{"KUNVENO_AUTH_YANDEX_SECRET": "sec"}
+	cfg, err := parse([]byte(authOn), func(k string) string { return env[k] }, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := cfg.Auth.Providers[0]; p.Secret != "sec" || p.Type != "yandex" {
+		t.Fatalf("provider %+v", p)
+	}
+}
+
+func TestAuthValidation(t *testing.T) {
+	env := func(k string) string {
+		if k == "KUNVENO_AUTH_YANDEX_SECRET" {
+			return "sec"
+		}
+		return ""
+	}
+	for name, c := range map[string]struct {
+		yaml string
+		env  func(string) string
+		want string
+	}{
+		"no providers":     {strings.Replace(authOn, "  providers:\n    - type: yandex\n      name: Yandex 360\n      client_id: cid\n      allow: [\"*@example.com\"]\n", "", 1), env, "auth.providers"},
+		"http public_url":  {strings.Replace(authOn, "https://meet", "http://meet", 1), env, "auth.public_url"},
+		"no public_url":    {strings.Replace(authOn, "  public_url: https://meet.example.com\n", "", 1), env, "auth.public_url"},
+		"no secret":        {authOn, func(string) string { return "" }, "KUNVENO_AUTH_YANDEX_SECRET"},
+		"empty allow":      {strings.Replace(authOn, `["*@example.com"]`, "[]", 1), env, "allow"},
+		"unknown provider": {strings.Replace(authOn, "type: yandex", "type: myspace", 1), env, "auth.providers[0].type"},
+		"bad session":      {authOn + "  session: forever\n", env, "auth.session"},
+		"no client id":     {strings.Replace(authOn, "      client_id: cid\n", "", 1), env, "client_id"},
+	} {
+		if _, err := parse([]byte(c.yaml), c.env, nil); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want an error naming %q", name, err, c.want)
+		}
+	}
+}
