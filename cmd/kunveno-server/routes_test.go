@@ -57,7 +57,7 @@ func testGate(t *testing.T) (*auth.Gate, *http.Cookie) {
 		t.Fatal(err)
 	}
 	g := &auth.Gate{Sessions: auth.NewSessions([]byte(strings.Repeat("k", 32)), time.Hour), Invites: inv,
-		PublicURL: publicURL, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Rules: map[string]auth.Rule{}}
+		PublicURL: publicURL, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Rules: map[string]auth.Rule{"yandex": {"*@example.com"}}}
 	w := httptest.NewRecorder()
 	g.Sessions.Issue(w, auth.Identity{Provider: "yandex", ID: "1", Login: "ann@example.com", Name: "Ann"})
 	for _, c := range w.Result().Cookies() {
