@@ -381,3 +381,110 @@ func TestLoadNamesTheFixForAnUnreadableFile(t *testing.T) {
 		t.Fatalf("error %v does not name the fix", err)
 	}
 }
+
+func TestAuthOffByDefault(t *testing.T) {
+	cfg, err := Parse([]byte("media:\n  advertise_ip: 10.0.0.1\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Auth.Enabled || cfg.Auth.SessionTTL != 12*time.Hour || cfg.Auth.InviteMaxTTL != 168*time.Hour {
+		t.Fatalf("auth defaults %+v", cfg.Auth)
+	}
+}
+
+const authOn = `media:
+  advertise_ip: 10.0.0.1
+auth:
+  enabled: true
+  public_url: https://meet.example.com
+  providers:
+    - type: yandex
+      name: Yandex 360
+      client_id: cid
+      allow: ["*@example.com"]
+`
+
+func TestAuthSecretFromTheEnvironment(t *testing.T) {
+	env := map[string]string{"KUNVENO_AUTH_YANDEX_SECRET": "sec"}
+	cfg, err := parse([]byte(authOn), func(k string) string { return env[k] }, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := cfg.Auth.Providers[0]; p.Secret != "sec" || p.Type != "yandex" {
+		t.Fatalf("provider %+v", p)
+	}
+}
+
+func TestAuthValidation(t *testing.T) {
+	env := func(k string) string {
+		if k == "KUNVENO_AUTH_YANDEX_SECRET" {
+			return "sec"
+		}
+		return ""
+	}
+	for name, c := range map[string]struct {
+		yaml string
+		env  func(string) string
+		want string
+	}{
+		"no providers":     {strings.Replace(authOn, "  providers:\n    - type: yandex\n      name: Yandex 360\n      client_id: cid\n      allow: [\"*@example.com\"]\n", "", 1), env, "auth.providers"},
+		"http public_url":  {strings.Replace(authOn, "https://meet", "http://meet", 1), env, "auth.public_url"},
+		"no public_url":    {strings.Replace(authOn, "  public_url: https://meet.example.com\n", "", 1), env, "auth.public_url"},
+		"empty allow":      {strings.Replace(authOn, `["*@example.com"]`, "[]", 1), env, "allow"},
+		"unknown provider": {strings.Replace(authOn, "type: yandex", "type: myspace", 1), env, "auth.providers[0].type"},
+		"bad session":      {authOn + "  session: forever\n", env, "auth.session"},
+		"no client id":     {strings.Replace(authOn, "      client_id: cid\n", "", 1), env, "client_id"},
+	} {
+		if _, err := parse([]byte(c.yaml), c.env, nil); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v, want an error naming %q", name, err, c.want)
+		}
+	}
+}
+
+// The player and other readers of config.yaml do not get the provider secret: a missing secret is
+// the server's start error (CheckSecrets), never a parse error.
+func TestAuthSecretIsCheckedOnlyByTheServer(t *testing.T) {
+	cfg, err := parse([]byte(authOn), func(string) string { return "" }, nil)
+	if err != nil {
+		t.Fatalf("a config without the secret did not parse: %v", err)
+	}
+	if err := cfg.CheckSecrets(); err == nil || !strings.Contains(err.Error(), "KUNVENO_AUTH_YANDEX_SECRET") {
+		t.Fatalf("CheckSecrets: %v, want an error naming KUNVENO_AUTH_YANDEX_SECRET", err)
+	}
+	cfg, _ = parse([]byte(authOn), func(k string) string { return map[string]string{"KUNVENO_AUTH_YANDEX_SECRET": "sec"}[k] }, nil)
+	if err := cfg.CheckSecrets(); err != nil {
+		t.Fatalf("with the secret: %v", err)
+	}
+	off, _ := parse([]byte(strings.Replace(authOn, "enabled: true", "enabled: false", 1)), func(string) string { return "" }, nil)
+	if err := off.CheckSecrets(); err != nil {
+		t.Fatalf("sign-in off needs no secret: %v", err)
+	}
+}
+
+func TestAuthPublicURLNormalised(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://Meet.Example.com":      "https://meet.example.com",
+		"https://meet.example.com:443":  "https://meet.example.com",
+		"https://meet.example.com:8443": "https://meet.example.com:8443",
+		"https://meet.example.com/":     "https://meet.example.com",
+		"https://[::1]:8443":            "https://[::1]:8443",
+		"https://[::1]:443":             "https://[::1]",
+	} {
+		cfg, err := parse([]byte(strings.Replace(authOn, "https://meet.example.com", in, 1)),
+			func(string) string { return "sec" }, nil)
+		if err != nil {
+			t.Errorf("%s: %v", in, err)
+			continue
+		}
+		if cfg.Auth.PublicURL != want {
+			t.Errorf("%s: got %q, want %q", in, cfg.Auth.PublicURL, want)
+		}
+	}
+	for _, in := range []string{"https://user@meet.example.com", "https://meet.example.com#x"} {
+		_, err := parse([]byte(strings.Replace(authOn, "https://meet.example.com", in, 1)),
+			func(string) string { return "sec" }, nil)
+		if err == nil || !strings.Contains(err.Error(), "auth.public_url") {
+			t.Errorf("%s: %v, want an error naming auth.public_url", in, err)
+		}
+	}
+}

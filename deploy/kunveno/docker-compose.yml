@@ -45,6 +45,8 @@ services:
       # defaults to the host's primary IPv4 address.
       KUNVENO_LISTEN: ${KUNVENO_UPSTREAM:-127.0.0.1:8080}
       KUNVENO_ADVERTISE_IP: ${KUNVENO_ADVERTISE_IP:-}
+      # The secret of the sign-in provider (auth in config.yaml).
+      KUNVENO_AUTH_YANDEX_SECRET: ${KUNVENO_AUTH_YANDEX_SECRET:-}
     volumes:
       - ./config.yaml:/etc/kunveno/config.yaml:ro
       - data:/var/lib/kunveno

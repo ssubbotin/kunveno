@@ -2,7 +2,8 @@
 # check-nginx.sh: run `nginx -t` on both site configs inside the nginx image the web image is built on.
 #   - deploy/docker/nginx.conf.template, rendered with envsubst the way the image entrypoint does
 #   - deploy/nginx/kunveno.conf (the deb install), mounted as conf.d/default.conf
-# then starts nginx with the template and checks /grafana/ (a stand-in on port 3000 echoes the
+# starts nginx with each and checks that /api/ and /auth/ reach the server (a stand-in on port 8080
+# answers with the path it got), then checks /grafana/ with the template (a stand-in on port 3000 echoes the
 # Authorization header it gets): without GRAFANA_WALL_PASSWORD it is open as before; with it, the
 # password wall (grafana-wall.sh) comes first and its credentials never reach Grafana.
 # A self-signed certificate stands in for the real one. Run from the repository root.
@@ -18,9 +19,22 @@ docker run --rm -v "$PWD/deploy:/deploy:ro" "$img" sh -c '
   # The security headers both configs include, where the image and the deb package put them.
   cp /deploy/docker/security-headers.conf /etc/nginx/kunveno-headers.conf
   cp /deploy/docker/security-headers-common.conf /etc/nginx/kunveno-headers-common.conf
+  # A stand-in for kunveno-server on 127.0.0.1:8080 answers with the path it got.
+  printf "server { listen 127.0.0.1:8080; location / { return 200 \"upstream=\$request_uri\\n\"; } }\n" \
+    > /etc/nginx/conf.d/fake-kunveno.conf
+  reaches() { # $1 names the config: the API and the sign-in reach the server
+    for p in /api/info /auth/me /auth/yandex/callback; do
+      [ "$(curl -sk "https://127.0.0.1$p")" = "upstream=$p" ] || { echo "$1: $p does not reach the server" >&2; exit 1; }
+    done
+  }
   echo "== deploy/nginx/kunveno.conf"
   cp /deploy/nginx/kunveno.conf /etc/nginx/conf.d/default.conf
   nginx -t
+  nginx
+  reaches deploy/nginx/kunveno.conf
+  nginx -s stop
+  i=0
+  while [ -e /var/run/nginx.pid ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i+1)); done
   echo "== deploy/docker/nginx.conf.template"
   export HTTP_PORT=80 HTTPS_PORT=443 SERVER_NAME=meet.example.internal KUNVENO_UPSTREAM=127.0.0.1:8080 GRAFANA_PORT=3000 KUNVENO_HSTS=
   envsubst "\$HTTP_PORT \$HTTPS_PORT \$SERVER_NAME \$KUNVENO_UPSTREAM \$GRAFANA_PORT \$KUNVENO_HSTS" \
@@ -31,6 +45,7 @@ docker run --rm -v "$PWD/deploy:/deploy:ro" "$img" sh -c '
   printf "server { listen 127.0.0.1:3000; location / { add_header X-Content-Type-Options nosniff; return 200 \"auth=[\$http_authorization]\\n\"; } }\n" \
     > /etc/nginx/conf.d/fake-grafana.conf
   nginx
+  reaches deploy/docker/nginx.conf.template
   g=https://127.0.0.1/grafana/
   [ "$(curl -sk "$g")" = "auth=[]" ] || { echo "without a wall password /grafana/ is not open" >&2; exit 1; }
   [ "$(curl -sk -u a:b "$g")" = "auth=[Basic YTpi]" ] || { echo "without a wall the Authorization header no longer reaches Grafana" >&2; exit 1; }

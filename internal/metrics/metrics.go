@@ -90,7 +90,7 @@ var (
 		Name: "kunveno_nacked_packets_total", Help: "Packets viewers asked to resend (NACK), by kind.",
 	}, []string{"kind"})
 	PINFailures = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "kunveno_pin_failures_total", Help: "Wrong room PINs, by where they were tried (join, delete, notes or recording).",
+		Name: "kunveno_pin_failures_total", Help: "Wrong room PINs and invitations, by where they were tried (join, delete, notes, recording, invites: the invitations API; invite: a bad invitation at join).",
 	}, []string{"source"})
 	PINBlocks = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "kunveno_pin_blocks_total", Help: "Addresses blocked for a minute after too many wrong PINs.",
@@ -107,7 +107,22 @@ var (
 	RoomsDeleted = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "kunveno_rooms_deleted_total", Help: "Rooms deleted from the lobby.",
 	})
+	// SignIns and GuestJoins are registered only with sign-in on (RegisterAuth).
+	SignIns = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "kunveno_signins_total", Help: "Sign-ins by provider and result (ok, refused, cancelled or error).",
+	}, []string{"provider", "result"})
+	GuestJoins = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "kunveno_guest_joins_total", Help: "Guests admitted to rooms by an invitation.",
+	})
 )
+
+// RegisterAuth adds the sign-in metrics to r: sign-ins, guest joins and the invitations usable
+// now, which active reports at scrape time.
+func RegisterAuth(r *prometheus.Registry, active func() int) {
+	r.MustRegister(SignIns, GuestJoins, prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "kunveno_invites_active", Help: "Guest invitations that can be used right now.",
+	}, func() float64 { return float64(active()) }))
+}
 
 // NewRegistry gathers every kunveno metric, the room state, and Go runtime and process metrics.
 func NewRegistry(rooms *room.Registry, version string) *prometheus.Registry {

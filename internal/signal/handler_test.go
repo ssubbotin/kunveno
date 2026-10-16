@@ -29,6 +29,15 @@ type fakeMedia struct {
 	mu    sync.Mutex
 	peers map[string]*fakePeer
 	hold  func() // when set, NewPeer calls it first: a test holds a join inside media setup
+	// onNegotiate, when set, runs at the start of every Negotiate with the peer's id: a test holds
+	// a join after its joined message went out and before the join ends.
+	onNegotiate func(id string)
+}
+
+func (m *fakeMedia) setOnNegotiate(f func(id string)) {
+	m.mu.Lock()
+	m.onNegotiate = f
+	m.mu.Unlock()
 }
 
 func (m *fakeMedia) setHold(f func()) {
@@ -81,6 +90,12 @@ func (p *fakePeer) Publishes(k media.Kind) bool {
 	return p.tracks[k]
 }
 func (p *fakePeer) Negotiate() {
+	p.m.mu.Lock()
+	hook := p.m.onNegotiate
+	p.m.mu.Unlock()
+	if hook != nil {
+		hook(p.id)
+	}
 	p.mu.Lock()
 	p.offers++
 	p.mu.Unlock()
@@ -705,6 +720,8 @@ func TestPlayerJoinsOnlyItsRoomAndStaysWhenEchoGoesOff(t *testing.T) {
 
 	ca, _ := join(t, e, "Ann")
 	send(t, ca, `{"type":"echo","on":true}`)
+	for !expect(t, ca, "participants").Echo { // the echo may join only once the room asked for it
+	}
 	echo := dial(t, e)
 	send(t, echo, `{"type":"join","room":"ops","name":"Echo","role":"echo"}`)
 	expect(t, echo, "joined")

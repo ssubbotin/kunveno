@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ssubbotin/kunveno/internal/auth"
 	"github.com/ssubbotin/kunveno/internal/lobby"
 	"github.com/ssubbotin/kunveno/internal/metrics"
 	"github.com/ssubbotin/kunveno/internal/ratelimit"
@@ -42,13 +43,16 @@ type RoomsConfig struct {
 	Persist  func() error       // saves the created rooms after every change; may be nil
 	PINs     *ratelimit.Limiter // wrong PINs per client address, shared with joining; may be nil
 	Kept     lobby.Kept         // the notes, recordings and meeting summaries the rooms keep
+	// Deleted runs after a room was deleted and the rooms saved: with sign-in on it ends the room's
+	// invitations. It may be nil; an error fails the request with 500.
+	Deleted func(slug string) error
 }
 
 // Rooms serves the room list and its changes. PINs never leave the server.
 //
 //	GET    /api/rooms          list with live participant counts, notes_until, recording_until, last_meeting
 //	POST   /api/rooms          {"name","pin"} creates a room, 201 {"slug","name"}
-//	DELETE /api/rooms/{slug}   {"pin"} deletes an empty created room, its notes, its recording and its meetings, 204
+//	DELETE /api/rooms/{slug}   {"pin"} deletes an empty created room, its notes, its recording, its meetings and its invitations, 204
 //
 // notes_until and recording_until are listed for the enabled features only. A room lists
 // last_meeting when it keeps notes or a recording (of the enabled features) of a meeting with a
@@ -156,9 +160,16 @@ func remove(w http.ResponseWriter, r *http.Request, cfg RoomsConfig, slug string
 	default:
 		metrics.RoomsDeleted.Inc()
 		cfg.Kept.Forget(slug)
-		if save(w, cfg.Persist) {
-			w.WriteHeader(http.StatusNoContent)
+		if !save(w, cfg.Persist) {
+			return
 		}
+		if cfg.Deleted != nil {
+			if err := cfg.Deleted(slug); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 
@@ -212,14 +223,27 @@ func local(r *http.Request) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
+// SignInInfo is the sign-in block of /api/info: whether people sign in, and the providers' buttons.
+type SignInInfo struct {
+	Enabled   bool                `json:"enabled"`
+	Providers []auth.ProviderInfo `json:"providers"`
+}
+
 // Info serves GET /api/info: installation details the client shows: the title, the reactions
 // participants can send, whether the noise filter is on by default, whether meeting notes are
 // offered (notes.enabled), whether phrases are shown live (notes.live) and whether meeting
-// recording is offered (recording.enabled) and how many seconds a client waits on a disconnected
-// media connection before restarting (media.reconnect_grace).
-func Info(title string, reactions []string, noiseSuppression, notesEnabled, notesLive, recordingEnabled bool, reconnectGrace int) http.Handler {
+// recording is offered (recording.enabled), how many seconds a client waits on a disconnected
+// media connection before restarting (media.reconnect_grace) and, as "auth", whether sign-in is on
+// and with which providers (signIn; nil is off).
+func Info(title string, reactions []string, noiseSuppression, notesEnabled, notesLive, recordingEnabled bool, reconnectGrace int, signIn *SignInInfo) http.Handler {
+	in := SignInInfo{Providers: []auth.ProviderInfo{}}
+	if signIn != nil && signIn.Enabled {
+		in.Enabled = true
+		in.Providers = append(in.Providers, signIn.Providers...)
+	}
 	body := map[string]any{"title": title, "reactions": reactions, "noise_suppression": noiseSuppression,
-		"notes": notesEnabled, "notes_live": notesEnabled && notesLive, "recording": recordingEnabled, "reconnect_grace": reconnectGrace}
+		"notes": notesEnabled, "notes_live": notesEnabled && notesLive, "recording": recordingEnabled, "reconnect_grace": reconnectGrace,
+		"auth": in}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)

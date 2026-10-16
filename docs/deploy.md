@@ -250,6 +250,85 @@ together with the add-on (the same text is the package comment of `internal/sign
 
 The Debian packages have no recorder add-on; with them leave `recording.enabled` off.
 
+## Sign-in with Yandex ID
+
+Off by default. Turn it on for a server that faces the internet; the user-facing description is in
+the README ("Sign-in and guests"). Needed: a public `https://` address with a certificate browsers
+accept (see "TLS certificate"), and an administrator of the Yandex 360 organization to register
+the application.
+
+1. **Register the OAuth application** at <https://oauth.yandex.ru/client/new>. Platform: "Web
+   services". Redirect URI: `<public_url>/auth/yandex/callback`, for example
+   `https://meet.example.com/auth/yandex/callback`. Permissions: only "Access to username, first
+   name and surname, gender" (`login:info`). Save the ID and the password of the application.
+2. **The secret** goes into `.env` next to `docker-compose.yml`, never into `config.yaml`:
+   ```
+   KUNVENO_AUTH_YANDEX_SECRET=<the application's password>
+   ```
+3. **`auth:` in `config.yaml`:**
+   ```yaml
+   auth:
+     enabled: true
+     public_url: https://meet.example.com
+     session: 12h
+     invite_max: 168h
+     providers:
+       - type: yandex
+         name: "Yandex 360"
+         client_id: "<the application's ID>"
+         allow: ["*@example.com"]
+   ```
+   - `public_url` must be `https://<host>` (the host in lower case, `:443` dropped; no path). The
+     callback address and the check of the `Origin` header of requests that change something come
+     from it, never from the `Host` header. People must open the service at exactly this address.
+   - `allow` patterns are matched against the account's Yandex **login**. The login of an
+     organization account in Yandex 360 is `name@example.com`; a personal account has a login
+     without "@", whatever contact address it lists, so `*@example.com` admits the organization
+     and refuses personal accounts. The contact address is ignored on purpose: a personal account
+     can attach and confirm an external address there.
+   - `session` is how long a sign-in lasts (default `12h`); `invite_max` caps the guest
+     invitation (default `168h`; the dialog offers 1 hour, 24 hours and 7 days, never above it).
+4. **Apply:** `docker compose up -d` (it passes the new variable to the server container; a plain
+   `restart` does not). The server refuses to start with sign-in on and no provider, no
+   `public_url` or one that is not `https://`, a provider without `client_id`, without the secret
+   in the environment or with an empty `allow`; the message is in `journalctl -t kunveno-server`.
+5. **Check:** open the address in a private window: the sign-in screen appears. An organization
+   account gets into the lobby; a personal account comes back to the sign-in screen, which says the
+   account is not allowed and asks to choose the organization's account.
+
+**State.** `auth.key` (the signing key of sessions, 32 random bytes, mode 0600) and `invites.json`
+(guest invitations; only the SHA-256 of each token) live next to `rooms_file`: in the stack that
+is the `data` volume (`/var/lib/kunveno` inside the server container). Sessions are signed
+cookies, not stored on the server, so one session cannot be revoked. To **sign everyone out**
+delete the key and restart the server; a new key is generated at the start:
+
+```
+docker compose exec server rm /var/lib/kunveno/auth.key && docker compose restart server
+```
+
+Employees in meetings stay connected and sign in again for the next one. Invitations stay valid
+(they do not depend on the key). Revoked invitations are removed by a periodic sweep, expired
+ones a day after they expired: until then their guests can still reconnect to the meeting they are
+in.
+
+**Behind the scenes.** nginx proxies `/auth/` to the server like `/api/`. Every `/api/` route
+except `/api/info` and `/api/backgrounds` needs a session; `/healthz`, `/metrics` and `/internal/`
+are outside the sign-in (the helpers join over loopback as before). The log records sign-ins and
+refusals (provider, login) and invitations created, revoked and used; tokens, secrets, cookies and
+codes are never logged. A provider that does not answer within 10 seconds counts as unavailable,
+and the sign-in screen says so. Every failed sign-in comes back to the page it started from with
+the sign-in screen and a notice: cancelled in the provider's window, an account the `allow` list
+refuses, the provider unavailable, or a sign-in that took longer than 10 minutes. The
+`kunveno_signins_total` counter labels them `cancelled`, `refused` and `error` (a provider
+failure).
+
+**Guests** need no setup: an employee creates a link in a room (More, "Invite a guest"). Revoking
+a link disconnects its guests at once; an expired link admits no new guests and those inside stay
+to the end of the meeting, reconnects included. Deleting a room ends its links.
+
+**Going back.** Set `enabled: false` (or remove the `auth:` block) and run `docker compose
+restart server`: everything works as before, and `auth.key` and `invites.json` are ignored.
+
 ## Meeting summaries
 
 When the last person leaves a room, the server saves the meeting's summary: its start, its end and
@@ -347,3 +426,24 @@ The server package does not create `/var/lib/kunveno` or ship the background ima
 state directory handling owns that path). To offer virtual backgrounds, create
 `/var/lib/kunveno/backgrounds` and copy the images from the archive's `backgrounds/` there, or
 point `backgrounds_dir` at another directory; without it the list is empty.
+
+Sign-in (`auth:` in `config.yaml`, see "Sign-in with Yandex ID") works with the packages too, with
+two differences. The unit has no `EnvironmentFile`, so add one. Keep the secret in a file that only
+root can read (systemd reads it as root before it switches to the service user, and
+`systemctl show` does not display it):
+
+```
+sudo install -m 600 /dev/null /etc/kunveno/auth.env
+sudo editor /etc/kunveno/auth.env      # KUNVENO_AUTH_YANDEX_SECRET=<the application's password>
+sudo systemctl edit kunveno-server     # write the two lines below
+```
+
+```
+[Service]
+EnvironmentFile=/etc/kunveno/auth.env
+```
+
+then `sudo systemctl daemon-reload && sudo systemctl restart kunveno-server`. And `auth.key` and
+`invites.json` are in `/var/lib/kunveno`: to sign everyone out run
+`sudo rm /var/lib/kunveno/auth.key && sudo systemctl restart kunveno-server`. The nginx site in
+the package proxies `/auth/` already.

@@ -126,3 +126,17 @@ func TestRecordingFlagClearedWhenThePeopleLeave(t *testing.T) {
 		t.Fatal("recording kept with only the bot left")
 	}
 }
+
+func TestJoinGuestNeedsNoPINButCountsTowardCapacity(t *testing.T) {
+	r := New("ops", "Ops", "1234", 2)
+	if err := r.JoinGuest("g1", "Гость"); err != nil {
+		t.Fatal(err)
+	}
+	if p := r.Snapshot().Participants[0]; !p.Guest || p.Name != "Гость" {
+		t.Fatalf("guest %+v", p)
+	}
+	_ = r.Join("a", "Ann", "1234")
+	if err := r.JoinGuest("g2", "Второй"); !errors.Is(err, ErrFull) {
+		t.Fatalf("over capacity: %v", err)
+	}
+}

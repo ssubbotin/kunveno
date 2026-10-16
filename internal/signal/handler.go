@@ -11,6 +11,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 
+	"github.com/ssubbotin/kunveno/internal/auth"
 	"github.com/ssubbotin/kunveno/internal/conference"
 	"github.com/ssubbotin/kunveno/internal/metrics"
 	"github.com/ssubbotin/kunveno/internal/ratelimit"
@@ -30,7 +31,23 @@ type Handler struct {
 	origins []string
 	log     *slog.Logger
 	pins    *ratelimit.Limiter // wrong-PIN limit per client address
+	access  Access             // sign-in; nil when off
 }
+
+// Access is the sign-in, when it is on (package auth's Gate with its invitations).
+type Access interface {
+	Session(r *http.Request) (auth.Identity, bool)
+	// ExpiredSession is the person of a recently expired session, let back only into the meeting
+	// they were admitted to.
+	ExpiredSession(r *http.Request) (auth.Identity, bool)
+	// CheckInvite returns the invitation with auth.ErrExpiredInvite when it has expired; its guests
+	// still come back to the meeting they were admitted to.
+	CheckInvite(room, token string) (auth.Invite, error)
+}
+
+// SetAccess turns sign-in on: people join with a session (and the room's PIN) or a guest
+// invitation. Call before serving; nil keeps sign-in off.
+func (h *Handler) SetAccess(a Access) { h.access = a }
 
 // session is one WebSocket client; it is the conference.Conn of its member.
 type session struct {
@@ -88,7 +105,7 @@ func wire(e conference.Event) any {
 	case conference.Roster:
 		list := make([]ParticipantInfo, len(e.Participants))
 		for i, p := range e.Participants {
-			list[i] = ParticipantInfo{ID: p.ID, Name: p.Name, Muted: p.Muted, Bot: p.Bot, BotKind: p.BotKind, Quality: p.Quality, Camera: p.Camera}
+			list[i] = ParticipantInfo{ID: p.ID, Name: p.Name, Muted: p.Muted, Bot: p.Bot, BotKind: p.BotKind, Quality: p.Quality, Camera: p.Camera, Guest: p.Guest}
 		}
 		return Participants(list, e.Sharer, e.Echo, e.Notes, e.Recording)
 	case conference.ShareBusy:
@@ -108,6 +125,15 @@ func wire(e conference.Event) any {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var who *auth.Identity // the signed-in person, read before the upgrade
+	expired := false       // who's session has expired: only a rejoin of the current meeting
+	if h.access != nil {
+		if id, ok := h.access.Session(r); ok {
+			who = &id
+		} else if id, ok := h.access.ExpiredSession(r); ok {
+			who, expired = &id, true
+		}
+	}
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: h.origins})
 	if err != nil {
 		h.log.Warn("ws accept", "err", err)
@@ -118,7 +144,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	metrics.Sessions.Inc()
 	defer metrics.Sessions.Dec()
-	h.serve(ctx, cancel, conn, local(r), ratelimit.ClientIP(r))
+	h.serve(ctx, cancel, conn, local(r), ratelimit.ClientIP(r), who, expired)
 }
 
 // local reports a connection made on loopback without passing through nginx, which always
@@ -153,7 +179,7 @@ func writeErrorAndClose(conn *websocket.Conn, code, msg string) {
 	_ = conn.Close(websocket.StatusPolicyViolation, code)
 }
 
-func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, trusted bool, ip string) {
+func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, trusted bool, ip string, who *auth.Identity, expired bool) {
 	joinCtx, joinCancel := context.WithTimeout(ctx, joinTimeout)
 	first, err := readClient(joinCtx, conn)
 	joinCancel()
@@ -175,7 +201,7 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 		_ = conn.Close(websocket.StatusPolicyViolation, CodeTooManyAttempts)
 		return
 	}
-	s, code, msg := h.join(&session{conn: conn, cancel: cancel}, first)
+	s, code, msg := h.join(&session{conn: conn, cancel: cancel}, first, who, expired)
 	if code != "" { // successful joins are counted inside Join, before "joined" goes out
 		metrics.Joins.WithLabelValues(h.conf.RoomLabel(first.Room), code).Inc()
 	}
@@ -186,6 +212,13 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 		if h.pins.Fail(ip) {
 			metrics.PINBlocks.Inc()
 			h.log.Warn("too many wrong pins; address blocked for a minute", "ip", ip)
+		}
+	case CodeBadInvite:
+		metrics.PINFailures.WithLabelValues("invite").Inc()
+		h.log.Info("bad invitation", "room", h.conf.RoomLabel(first.Room), "ip", ip) // never the token
+		if h.pins.Fail(ip) {
+			metrics.PINBlocks.Inc()
+			h.log.Warn("too many bad invitations; address blocked for a minute", "ip", ip)
 		}
 	case "":
 		h.pins.Success(ip)
@@ -261,10 +294,32 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 	}
 }
 
-// join hands a validated join to the conference. On failure it returns a nil member plus the
-// error code and message.
-func (h *Handler) join(s *session, m ClientMessage) (*conference.Member, string, string) {
-	member, err := h.conf.Join(s, conference.JoinRequest{Room: m.Room, Name: m.Name, PIN: m.PIN, Role: m.Role, Client: m.Client, TCPOnly: m.Media == MediaTCP})
+// join hands a validated join to the conference. who is the signed-in person (nil without a
+// session); with sign-in on a person needs a session and a guest an invitation. An expired session
+// (expired) or invitation lets its person back only into the meeting they were admitted to. On
+// failure it returns a nil member plus the error code and message.
+func (h *Handler) join(s *session, m ClientMessage, who *auth.Identity, expired bool) (*conference.Member, string, string) {
+	req := conference.JoinRequest{Room: m.Room, Name: m.Name, PIN: m.PIN, Role: m.Role, Client: m.Client, TCPOnly: m.Media == MediaTCP}
+	if m.Role == "" {
+		switch {
+		case h.access == nil && m.Invite != "":
+			return nil, CodeBadMessage, "invitations need sign-in"
+		case h.access != nil && m.Invite != "":
+			inv, err := h.access.CheckInvite(m.Room, m.Invite)
+			if err != nil && !errors.Is(err, auth.ErrExpiredInvite) {
+				return nil, CodeBadInvite, "the invitation has expired or was revoked"
+			}
+			req.Guest, req.Invite, req.Rejoin = true, inv.ID, err != nil
+		case h.access != nil && who == nil:
+			return nil, CodeAuthRequired, "sign in first"
+		case h.access != nil:
+			if name := auth.DisplayName(*who); name != "" { // an account with neither name nor login keeps the typed one
+				req.Name = name
+			}
+			req.Login, req.Rejoin = who.Login, expired
+		}
+	}
+	member, err := h.conf.Join(s, req)
 	var refused *conference.RefusedError
 	switch {
 	case err == nil:
@@ -276,12 +331,19 @@ func (h *Handler) join(s *session, m ClientMessage) (*conference.Member, string,
 		return nil, CodeBadPIN, "wrong pin"
 	case errors.Is(err, room.ErrFull):
 		return nil, CodeRoomFull, "room is full"
+	case errors.Is(err, conference.ErrNotAdmitted) && !req.Guest:
+		return nil, CodeAuthRequired, "sign in first"
+	case errors.Is(err, conference.ErrNotAdmitted), errors.Is(err, conference.ErrRevoked):
+		return nil, CodeBadInvite, "the invitation has expired or was revoked"
 	case errors.Is(err, conference.ErrMedia):
 		return nil, CodeMediaFailed, "media setup failed"
 	case errors.Is(err, conference.ErrWrite):
 		return nil, CodeMediaFailed, "write failed"
 	default:
 		return nil, CodeBadMessage, err.Error()
+	}
+	if req.Guest {
+		metrics.GuestJoins.Inc()
 	}
 	if r := m.Restart; r != nil && m.Role == "" {
 		member.Log().Info("rejoin", "name", m.Name, "reason", r.Reason, "after", r.After, "transport", r.Transport)

@@ -17,8 +17,10 @@
   import { NONE, type BackgroundChoice } from './background/choice';
   import { presetLabel } from './background/presets';
   import { loadPrefs } from './media';
+  import InviteDialog from './InviteDialog.svelte';
 
-  let { session }: { session: Session } = $props();
+  // invites: sign-in is on and we are an employee, so More offers guest invitations.
+  let { session, invites = false }: { session: Session; invites?: boolean } = $props();
   // The session object lives for the whole page; Room never receives another one.
   // svelte-ignore state_referenced_locally
   const rs = session.state;
@@ -211,6 +213,16 @@
     closePopovers();
   }
   const shareReason = $derived(rs.isSharing ? '' : shareBusy ? t('control.shareBusy', { name: sharerName }) : rs.status !== 'connected' ? t('control.shareWait') : '');
+  // A guest (joined by an invitation link) has no PIN: no room link, no echo, notes or recording
+  // switches and no downloads; the server refuses those anyway.
+  const guest = $derived(rs.guest || rs.participants.some((p) => p.id === rs.selfId && p.guest));
+  let inviteDialog = $state<InviteDialog>();
+  function openInvites() {
+    const back = more ? moreBtn : null;
+    closePopovers();
+    back?.focus();
+    inviteDialog?.open();
+  }
   const echoPresent = $derived(rs.participants.some((p) => p.botKind === 'echo'));
   const notesPresent = $derived(rs.participants.some((p) => p.botKind === 'notes'));
   // The notes state is announced on joining and on every change.
@@ -253,6 +265,7 @@
 <main class="room" class:sharing={screenTrack !== null}>
   <Announcer message={announcement} seq={announceSeq} />
   <ShortcutsDialog bind:this={shortcuts} {mac} />
+  {#if invites && !guest}<InviteDialog bind:this={inviteDialog} slug={rs.roomSlug} pin={session.pin} />{/if}
   <dialog class="bg-dialog" id="bg-dialog" bind:this={bgDialog} aria-labelledby="bg-title" onclose={closedBackground}>
     <h2 id="bg-title">{t('bg.title')}</h2>
     {#if bgOpen}
@@ -283,7 +296,9 @@
     {#if site.recordingEnabled && rs.recording}
       <span class="mark rec-mark"><span class="rec" aria-hidden="true"></span>{t('recording.mark')}</span>
     {/if}
-    <span class="invite"><CopyLink link={roomLink(location.origin, rs.roomSlug, session.pin)} label={t('control.invite')} /></span>
+    {#if !guest}
+      <span class="invite"><CopyLink link={roomLink(location.origin, rs.roomSlug, session.pin)} label={t('control.invite')} /></span>
+    {/if}
     <span class="count">{people(rs.peopleCount)}</span>
   </header>
 
@@ -296,7 +311,7 @@
 
 
   <!-- One bar for what the meeting left; it grows as items become ready. -->
-  {#if videoReady || notesReady}
+  {#if !guest && (videoReady || notesReady)}
     <ReadyBar slug={rs.roomSlug} pin={session.pin} video={videoReady} notes={notesReady} ondismiss={dismissReady} />
   {/if}
 
@@ -360,13 +375,21 @@
         {#if more}
           <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
           <div class="menu" id="more-menu" role="group" aria-label={t('control.more')} bind:this={menuEl} onkeydown={onMenuKey}>
-            <button type="button" class="row" role="switch" aria-checked={rs.echo} aria-label={t('control.echo')} aria-describedby="echo-hint"
-              disabled={rs.status !== 'connected'} onclick={() => session.setEcho(!rs.echo)}>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h2l2-5 3 10 3-8 2 3h4" /></svg>
-              <span class="text">{t('control.echo')}<small id="echo-hint">{rs.echo && !echoPresent ? t('control.echoStarting') : t('control.echoHint')}</small></span>
-              <span class="switch" aria-hidden="true"></span>
-            </button>
-            {#if site.notesEnabled}
+            {#if invites && !guest}
+              <button type="button" class="row" aria-haspopup="dialog" aria-describedby="invite-menu-hint" disabled={rs.status !== 'connected'} onclick={openInvites}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="8" r="3.5" /><path d="M3.5 20a6.5 6.5 0 0 1 13 0M19 8v6M16 11h6" /></svg>
+                <span class="text">{t('invite.title')}<small id="invite-menu-hint">{t('invite.menuHint')}</small></span>
+              </button>
+            {/if}
+            {#if !guest}
+              <button type="button" class="row" role="switch" aria-checked={rs.echo} aria-label={t('control.echo')} aria-describedby="echo-hint"
+                disabled={rs.status !== 'connected'} onclick={() => session.setEcho(!rs.echo)}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h2l2-5 3 10 3-8 2 3h4" /></svg>
+                <span class="text">{t('control.echo')}<small id="echo-hint">{rs.echo && !echoPresent ? t('control.echoStarting') : t('control.echoHint')}</small></span>
+                <span class="switch" aria-hidden="true"></span>
+              </button>
+            {/if}
+            {#if site.notesEnabled && !guest}
               <button type="button" class="row" role="switch" aria-checked={rs.notes} aria-label={t('control.notes')} aria-describedby="notes-hint"
                 disabled={rs.status !== 'connected'} onclick={() => session.setNotes(!rs.notes)}>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6zM9 9h6M9 13h6M9 17h4" /></svg>
@@ -374,7 +397,7 @@
                 <span class="switch" aria-hidden="true"></span>
               </button>
             {/if}
-            {#if site.recordingEnabled}
+            {#if site.recordingEnabled && !guest}
               <button type="button" class="row" role="switch" aria-checked={rs.recording} aria-label={t('control.recording')} aria-describedby="recording-hint"
                 disabled={rs.status !== 'connected'} onclick={() => session.setRecording(!rs.recording)}>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" fill="currentColor" /></svg>

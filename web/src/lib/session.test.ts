@@ -349,6 +349,47 @@ describe('Session', () => {
     expect(FakeSocket.all[0].sent[0]).not.toHaveProperty('restart');
   });
 
+  it('a person joins with the PIN and no invitation, and the PIN is remembered', async () => {
+    const s = await joined();
+    expect(FakeSocket.all[0].sent[0]).toMatchObject({ type: 'join', room: 'ops', pin: '1234', name: 'Ann' });
+    expect(FakeSocket.all[0].sent[0]).not.toHaveProperty('invite');
+    expect(s.state.guest).toBe(false);
+  });
+
+  it('a guest joins with the invitation in place of the PIN, which it never stores', async () => {
+    const s = new Session();
+    const p = s.join('ops', '', 'Гость', 'tok');
+    await flush();
+    FakeSocket.all[0].open();
+    await p;
+    const j = FakeSocket.all[0].sent[0];
+    expect(j).toMatchObject({ type: 'join', room: 'ops', name: 'Гость', invite: 'tok' });
+    expect(j).not.toHaveProperty('pin');
+    expect(s.state.guest).toBe(true);
+    expect(s.pin).toBe('');
+    FakeSocket.all[0].onmessage?.({ data: JSON.stringify({ type: 'joined', self: { id: 'g', name: 'Гость', muted: false }, room: { slug: 'ops', name: 'Ops' } }) });
+    expect(localStorage.getItem('kunveno.pins')).toBeNull();
+  });
+
+  it('stops rejoining after bad_invite or auth_required', async () => {
+    for (const code of ['bad_invite', 'auth_required']) {
+      FakeSocket.all = [];
+      vi.useRealTimers();
+      const s = new Session();
+      const p = s.join('ops', '', 'Гость', 'tok');
+      await flush();
+      FakeSocket.all[0].open();
+      await p;
+      vi.useFakeTimers();
+      FakeSocket.all[0].onmessage?.({ data: JSON.stringify({ type: 'error', code, message: 'x' }) });
+      FakeSocket.all[0].close();
+      await vi.advanceTimersByTimeAsync(15000);
+      expect(FakeSocket.all, code).toHaveLength(1);
+      expect(s.state.status, code).toBe('error');
+      expect(s.state.errorCode, code).toBe(code);
+    }
+  });
+
   it('reports ws_closed with the session length and transport on the next join', async () => {
     const s = await joined();
     const pc = (s as unknown as { rtc: { pc: { connectionState: string; onconnectionstatechange: () => void } } }).rtc.pc;

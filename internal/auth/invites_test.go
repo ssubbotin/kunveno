@@ -1,0 +1,130 @@
+package auth
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestInvitesCreateCheckRevokePersist(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "invites.json")
+	s, err := OpenInvites(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, inv, err := s.Create("ops", "ann@example.com", 24*time.Hour)
+	if err != nil || len(tok) != 43 || inv.ID == "" || inv.Room != "ops" {
+		t.Fatalf("create %q %+v %v", tok, inv, err)
+	}
+	if got, err := s.Check("ops", tok); err != nil || got.ID != inv.ID {
+		t.Fatalf("check %+v %v", got, err)
+	}
+	if _, err := s.Check("dev", tok); !errors.Is(err, ErrBadInvite) {
+		t.Fatal("a token was accepted for another room")
+	}
+	wrong := tok[:42] + "A"
+	if tok[42] == 'A' {
+		wrong = tok[:42] + "B" // the last character is random: make sure it differs
+	}
+	if _, err := s.Check("ops", wrong); !errors.Is(err, ErrBadInvite) {
+		t.Fatal("a wrong token was accepted")
+	}
+	data, _ := os.ReadFile(p)
+	if strings.Contains(string(data), tok) {
+		t.Fatal("the token itself is stored")
+	}
+	st, _ := os.Stat(p)
+	if st.Mode().Perm() != 0o600 {
+		t.Fatalf("mode %v", st.Mode().Perm())
+	}
+	s2, err := OpenInvites(p) // a restart
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s2.Check("ops", tok); err != nil {
+		t.Fatal("the invitation did not survive a restart")
+	}
+	if l := s2.List("ops"); len(l) != 1 || l[0].Hash != "" {
+		t.Fatalf("list %+v (the hash must not leave the store)", l)
+	}
+	if _, err := s2.Revoke("ops", inv.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s2.Check("ops", tok); !errors.Is(err, ErrBadInvite) {
+		t.Fatal("a revoked invitation was accepted")
+	}
+	if _, err := s2.Revoke("dev", inv.ID); !errors.Is(err, ErrBadInvite) {
+		t.Fatal("revoked through another room")
+	}
+}
+
+func TestInvitesExpireAndAreSwept(t *testing.T) {
+	s, _ := OpenInvites(filepath.Join(t.TempDir(), "invites.json"))
+	now := time.Date(2026, 10, 16, 10, 0, 0, 0, time.UTC)
+	s.Now = func() time.Time { return now }
+	tok, _, _ := s.Create("ops", "ann@example.com", time.Hour)
+	now = now.Add(time.Hour)
+	// Expired: told apart from unknown and revoked, so the guests of a running meeting can come back.
+	if inv, err := s.Check("ops", tok); !errors.Is(err, ErrExpiredInvite) || inv.ID == "" || errors.Is(err, ErrBadInvite) {
+		t.Fatalf("an expired invitation: %+v %v", inv, err)
+	}
+	if _, err := s.Check("dev", tok); !errors.Is(err, ErrBadInvite) {
+		t.Fatal("an expired invitation of another room is not a bad one")
+	}
+	if len(s.List("ops")) != 0 || s.Active() != 0 {
+		t.Fatal("an expired invitation is listed")
+	}
+	count := func() int {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return len(s.all)
+	}
+	if err := s.Sweep(); err != nil || count() != 1 {
+		t.Fatalf("a freshly expired invitation was swept: %v, %d left", err, count())
+	}
+	now = now.Add(ExpiredKeep)
+	if _, err := s.Check("ops", tok); !errors.Is(err, ErrBadInvite) {
+		t.Fatalf("an invitation expired ExpiredKeep ago: %v", err)
+	}
+	if err := s.Sweep(); err != nil || count() != 0 {
+		t.Fatalf("%d entries after the sweep (%v)", count(), err)
+	}
+}
+
+func TestRevokedExpiredInvitationIsBad(t *testing.T) {
+	s, _ := OpenInvites(filepath.Join(t.TempDir(), "invites.json"))
+	now := time.Date(2026, 10, 16, 10, 0, 0, 0, time.UTC)
+	s.Now = func() time.Time { return now }
+	tok, inv, _ := s.Create("ops", "ann@example.com", time.Hour)
+	if _, err := s.Revoke("ops", inv.ID); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(2 * time.Hour)
+	if _, err := s.Check("ops", tok); !errors.Is(err, ErrBadInvite) || errors.Is(err, ErrExpiredInvite) {
+		t.Fatalf("a revoked, then expired invitation: %v", err)
+	}
+}
+
+func TestRemoveRoomForgetsItsInvitations(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "invites.json")
+	s, _ := OpenInvites(p)
+	tok, inv, _ := s.Create("retro", "ann@example.com", time.Hour)
+	other, _, _ := s.Create("ops", "ann@example.com", time.Hour)
+	ids, err := s.RemoveRoom("retro")
+	if err != nil || len(ids) != 1 || ids[0] != inv.ID {
+		t.Fatalf("removed %v %v", ids, err)
+	}
+	s2, _ := OpenInvites(p) // persisted
+	if _, err := s2.Check("retro", tok); !errors.Is(err, ErrBadInvite) {
+		t.Fatalf("an invitation of a deleted room: %v", err)
+	}
+	if _, err := s2.Check("ops", other); err != nil {
+		t.Fatalf("another room's invitation went too: %v", err)
+	}
+	if ids, err := s2.RemoveRoom("nope"); err != nil || len(ids) != 0 {
+		t.Fatalf("a room without invitations: %v %v", ids, err)
+	}
+}

@@ -149,3 +149,31 @@ Meeting recording (with the `kunveno-recorder` add-on installed and `recording.e
     Press it: audio drops for a couple of seconds, the status reads "connected", the button is
     gone and the key is removed. With UDP 7000 blocked by a firewall rule, pressing it brings the
     browser back to the backup channel within about 10 s.
+49. Sign-in (`auth.enabled: true`, Yandex provider, `allow: ["*@example.com"]`). An organization
+    account signs in from the sign-in screen and reaches the lobby, which shows its name and "Sign
+    out". Joining a room asks for the PIN; the participant name is the account's, whatever the
+    client sends.
+50. A personal Yandex account (login without "@") is refused with a page saying the account is not
+    allowed; no session cookie is set.
+51. A room link (`/join/ops#pin=...` or the room's usual link) opened while signed out shows the
+    sign-in screen; after sign-in the browser lands on that room with the PIN filled.
+52. Guest by link: More → "Invite a guest" → 24 hours → "Create link". Open the link in a private
+    window: only a name is asked, no PIN and no account; the guest joins, is marked "guest" in the
+    list, and can speak, turn on the camera and share a screen. The lobby is out of reach: `/api/rooms`
+    answers 401 in that window.
+53. A guest cannot switch recording, notes or the echo test (the controls are absent or ignored)
+    and cannot download notes or recordings. Recording an employee switched on goes on after the
+    last employee leaves.
+54. Revoke: with the guest in the room, the employee opens the dialog and presses "Revoke" on the
+    link; the guest is disconnected at once and sees that the link was revoked. Opening the link
+    again fails the same way.
+55. Expiry: a link with a short life (set `invite_max: 1h` and choose 1 hour, or wait) opened after
+    it expires is refused with "expired or revoked"; a guest already inside stays to the end of
+    the meeting.
+56. "Sign out" in the lobby returns to the sign-in screen; a reload stays signed out. After
+    `docker compose exec server rm /var/lib/kunveno/auth.key && docker compose restart server`
+    an open session is refused (401) and the employee must sign in again.
+57. With a signed-in employee, "Last meeting" → "Download" of a recording works (the file plays
+    and a download interrupted and resumed continues).
+58. With `auth.enabled: false` (or no `auth:` block) nothing changes: no sign-in screen, no "Invite
+    a guest" in the menu, the lobby and the rooms open as before, `/api/info` reports no sign-in.

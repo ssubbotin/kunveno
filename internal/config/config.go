@@ -10,8 +10,10 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -103,7 +105,61 @@ type Config struct {
 		KeepFor  time.Duration `yaml:"-"`
 		MaxBytes int64         `yaml:"-"`
 	} `yaml:"recording"`
+	// Auth is the optional sign-in (see package auth). Off by default: no sign-in, as before.
+	Auth struct {
+		Enabled bool `yaml:"enabled"`
+		// PublicURL is the address people open, https only; callbacks are built from it.
+		PublicURL string         `yaml:"public_url"`
+		Session   string         `yaml:"session"`    // a Go duration, DefaultSession when unset
+		InviteMax string         `yaml:"invite_max"` // the longest guest invitation, DefaultInviteMax
+		Providers []AuthProvider `yaml:"providers"`
+		// SessionTTL and InviteMaxTTL are Session and InviteMax parsed; set by Parse and Load.
+		SessionTTL   time.Duration `yaml:"-"`
+		InviteMaxTTL time.Duration `yaml:"-"`
+	} `yaml:"auth"`
 }
+
+// AuthProvider is one sign-in provider. Its secret comes from KUNVENO_AUTH_<TYPE>_SECRET.
+type AuthProvider struct {
+	Type     string   `yaml:"type"`
+	Name     string   `yaml:"name"` // the button's label; the type when unset
+	ClientID string   `yaml:"client_id"`
+	Allow    []string `yaml:"allow"` // login patterns, e.g. "*@example.com"
+	Secret   string   `yaml:"-"`
+}
+
+const (
+	DefaultSession   = "12h"
+	DefaultInviteMax = "168h"
+)
+
+// normalPublicURL writes an https origin the way browsers send it in Origin: lower-case host, no
+// default port. Anything else (other scheme, user, path, query, fragment) is returned as is for
+// Validate to refuse.
+func normalPublicURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil ||
+		u.Path != "" || u.RawQuery != "" || u.Fragment != "" || strings.Contains(raw, "#") {
+		return raw
+	}
+	host := strings.ToLower(u.Hostname())
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	if p := u.Port(); p != "" && p != "443" {
+		host += ":" + p
+	}
+	return "https://" + host
+}
+
+// AuthProviderTypes are the providers this build knows.
+var AuthProviderTypes = []string{"yandex"}
+
+// SecretEnv names the environment variable holding a provider type's secret.
+func SecretEnv(typ string) string { return "KUNVENO_AUTH_" + strings.ToUpper(typ) + "_SECRET" }
+
+// DataDir is where the rooms file lives; auth.key and invites.json go next to it.
+func (c *Config) DataDir() string { return filepath.Dir(c.RoomsFile) }
 
 const (
 	DefaultListen           = "127.0.0.1:8080"
@@ -132,6 +188,22 @@ const (
 	EnvListen      = "KUNVENO_LISTEN"       // http.listen
 	EnvAdvertiseIP = "KUNVENO_ADVERTISE_IP" // media.advertise_ip
 )
+
+// CheckSecrets reports sign-in providers whose secret is missing from the environment. Only the
+// server needs the secrets, so Validate leaves this out: the player reads the same config.yaml
+// without them.
+func (c *Config) CheckSecrets() error {
+	if !c.Auth.Enabled {
+		return nil
+	}
+	var errs []error
+	for i, p := range c.Auth.Providers {
+		if p.Secret == "" {
+			errs = append(errs, fmt.Errorf("auth.providers[%d]: %s is not set", i, SecretEnv(p.Type)))
+		}
+	}
+	return errors.Join(errs...)
+}
 
 // Load reads and validates the file at path. Settings the file leaves out come from the
 // environment (EnvListen, EnvAdvertiseIP); media.advertise_ip falls back to the host's primary
@@ -174,17 +246,34 @@ func parse(data []byte, getenv func(string) string, detect func() (string, error
 		}
 		cfg.Media.AdvertiseIP = ip
 	}
+	for i := range cfg.Auth.Providers {
+		cfg.Auth.Providers[i].Secret = getenv(SecretEnv(cfg.Auth.Providers[i].Type))
+	}
 	cfg.applyDefaults()
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	cfg.Notes.KeepFor, _ = notes.ParseKeep(*cfg.Notes.Keep)         // checked by Validate
-	cfg.Recording.KeepFor, _ = notes.ParseKeep(*cfg.Recording.Keep) // checked by Validate
-	cfg.Recording.MaxBytes, _ = ParseSize(cfg.Recording.MaxSize)    // checked by Validate
+	cfg.Notes.KeepFor, _ = notes.ParseKeep(*cfg.Notes.Keep)           // checked by Validate
+	cfg.Recording.KeepFor, _ = notes.ParseKeep(*cfg.Recording.Keep)   // checked by Validate
+	cfg.Recording.MaxBytes, _ = ParseSize(cfg.Recording.MaxSize)      // checked by Validate
+	cfg.Auth.SessionTTL, _ = time.ParseDuration(cfg.Auth.Session)     // checked by Validate
+	cfg.Auth.InviteMaxTTL, _ = time.ParseDuration(cfg.Auth.InviteMax) // checked by Validate
 	return &cfg, nil
 }
 
 func (c *Config) applyDefaults() {
+	if c.Auth.Session == "" {
+		c.Auth.Session = DefaultSession
+	}
+	if c.Auth.InviteMax == "" {
+		c.Auth.InviteMax = DefaultInviteMax
+	}
+	c.Auth.PublicURL = normalPublicURL(strings.TrimRight(c.Auth.PublicURL, "/"))
+	for i := range c.Auth.Providers {
+		if strings.TrimSpace(c.Auth.Providers[i].Name) == "" {
+			c.Auth.Providers[i].Name = c.Auth.Providers[i].Type
+		}
+	}
 	if c.UI.Reactions == nil {
 		c.UI.Reactions = append([]string(nil), DefaultReactions...)
 	}
@@ -313,6 +402,45 @@ func (c *Config) Validate() error {
 		}
 		if r.MaxParticipants < 2 || r.MaxParticipants > MaxParticipantsLimit {
 			errs = append(errs, fmt.Errorf("rooms[%d].max_participants %d out of range 2..%d", i, r.MaxParticipants, MaxParticipantsLimit))
+		}
+	}
+	if d, err := time.ParseDuration(c.Auth.Session); err != nil || d < time.Minute || d > 30*24*time.Hour {
+		errs = append(errs, fmt.Errorf("auth.session %q must be a duration between 1m and 720h", c.Auth.Session))
+	}
+	if d, err := time.ParseDuration(c.Auth.InviteMax); err != nil || d < time.Hour || d > 30*24*time.Hour {
+		errs = append(errs, fmt.Errorf("auth.invite_max %q must be a duration between 1h and 720h", c.Auth.InviteMax))
+	}
+	if c.Auth.Enabled {
+		if u, err := url.Parse(c.Auth.PublicURL); err != nil || u.Scheme != "https" || u.Host == "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.User != nil || u.Fragment != "" || strings.Contains(c.Auth.PublicURL, "#") {
+			errs = append(errs, fmt.Errorf("auth.public_url %q must be https://<host>", c.Auth.PublicURL))
+		}
+		if len(c.Auth.Providers) == 0 {
+			errs = append(errs, errors.New("auth.providers: at least one provider is needed with auth.enabled"))
+		}
+	}
+	seenType := map[string]bool{}
+	for i, p := range c.Auth.Providers {
+		if !slices.Contains(AuthProviderTypes, p.Type) {
+			errs = append(errs, fmt.Errorf("auth.providers[%d].type %q is not one of %v", i, p.Type, AuthProviderTypes))
+			continue
+		}
+		if seenType[p.Type] {
+			errs = append(errs, fmt.Errorf("auth.providers[%d].type %q is a duplicate", i, p.Type))
+		}
+		seenType[p.Type] = true
+		if !c.Auth.Enabled {
+			continue
+		}
+		if p.ClientID == "" {
+			errs = append(errs, fmt.Errorf("auth.providers[%d].client_id is empty", i))
+		}
+		if len(p.Allow) == 0 {
+			errs = append(errs, fmt.Errorf("auth.providers[%d].allow is empty: nobody could sign in", i))
+		}
+		for j, a := range p.Allow {
+			if _, err := path.Match(a, ""); err != nil || a == "" || a == "*" {
+				errs = append(errs, fmt.Errorf("auth.providers[%d].allow[%d] %q must be a login pattern such as *@example.com", i, j, a))
+			}
 		}
 	}
 	return errors.Join(errs...)

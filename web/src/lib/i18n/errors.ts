@@ -3,7 +3,7 @@
 import { translate } from './i18n.svelte';
 import type { Key, Lang } from './messages';
 
-const CODES = ['bad_message', 'bad_room', 'bad_pin', 'room_full', 'not_joined', 'share_busy', 'media_failed', 'no_mic'];
+const CODES = ['bad_message', 'bad_room', 'bad_pin', 'room_full', 'not_joined', 'share_busy', 'media_failed', 'no_mic', 'auth_required', 'bad_invite'];
 
 export function errorText(lang: Lang, code: string, vars: { retryAfter?: number; detail?: string }): string {
   if (code === 'too_many_attempts') return translate(lang, 'pin.tooMany', { seconds: vars.retryAfter ?? 60 });

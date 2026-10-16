@@ -12,9 +12,14 @@
   import LastMeetingDialog from './LastMeetingDialog.svelte';
   import { loadInfo, site } from './site.svelte';
   import MicCheck from './MicCheck.svelte';
+  import { fixedName, signOut, type Me } from './auth';
 
   type RoomItem = { slug: string; name: string; participants: number; capacity: number; created: boolean; notes_until?: string; recording_until?: string; last_meeting?: unknown };
-  let { onJoin, error = '' }: { onJoin: (room: string, pin: string, name: string) => void; error?: string } = $props();
+  // me: the signed-in person (sign-in on), whose name is fixed by the account; onAuthRequired: the
+  // server asked for a sign-in (the session ended), so the sign-in screen comes back.
+  let { onJoin, error = '', me = null, onAuthRequired = () => {} }: {
+    onJoin: (room: string, pin: string, name: string) => void; error?: string; me?: Me | null; onAuthRequired?: () => void;
+  } = $props();
 
   let rooms = $state<RoomItem[]>([]);
   let room = $state('');
@@ -30,6 +35,7 @@
     showPin = false; // a newly chosen room starts hidden
   });
   let name = $state(localStorage.getItem('kunveno.name') ?? '');
+  const shownName = $derived(me ? fixedName(me) : name);
   let loadError = $state('');
   let creating = $state(false);
   let newName = $state('');
@@ -53,6 +59,10 @@
   async function loadRooms(prefer?: string) {
     try {
       const res = await fetch('/api/rooms');
+      if (res.status === 401) {
+        onAuthRequired();
+        return;
+      }
       rooms = await res.json();
       const wanted = prefer ?? sessionStorage.getItem('kunveno.room') ?? '';
       room = rooms.some((r) => r.slug === wanted) ? wanted : (rooms[0]?.slug ?? '');
@@ -63,7 +73,7 @@
   }
 
   onMount(() => {
-    void loadInfo();
+    if (!site.loaded) void loadInfo(); // App loaded it at start; again only if that failed
     void loadRooms(fromLink?.room).then(() => {
       if (fromLink && room !== fromLink.room) linkRoomMissing = true;
     });
@@ -80,6 +90,10 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: newName.trim(), pin: newPin }),
     });
+    if (res.status === 401) {
+      onAuthRequired();
+      return;
+    }
     if (!res.ok) {
       actionError = t('rooms.createFailed');
       return;
@@ -100,6 +114,10 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pin }),
     });
+    if (res.status === 401) {
+      onAuthRequired();
+      return;
+    }
     if (!res.ok) {
       actionError = res.status === 403 ? t('rooms.deleteNeedsPin')
         : res.status === 429 ? t('pin.tooMany', { seconds: res.headers.get('Retry-After') ?? 60 })
@@ -111,10 +129,10 @@
 
   function submit(ev: Event) {
     ev.preventDefault();
-    localStorage.setItem('kunveno.name', name.trim());
+    if (!me) localStorage.setItem('kunveno.name', name.trim()); // an account's name is not this browser's
     sessionStorage.setItem('kunveno.room', room);
     if (fromLink) history.replaceState(null, '', '/'); // the PIN leaves the address bar
-    onJoin(room, pin, name.trim());
+    onJoin(room, pin, shownName.trim());
   }
 
   function forgetThisPin() {
@@ -138,6 +156,10 @@
         {#each LANGS as l (l)}<option value={l}>{LANG_NAMES[l]}</option>{/each}
       </select>
     </label>
+    {#if me}
+      <span class="me" title={t('auth.signedInAs', { name: me.login })}>{me.name || me.login}</span>
+      <button class="btn quiet" type="button" onclick={() => void signOut()}>{t('auth.signOut')}</button>
+    {/if}
   </header>
 
   <section class="rooms" aria-labelledby="rooms-title">
@@ -197,9 +219,13 @@
   <h2 id="join-title">{t('enter.title')}</h2>
   <form class="enter" onsubmit={submit}>
     {#if error}<p class="error">{error}</p>{/if}
-    <MicCheck {name} />
+    <MicCheck name={shownName} />
     <div class="pair">
-      <label class="field"><span>{t('enter.name')}</span><input bind:value={name} maxlength="32" autocomplete="name" required /></label>
+      {#if me}
+        <label class="field"><span>{t('enter.name')}</span><input value={shownName} readonly /></label>
+      {:else}
+        <label class="field"><span>{t('enter.name')}</span><input bind:value={name} maxlength="32" autocomplete="name" required /></label>
+      {/if}
       <label class="field"><span class="pin-label">{t('enter.pin')}
         {#if saved.includes(room)}<button type="button" class="link" onclick={forgetThisPin}>{t('enter.forgetPin')}</button>{/if}</span>
         <span class="pin-box">
@@ -231,7 +257,7 @@
     max-width: 66rem; margin: 0 auto; padding: clamp(1rem, 3vh, 3.5rem) 1.5rem;
     display: grid; grid-template-columns: 19rem minmax(0, 1fr); gap: 1.5rem 2.5rem; align-items: start;
   }
-  .brand { grid-column: 1 / -1; display: flex; align-items: center; gap: 1rem; }
+  .brand { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
   .brand svg { width: 2.25rem; height: 2.25rem; fill: none; stroke: var(--muted); stroke-width: 1.5; flex: none; }
   .brand .dot { fill: var(--live); stroke: none; }
   h1 { flex: 1; font-size: clamp(1.35rem, 2.4vw, 1.6rem); font-weight: 600; line-height: 1.15; margin: 0; letter-spacing: -0.01em; }
@@ -287,6 +313,7 @@
   }
   .about a { color: inherit; text-decoration: none; }
   .lang { flex: none; }
+  .me { color: var(--muted); font-size: .9rem; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .lang select { background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: .35rem .5rem; font: inherit; font-size: .9rem; cursor: pointer; }
   .lang select:hover { color: var(--text); border-color: var(--muted); }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }

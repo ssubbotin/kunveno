@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { errorText } from './errors';
 
 // Every code the server sends (internal/signal/protocol.go) has a translation of its own.
-const serverCodes = ['bad_message', 'bad_room', 'bad_pin', 'room_full', 'not_joined', 'share_busy', 'media_failed', 'too_many_attempts'];
+const serverCodes = ['bad_message', 'bad_room', 'bad_pin', 'room_full', 'not_joined', 'share_busy', 'media_failed', 'too_many_attempts', 'auth_required', 'bad_invite'];
 
 describe('errorText', () => {
   it('translates every server error code', () => {

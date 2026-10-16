@@ -244,6 +244,70 @@ mientras se guardan sus notas o su grabación.
   en el volumen del complemento;
   conviene fijar el límite según la reunión más larga y dejar espacio libre en el disco.
 
+## Inicio de sesión e invitados
+
+El inicio de sesión es opcional. Con `auth.enabled: false` (el valor por defecto) todo funciona
+como antes: quien llega al servidor ve el vestíbulo. Con `auth.enabled: true` solo entran las
+personas aprobadas, y las de fuera se unen a una sala con un enlace de invitación. El primer
+proveedor es Yandex ID; se pueden añadir otros más adelante como paquetes independientes.
+
+- **Empleados.** El vestíbulo muestra una pantalla de inicio de sesión con un botón por proveedor.
+  Tras iniciar sesión el nombre sale de la cuenta (recortado a 32 caracteres) y el nombre del
+  mensaje de entrada se ignora. El PIN de la sala se sigue pidiendo, con el mismo límite de
+  intentos fallidos. La sesión dura `auth.session` (12 horas por defecto); al caducar, el empleado
+  sigue en la reunión actual (también tras una reconexión) e inicia sesión de nuevo para la
+  siguiente. Si el inicio de sesión falla, la pantalla de inicio de sesión dice por qué: se canceló
+  en la ventana del proveedor, la lista `allow` rechaza la cuenta o el proveedor no está
+  disponible. Un enlace de sala abierto
+  sin sesión devuelve a esa sala tras iniciar sesión, con el PIN ya escrito. "Cerrar sesión" está
+  en el vestíbulo.
+- **Quién está aprobado.** El proveedor dice quién es la persona. La lista `allow` del proveedor decide si
+  se la admite. Contiene patrones que se comparan con el login de la cuenta, por ejemplo
+  `*@example.com`. El login de una cuenta de organización de Yandex 360 es `name@example.com`; una
+  cuenta personal de Yandex tiene un login sin "@", sea cual sea la dirección de contacto que
+  indique, así que se rechaza. Los patrones son obligatorios: un `*` solo se rechaza.
+- **Invitados.** En una sala el empleado abre Más → "Invitar a alguien de fuera", elige 1 hora,
+  24 horas (por defecto) o 7 días (nunca más que `auth.invite_max`, 168 horas por defecto) y copia
+  el enlace `https://<host>/join/<sala>#invite=<token>`. El invitado escribe un nombre y entra sin
+  cuenta y sin PIN, marcado como "invitado" en la lista de participantes. El token va tras el `#`,
+  así que no llega a los registros del servidor ni a un `Referer`; el servidor guarda solo su
+  SHA-256. El mismo diálogo lista los enlaces activos de la sala con "Revocar".
+- **Cuándo termina el acceso.** Revocar un enlace desconecta al instante a los invitados que
+  entraron con él. Un enlace caducado no admite invitados nuevos; los que ya están dentro se
+  quedan hasta el final de la reunión, también tras una reconexión. Borrar una sala anula sus
+  enlaces.
+- **Lo que un invitado no puede hacer.** Los invitados solo llegan a la sala de su enlace. No ven
+  el vestíbulo, no activan la grabación, las notas ni la prueba de eco, no descargan notas ni
+  grabaciones y no crean enlaces. La grabación y las notas que activó un empleado continúan
+  después de que salga el último empleado.
+- **Qué protege el inicio de sesión.** Toda ruta de `/api/` salvo `/api/info` (que indica a la
+  página si el inicio de sesión está activo) y `/api/backgrounds` exige una sesión. Las peticiones
+  que cambian algo deben venir de la página en `auth.public_url`. La sesión es una cookie firmada
+  (`__Host-kunveno`, `Secure`, `HttpOnly`); la clave es el archivo `auth.key`, junto a
+  `rooms_file`, así que los reinicios conservan las sesiones. Borrarlo cierra la sesión de todos.
+- **Ayudantes.** El eco, el reproductor, el bot de notas y el grabador siguen entrando por
+  loopback sin iniciar sesión; su contrato no cambia.
+
+Configuración resumida (los detalles, incluido el registro de la aplicación de Yandex, en
+[docs/deploy.md](docs/deploy.md)):
+
+```yaml
+auth:
+  enabled: true
+  public_url: https://meet.example.com   # solo https; la URL de retorno se construye con ella
+  providers:
+    - type: yandex
+      name: "Yandex 360"                 # texto del botón
+      client_id: "..."
+      allow: ["*@example.com"]
+```
+
+El secreto del proveedor va en `.env` como `KUNVENO_AUTH_YANDEX_SECRET`, nunca en `config.yaml`.
+El servidor no arranca con el inicio de sesión activado si no hay proveedor, falta `public_url` o
+no empieza por `https://`, o si un proveedor no tiene ID de cliente, secreto o lista `allow`. Hay
+que abrir el servicio en la dirección de `public_url`: el inicio de sesión y la comprobación de
+peticiones solo funcionan allí.
+
 ## Cómo funciona
 
 ![Cómo encaja kunveno](docs/images/architecture.svg)
@@ -330,6 +394,11 @@ repasa las comprobaciones manuales de [docs/test-matrix.md](docs/test-matrix.md)
 | `recording.keep` | cuánto se guarda una grabación tras terminar: un número entero y `m`, `h` o `d` (`90m`, `12h`, `1d`, `2d`; por defecto `1d`) |
 | `recording.dir` | dónde se guardan las grabaciones (`/var/lib/kunveno/recordings`, en el stack, el volumen de datos) |
 | `recording.max_size` | la grabación más grande que acepta el servidor: un número entero y `MB` o `GB` (`500MB`, `8GB`; por defecto `8GB`) |
+| `auth.enabled` | `true` activa el inicio de sesión (por defecto `false`: sin inicio de sesión, como antes) |
+| `auth.public_url` | la dirección que la gente abre, solo `https://`; con ella se construye la URL de retorno del proveedor `<public_url>/auth/<type>/callback` |
+| `auth.session` | cuánto dura un inicio de sesión, duración de Go (`12h` por defecto, de 1m a 720h) |
+| `auth.invite_max` | la invitación de invitado más larga (`168h` por defecto, de 1h a 720h) |
+| `auth.providers[]` | `type` (`yandex`), `name` (texto del botón), `client_id`, `allow` (patrones de login como `*@example.com`); el secreto es `KUNVENO_AUTH_<TYPE>_SECRET` en `.env` |
 
 `.env`, junto al archivo compose, fija la versión (`KUNVENO_VERSION`), los puertos, el nombre
 público del equipo para Grafana y su contraseña de administrador.

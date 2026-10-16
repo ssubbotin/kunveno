@@ -236,6 +236,64 @@ are kept.
 - A file larger than `recording.max_size` (8 GB by default) is refused by the server and stays in the
   add-on's volume, so size the limit for the longest meeting and keep free disk space for it.
 
+## Sign-in and guests
+
+Sign-in is optional. With `auth.enabled: false` (the default) everything works as before: anyone who
+reaches the server sees the lobby. With `auth.enabled: true` only approved people get in, and
+people from outside join one room by an invitation link. The first provider is Yandex ID; others
+can be added later as separate packages.
+
+- **Employees.** The lobby shows a sign-in screen with one button per provider. After sign-in the
+  name comes from the account (cut to 32 characters) and the join message's name is ignored. The
+  room PIN is still asked, with the same limit on wrong attempts. A session lasts `auth.session`
+  (12 hours by default); when it expires the employee stays in the current meeting, reconnects
+  included, and signs in again for the next one. A sign-in that fails comes back to the sign-in
+  screen with the reason: cancelled in the provider's window, an account the `allow` list refuses,
+  or a provider that is unavailable. A room link opened while signed out leads back to that room after
+  sign-in, with the PIN filled. "Sign out" is in the lobby.
+- **Who is approved.** A provider says who the person is. The provider's `allow` list decides whether to
+  admit them. It holds patterns matched against the account's login, for example `*@example.com`. The
+  login of an organization account in Yandex 360 is `name@example.com`; a personal Yandex account
+  has a login without "@", whatever contact address it lists, so it is refused. Patterns are
+  required: `*` alone is rejected.
+- **Guests.** In a room an employee opens More → "Invite a guest", picks 1 hour, 24 hours (the
+  default) or 7 days (never more than `auth.invite_max`, 168 hours by default), and copies the
+  link `https://<host>/join/<room>#invite=<token>`. The guest enters a name and joins without an
+  account and without the PIN, marked "guest" in the participant list. The token sits after `#`,
+  so it reaches neither server logs nor a `Referer`; the server stores only its SHA-256.
+  The same dialog lists the room's active links with "Revoke".
+- **When access ends.** Revoking a link disconnects the guests who joined with it at once. An
+  expired link admits no new guests; those already inside stay to the end of the meeting,
+  reconnects included. Deleting a room ends its links.
+- **What a guest cannot do.** Guests reach only the room of their link. They cannot see the
+  lobby, switch recording, notes or the echo test, download notes or recordings, or create links.
+  Recording and notes an employee switched on continue after the last employee leaves.
+- **What sign-in protects.** Every `/api/` route except `/api/info` (it tells the page whether
+  sign-in is on) and `/api/backgrounds` needs a session. Requests that change something must come
+  from the page at `auth.public_url`. The session is a signed cookie (`__Host-kunveno`, `Secure`,
+  `HttpOnly`); the key is the file `auth.key` next to `rooms_file`, so restarts keep sessions.
+  Deleting it signs everyone out.
+- **Helpers.** The echo, player, notes bot and recorder keep joining over loopback without
+  sign-in; their contract is unchanged.
+
+Setup in short (details, including registering the Yandex app, in [docs/deploy.md](docs/deploy.md)):
+
+```yaml
+auth:
+  enabled: true
+  public_url: https://meet.example.com   # https only; the callback is built from it
+  providers:
+    - type: yandex
+      name: "Yandex 360"                 # the button's label
+      client_id: "..."
+      allow: ["*@example.com"]
+```
+
+The provider's secret goes into `.env` as `KUNVENO_AUTH_YANDEX_SECRET`, never into `config.yaml`.
+The server refuses to start with sign-in on and no provider, no `public_url` or one that is not
+`https://`, or a provider without a client ID, a secret or an `allow` list. Open the service at
+the `public_url` address: sign-in and the request check work only there.
+
 ## How it works
 
 ![How kunveno fits together](docs/images/architecture.svg)
@@ -318,6 +376,11 @@ through the manual checks in [docs/test-matrix.md](docs/test-matrix.md).
 | `recording.keep` | how long a recording stays after it ends: a whole number and `m`, `h` or `d` (`90m`, `12h`, `1d`, `2d`; default `1d`) |
 | `recording.dir` | where recordings are kept (`/var/lib/kunveno/recordings`, in the stack's data volume) |
 | `recording.max_size` | the largest recording the server accepts: a whole number and `MB` or `GB` (`500MB`, `8GB`; default `8GB`) |
+| `auth.enabled` | `true` turns sign-in on (default `false`: no sign-in, as before) |
+| `auth.public_url` | the address people open, `https://` only; the provider's callback `<public_url>/auth/<type>/callback` is built from it |
+| `auth.session` | how long a sign-in lasts, a Go duration (`12h` by default, 1m to 720h) |
+| `auth.invite_max` | the longest guest invitation (`168h` by default, 1h to 720h) |
+| `auth.providers[]` | `type` (`yandex`), `name` (the button's label), `client_id`, `allow` (login patterns such as `*@example.com`); the secret is `KUNVENO_AUTH_<TYPE>_SECRET` in `.env` |
 
 `.env` next to the compose file sets the release (`KUNVENO_VERSION`), ports, the public host name
 for Grafana and its admin password.

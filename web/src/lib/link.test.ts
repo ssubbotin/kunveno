@@ -11,13 +11,13 @@ describe('room links', () => {
   });
 
   it('reads the room and the PIN back', () => {
-    expect(parseJoinLink('/join/ops', '#pin=391722')).toEqual({ room: 'ops', pin: '391722' });
-    expect(parseJoinLink('/join/ops', '#pin=a%20b%23%26')).toEqual({ room: 'ops', pin: 'a b#&' });
+    expect(parseJoinLink('/join/ops', '#pin=391722')).toEqual({ room: 'ops', pin: '391722', invite: '' });
+    expect(parseJoinLink('/join/ops', '#pin=a%20b%23%26')).toEqual({ room: 'ops', pin: 'a b#&', invite: '' });
   });
 
   it('accepts a link without a PIN', () => {
-    expect(parseJoinLink('/join/ops', '')).toEqual({ room: 'ops', pin: '' });
-    expect(parseJoinLink('/join/ops/', '#')).toEqual({ room: 'ops', pin: '' });
+    expect(parseJoinLink('/join/ops', '')).toEqual({ room: 'ops', pin: '', invite: '' });
+    expect(parseJoinLink('/join/ops/', '#')).toEqual({ room: 'ops', pin: '', invite: '' });
   });
 
   it('ignores anything that is not a join link', () => {
@@ -30,6 +30,11 @@ describe('room links', () => {
   });
 
   it('ignores a fragment that does not carry a PIN', () => {
-    expect(parseJoinLink('/join/ops', '#something')).toEqual({ room: 'ops', pin: '' });
+    expect(parseJoinLink('/join/ops', '#something')).toEqual({ room: 'ops', pin: '', invite: '' });
+  });
+
+  it('reads a guest invitation from the fragment', () => {
+    expect(parseJoinLink('/join/ops', '#invite=abc_-DEF')).toEqual({ room: 'ops', pin: '', invite: 'abc_-DEF' });
+    expect(parseJoinLink('/join/ops', '#pin=1234')).toEqual({ room: 'ops', pin: '1234', invite: '' });
   });
 });

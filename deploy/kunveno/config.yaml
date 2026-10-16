@@ -32,6 +32,19 @@ ui:
 #  keep: 1d            # how long the last meeting's recording stays: 90m, 12h, 1d, 2d
 #  dir: /var/lib/kunveno/recordings
 #  max_size: 8GB       # largest file the bot may hand over
+# Sign-in (optional). Off: anyone who reaches the server sees the lobby, as before. On: people sign
+# in with a provider; room PINs are still asked; guests join one room by an invitation link.
+# auth:
+#   enabled: true
+#   public_url: https://meet.example.com      # the address people open
+#   session: 12h
+#   invite_max: 168h
+#   providers:
+#     - type: yandex                           # Yandex ID; the secret goes in .env
+#       name: "Yandex 360"
+#       client_id: "..."
+#       allow: ["*@example.com"]               # accounts of the Yandex 360 organization
+
 rooms:
   - slug: ops
     name: Operations

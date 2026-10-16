@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ssubbotin/kunveno/internal/auth"
 	"github.com/ssubbotin/kunveno/internal/room"
 )
 
@@ -56,7 +57,9 @@ func TestCreateAndDeleteRoom(t *testing.T) {
 	reg := room.NewRegistry()
 	reg.Add(room.New("ops", "Operations", "1234", 15))
 	saves := 0
-	h := Rooms(RoomsConfig{Registry: reg, Persist: func() error { saves++; return nil }})
+	var deleted []string
+	h := Rooms(RoomsConfig{Registry: reg, Persist: func() error { saves++; return nil },
+		Deleted: func(slug string) error { deleted = append(deleted, slug); return nil }})
 	createdBefore := testutil.ToFloat64(metrics.RoomsCreated)
 	deletedBefore := testutil.ToFloat64(metrics.RoomsDeleted)
 
@@ -100,6 +103,9 @@ func TestCreateAndDeleteRoom(t *testing.T) {
 	}
 	if saves != 2 {
 		t.Fatalf("saves = %d after delete", saves)
+	}
+	if len(deleted) != 1 || deleted[0] != "retro" {
+		t.Fatalf("the deletion hook ran for %v; only the deleted room must reach it", deleted)
 	}
 	if d := testutil.ToFloat64(metrics.RoomsCreated) - createdBefore; d != 1 {
 		t.Errorf("rooms created counted %v, want 1", d)
@@ -170,15 +176,29 @@ func TestDeleteGuessingIsBlocked(t *testing.T) {
 
 func TestInfo(t *testing.T) {
 	rec := httptest.NewRecorder()
-	Info("Конференц связь", []string{"👍", "☕"}, true, true, false, false, 15).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
-	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != `{"noise_suppression":true,"notes":true,"notes_live":false,"reactions":["👍","☕"],"reconnect_grace":15,"recording":false,"title":"Конференц связь"}` {
+	Info("Конференц связь", []string{"👍", "☕"}, true, true, false, false, 15, nil).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
+	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != `{"auth":{"enabled":false,"providers":[]},"noise_suppression":true,"notes":true,"notes_live":false,"reactions":["👍","☕"],"reconnect_grace":15,"recording":false,"title":"Конференц связь"}` {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestInfoSignIn(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Info("T", nil, false, false, false, false, 15, &SignInInfo{Enabled: true, Providers: []auth.ProviderInfo{{Type: "yandex", Label: "Яндекс"}}}).
+		ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
+	if !strings.Contains(rec.Body.String(), `"auth":{"enabled":true,"providers":[{"type":"yandex","label":"Яндекс"}]}`) {
+		t.Fatalf("%s", rec.Body)
+	}
+	rec = httptest.NewRecorder()
+	Info("T", nil, false, false, false, false, 15, &SignInInfo{}).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
+	if !strings.Contains(rec.Body.String(), `"auth":{"enabled":false,"providers":[]}`) {
+		t.Fatalf("off: %s", rec.Body)
 	}
 }
 
 func TestInfoRecording(t *testing.T) {
 	rec := httptest.NewRecorder()
-	Info("T", nil, false, false, false, true, 30).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
+	Info("T", nil, false, false, false, true, 30, nil).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
 	if !strings.Contains(rec.Body.String(), `"recording":true`) || !strings.Contains(rec.Body.String(), `"reconnect_grace":30`) {
 		t.Fatalf("%s", rec.Body)
 	}

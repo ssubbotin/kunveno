@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -55,7 +56,21 @@ var (
 	ErrNoRoom = errors.New("no such room")
 	ErrMedia  = errors.New("media setup failed")
 	ErrWrite  = errors.New("write failed")
+	// ErrRevoked: the guest's invitation was revoked while the guest was joining.
+	ErrRevoked = errors.New("invitation revoked")
+	// ErrNotAdmitted: a rejoin (JoinRequest.Rejoin) of an invitation or a person not admitted to
+	// the room's current meeting.
+	ErrNotAdmitted = errors.New("not admitted to this meeting")
 )
+
+// DefaultRejoinGrace is Conference.RejoinGrace unless set: longer than the client's reconnect
+// backoff (at most 10 s) with room for a slow network.
+const DefaultRejoinGrace = time.Minute
+
+// revokedKeep is how long DropInvite remembers a revoked invitation for joins still in progress.
+// A join passes its invitation check and reaches the room within moments, so a minute is ample and
+// keeps the set small: it holds only the invitations revoked in the last minute.
+const revokedKeep = time.Minute
 
 // RefusedError is a helper refused by the room: it was not asked for, or one is already there.
 type RefusedError struct{ Reason string }
@@ -68,6 +83,24 @@ type JoinRequest struct {
 	Role            string // empty for a person; room.BotEcho, BotPlayer, BotCamera, BotNotes or BotRecorder
 	Client          string // the page's id, if it sent one
 	TCPOnly         bool   // the member's UDP path failed
+	Guest           bool   // admitted by an invitation; no PIN
+	Invite          string // the invitation's ID, for DropInvite
+	Login           string // the signed-in employee's login (sign-in on)
+	// Rejoin: the invitation or the session has expired, so the member is let in only when its
+	// invitation (Guest) or login was admitted to the room's current meeting.
+	Rejoin bool
+}
+
+// admitKey names what admitted a person to a meeting: the invitation of a guest or the login of
+// an employee; empty with sign-in off.
+func (r JoinRequest) admitKey() string {
+	switch {
+	case r.Guest && r.Invite != "":
+		return "invite:" + r.Invite
+	case !r.Guest && r.Login != "":
+		return "login:" + strings.ToLower(r.Login)
+	}
+	return ""
 }
 
 // Conference is safe for concurrent use.
@@ -82,6 +115,9 @@ type Conference struct {
 	NotesStopGrace time.Duration
 	// RecordingStopGrace is how long a stopped recorder may take to upload and leave. Set before serving.
 	RecordingStopGrace time.Duration
+	// RejoinGrace is how long after a meeting ended its expired invitations and sessions still
+	// let their people back, for a blip that dropped everyone at once. Set before serving.
+	RejoinGrace time.Duration
 
 	reactions map[string]bool  // emoji participants may send (ui.reactions)
 	notes     *notes.Store     // meeting notes (notes.enabled); nil when off
@@ -91,14 +127,30 @@ type Conference struct {
 	recording *recording.Store // meeting recording (recording.enabled); nil when off
 	meetings  *meetings.Store  // summaries of ended meetings; nil keeps none
 
-	mu   sync.Mutex
-	live map[string]*liveRoom // slug -> members
+	mu      sync.Mutex
+	live    map[string]*liveRoom // slug -> members
+	revoked map[string]time.Time // invitation ID -> when DropInvite revoked it; see revokedKeep
 }
 
 type liveRoom struct {
 	room    *room.Room
 	members map[string]*Member
 	notes   notesRoom // guarded by Conference.notesMu
+	// admitted holds the invitations and logins (JoinRequest.admitKey) admitted to the current
+	// meeting; ended is when the last person left. Both guarded by Conference.mu.
+	admitted map[string]bool
+	ended    time.Time
+}
+
+// forgetEndedLocked clears the admissions of a meeting that ended more than RejoinGrace ago.
+// Called with c.mu held.
+func (c *Conference) forgetEndedLocked(lr *liveRoom) {
+	if lr.ended.IsZero() {
+		return
+	}
+	if _, active := lr.room.Meeting(); !active && time.Since(lr.ended) > c.RejoinGrace {
+		lr.admitted, lr.ended = nil, time.Time{}
+	}
 }
 
 // Member is one session in a live room.
@@ -106,6 +158,8 @@ type Member struct {
 	id, name, slug string
 	bot            bool        // a helper: the echo, a player, the notes bot or the recorder
 	botKind        string      // room.BotEcho, BotPlayer, BotCamera, BotNotes or BotRecorder
+	guest          bool        // admitted by an invitation: cannot switch the echo, notes or recording
+	invite         string      // the guest's invitation ID, for DropInvite
 	noVideo        bool        // declined other participants' cameras; guarded by Conference.mu
 	stopping       bool        // notes bot or recorder told to stop; guarded by Conference.mu
 	stoppedAtJoin  bool        // notes bot whose notes were switched off while it joined; guarded by Conference.mu
@@ -131,7 +185,8 @@ func (m *Member) Log() *slog.Logger { return m.log }
 // New returns a conference over the rooms of reg.
 func New(reg *room.Registry, media Media, log *slog.Logger) *Conference {
 	return &Conference{reg: reg, media: media, log: log, live: map[string]*liveRoom{}, QualityEvery: 3 * time.Second,
-		NotesStopGrace: DefaultNotesStopGrace, RecordingStopGrace: DefaultRecordingStopGrace, reactions: set(config.DefaultReactions)}
+		NotesStopGrace: DefaultNotesStopGrace, RecordingStopGrace: DefaultRecordingStopGrace, RejoinGrace: DefaultRejoinGrace,
+		reactions: set(config.DefaultReactions)}
 }
 
 // lookup returns the live state of a registered room, creating it on first use. Rooms can be
@@ -177,18 +232,30 @@ func (c *Conference) Join(conn Conn, req JoinRequest) (*Member, error) {
 	case req.Role == room.BotRecorder && (c.recording == nil || !lr.room.Recording() || c.hasActiveRecorder(lr)):
 		return nil, &RefusedError{"recording not requested in this room"}
 	}
+	if !bot {
+		c.mu.Lock()
+		c.forgetEndedLocked(lr)
+		admitted := lr.admitted[req.admitKey()]
+		c.mu.Unlock()
+		if req.Rejoin && !admitted {
+			return nil, ErrNotAdmitted
+		}
+	}
 	c.replaceClient(lr, req.Client)
 	id := newID()
 	var err error
-	if bot {
+	switch {
+	case bot:
 		err = lr.room.JoinBot(id, req.Name, req.Role)
-	} else {
+	case req.Guest:
+		err = lr.room.JoinGuest(id, req.Name)
+	default:
 		err = lr.room.Join(id, req.Name, req.PIN)
 	}
 	if err != nil {
 		return nil, err
 	}
-	s := &Member{id: id, name: req.Name, slug: req.Room, bot: bot, botKind: req.Role, client: req.Client, joined: time.Now(), conn: conn, log: c.log.With("room", req.Room, "participant", id)}
+	s := &Member{id: id, name: req.Name, slug: req.Room, bot: bot, botKind: req.Role, guest: req.Guest && !bot, invite: req.Invite, client: req.Client, joined: time.Now(), conn: conn, log: c.log.With("room", req.Room, "participant", id)}
 	if req.Role == room.BotNotes {
 		s.meeting, _ = lr.room.Meeting()
 	}
@@ -200,7 +267,24 @@ func (c *Conference) Join(conn Conn, req JoinRequest) (*Member, error) {
 	}
 	s.peer = peer
 	c.mu.Lock()
+	if req.Guest && c.revokedLocked(req.Invite) {
+		// DropInvite ran after this guest's invitation was checked and found nobody to disconnect.
+		c.mu.Unlock()
+		_ = peer.Close()
+		lr.room.Leave(id)
+		s.log.Info("invitation revoked during the join; guest refused")
+		return nil, ErrRevoked
+	}
 	lr.members[id] = s
+	if key := req.admitKey(); !bot && key != "" {
+		if lr.admitted == nil {
+			lr.admitted = map[string]bool{}
+		}
+		lr.admitted[key] = true
+	}
+	// Whether a notes bot came in after the notes were switched off: a stopNotes that ran before
+	// this point missed it. One that runs after finds it among the members and stops it itself.
+	notesOffAtJoin := req.Role == room.BotNotes && !lr.room.Notes()
 	others := lr.membersExcept(id)
 	c.mu.Unlock()
 	// Subscribe before announcing the join, so the first offer already carries every existing track.
@@ -235,7 +319,7 @@ func (c *Conference) Join(conn Conn, req JoinRequest) (*Member, error) {
 	s.log.Info("joined", "name", req.Name)
 	c.broadcast(lr)
 	peer.Negotiate()
-	if s.botKind == room.BotNotes && !lr.room.Notes() {
+	if notesOffAtJoin && !lr.room.Notes() {
 		c.mu.Lock()
 		s.stoppedAtJoin = true // it heard nothing while the notes were on
 		c.mu.Unlock()
@@ -275,6 +359,9 @@ func (c *Conference) Leave(s *Member) {
 	others := lr.membersExcept(s.id)
 	c.mu.Unlock()
 	if _, m, ended := lr.room.LeaveEnding(s.id); ended {
+		c.mu.Lock()
+		lr.ended = time.Now() // its admissions go after RejoinGrace
+		c.mu.Unlock()
 		c.saveMeeting(lr, s, m)
 	}
 	for _, o := range others {
@@ -362,15 +449,56 @@ func (c *Conference) SetCamera(s *Member, on bool) {
 	}
 }
 
-// SetEcho asks for the room's echo helper or lets it go. Helpers cannot switch it.
+// SetEcho asks for the room's echo helper or lets it go. Helpers and guests cannot switch it.
 func (c *Conference) SetEcho(s *Member, on bool) {
-	if s.bot {
+	if s.bot || s.guest {
 		return
 	}
 	lr, _ := c.lookup(s.slug)
 	lr.room.SetEcho(on)
 	c.dropBotsIfUnwanted(lr)
 	c.broadcast(lr)
+}
+
+// DropInvite disconnects the guests who joined with invitation id (it was revoked) and returns
+// how many there were. A guest whose join is still in progress is refused by Join with ErrRevoked.
+// Call it after the store has revoked the invitation, so no new join can pass the check.
+func (c *Conference) DropInvite(id string) int {
+	if id == "" {
+		return 0
+	}
+	c.mu.Lock()
+	now := time.Now()
+	for r, at := range c.revoked {
+		if now.Sub(at) > revokedKeep {
+			delete(c.revoked, r)
+		}
+	}
+	if c.revoked == nil {
+		c.revoked = map[string]time.Time{}
+	}
+	c.revoked[id] = now // a guest still joining with it is refused when it reaches the room
+	var drop []*Member
+	for _, lr := range c.live {
+		for _, m := range lr.members {
+			if m.guest && m.invite == id {
+				drop = append(drop, m)
+			}
+		}
+	}
+	c.mu.Unlock()
+	for _, m := range drop {
+		m.log.Info("invitation revoked; guest disconnected")
+		m.conn.Abort("invite revoked") // Close would wait for each guest's answer
+	}
+	return len(drop)
+}
+
+// revokedLocked reports whether DropInvite revoked invitation id within revokedKeep. Called with
+// c.mu held.
+func (c *Conference) revokedLocked(id string) bool {
+	at, ok := c.revoked[id]
+	return ok && time.Since(at) <= revokedKeep
 }
 
 // StartShare gives s the share lock, or tells it ShareBusy.
