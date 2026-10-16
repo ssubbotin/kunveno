@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/url"
 	"os"
@@ -19,6 +20,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/ssubbotin/kunveno/internal/access"
 	"github.com/ssubbotin/kunveno/internal/notes"
 )
 
@@ -317,6 +319,16 @@ func (c *Config) Validate() error {
 }
 
 func bytesReader(b []byte) *bytes.Reader { return bytes.NewReader(b) }
+
+// readHint names the fix for a config file the service cannot read (it runs as user 10001 and the
+// stack mounts config.yaml from the host).
+func readHint(err error) error {
+	if !errors.Is(err, fs.ErrPermission) {
+		return err
+	}
+	return fmt.Errorf("%w (this service runs as %s: in the stack directory run sudo chgrp %d config.yaml && sudo chmod 640 config.yaml)",
+		err, access.ID(), os.Getgid())
+}
 
 // DetectIP returns the host's primary IPv4 address: the source address of the default route, or,
 // on a host without one, the first IPv4 address of an interface that is up (container bridges

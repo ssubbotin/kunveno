@@ -20,13 +20,22 @@ user=$(docker image inspect -f '{{.Config.User}}' "$img")
 # after 3 s (it either stopped by then or is running) and removes it.
 serve() {
   cid=$(docker run -d --cap-drop ALL --security-opt no-new-privileges -e KUNVENO_ADVERTISE_IP=127.0.0.1 \
-    -v "$PWD/deploy/kunveno/config.yaml:/etc/kunveno/config.yaml:ro" -v "$1:/var/lib/kunveno" "$img")
+    -v "$cfg:/etc/kunveno/config.yaml:ro" -v "$1:/var/lib/kunveno" "$img")
   sleep 3
   docker logs "$cid" 2>&1
   docker rm -f "$cid" > /dev/null
 }
 
 docker run --rm -v "$dir:/d" alpine:3.22 sh -c 'mkdir -p /d/ok /d/root && chown 10001:10001 /d/ok'
+
+# The stack's config; for the player, one room that plays a file, so that it needs its cache (without
+# such a room it sits idle and checks nothing).
+cfg=$PWD/deploy/kunveno/config.yaml
+if [ "$name" = kunveno-player ]; then
+  cfg=$dir/config.yaml
+  printf 'rooms:\n  - slug: tv\n    name: TV\n    pin: "1234"\n    player:\n      file: film.mkv\n' > "$cfg"
+  chmod 644 "$cfg"
+fi
 
 # ./data owned by 10001: the service starts.
 out=$(serve "$dir/ok")

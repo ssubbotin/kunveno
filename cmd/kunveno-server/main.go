@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ssubbotin/kunveno/internal/access"
 	"github.com/ssubbotin/kunveno/internal/backgrounds"
 	"github.com/ssubbotin/kunveno/internal/conference"
 	"github.com/ssubbotin/kunveno/internal/config"
@@ -65,8 +66,16 @@ func run(cfgPath string, log *slog.Logger) error {
 		return err
 	}
 	// Every directory the server writes, so that a bad owner stops it now with the fix, not later.
-	for _, dir := range []string{filepath.Dir(cfg.RoomsFile), cfg.Notes.Dir, cfg.Recording.Dir} {
-		if err := config.Writable(dir); err != nil {
+	// The notes and recording directories only when their feature is on.
+	dirs := []string{filepath.Dir(cfg.RoomsFile)}
+	if cfg.Notes.Enabled {
+		dirs = append(dirs, cfg.Notes.Dir)
+	}
+	if cfg.Recording.Enabled {
+		dirs = append(dirs, cfg.Recording.Dir)
+	}
+	for _, dir := range dirs {
+		if err := access.Writable(dir); err != nil {
 			return err
 		}
 	}

@@ -1,4 +1,4 @@
-package config
+package access
 
 import (
 	"os"
@@ -57,19 +57,5 @@ func TestReadableNamesTheFix(t *testing.T) {
 	_ = os.WriteFile(ok, []byte("x"), 0o644)
 	if err := Readable(ok); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestLoadNamesTheFixForAnUnreadableFile(t *testing.T) {
-	if os.Getuid() == 0 {
-		t.Skip("root reads anywhere")
-	}
-	p := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(p, []byte("rooms: []\n"), 0o000); err != nil {
-		t.Fatal(err)
-	}
-	_, err := Load(p)
-	if err == nil || !strings.Contains(err.Error(), "sudo chmod 640 config.yaml") {
-		t.Fatalf("error %v does not name the fix", err)
 	}
 }

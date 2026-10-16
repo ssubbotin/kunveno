@@ -18,6 +18,7 @@ import (
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
 
+	"github.com/ssubbotin/kunveno/internal/access"
 	"github.com/ssubbotin/kunveno/internal/config"
 	"github.com/ssubbotin/kunveno/internal/player"
 	"github.com/ssubbotin/kunveno/pkg/botclient"
@@ -45,8 +46,7 @@ func main() {
 		log.Error("config", "err", err)
 		os.Exit(1)
 	}
-	// The cache sits in the stack's ./data: a bad owner stops the player now, with the fix.
-	if err := config.Writable(*cacheDir); err != nil {
+	if err := checkCache(cfg.Rooms, *cacheDir); err != nil {
 		log.Error("PLAYER_CACHE", "err", err)
 		os.Exit(1)
 	}
@@ -65,7 +65,7 @@ func main() {
 			go serveFeed(ctx, rlog, *url, r.Slug, r.Player.Name, r.Player.URL)
 		} else {
 			file := filepath.Join(*mediaDir, r.Player.File)
-			if err := config.Readable(file); err != nil {
+			if err := access.Readable(file); err != nil {
 				rlog.Error("media file", "err", err) // the room keeps retrying, so a fixed mode is picked up
 			}
 			go serveRoom(ctx, rlog, *url, r.Slug, r.Player.Name, file, *cacheDir)
@@ -222,4 +222,16 @@ func play(ctx context.Context, log *slog.Logger, url, room, name, role string, r
 		log.Info("joined")
 		_ = send(map[string]any{"type": "camera", "on": true}) // the video shows on our tile
 	})
+}
+
+// checkCache makes sure the transcoding cache (in the stack's ./data) is usable when a room plays a
+// file, so that a bad owner stops the player at start with the fix. Without such a room nothing is
+// cached, and the player sits idle as before.
+func checkCache(rooms []config.Room, cacheDir string) error {
+	for _, r := range rooms {
+		if r.Player != nil && r.Player.File != "" {
+			return access.Writable(cacheDir)
+		}
+	}
+	return nil
 }
