@@ -22,7 +22,7 @@ docker run --rm -v "$PWD/deploy:/deploy:ro" "$img" sh -c '
   export HTTP_PORT=80 HTTPS_PORT=443 SERVER_NAME=meet.example.internal KUNVENO_UPSTREAM=127.0.0.1:8080 GRAFANA_PORT=3000
   envsubst "\$HTTP_PORT \$HTTPS_PORT \$SERVER_NAME \$KUNVENO_UPSTREAM \$GRAFANA_PORT" \
     < /deploy/docker/nginx.conf.template > /etc/nginx/conf.d/default.conf
-  GRAFANA_ADMIN_PASSWORD=adminpass sh /deploy/docker/grafana-wall.sh
+  sh /deploy/docker/grafana-wall.sh 2>/dev/null
   nginx -t
   echo "== no wall password: /grafana/ works as before"
   printf "server { listen 127.0.0.1:3000; location / { return 200 \"auth=[\$http_authorization]\\n\"; } }\n" \

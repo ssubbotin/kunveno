@@ -257,12 +257,13 @@ caption and in its dialog.
 `kunveno-server` exposes Prometheus metrics at `/metrics` to loopback clients only (nginx does not
 proxy it). The stack runs Prometheus on `127.0.0.1:${PROMETHEUS_PORT}` (default 9095, 30 days of
 data) and Grafana behind nginx at `https://<PUBLIC_HOST>/grafana/` with the Prometheus data source
-and the "kunveno" dashboard provisioned from `grafana/` in the stack directory. nginx puts a password
-wall in front of it: the browser asks for `GRAFANA_WALL_USER` (default `admin`) and
-`GRAFANA_WALL_PASSWORD` (default: `GRAFANA_ADMIN_PASSWORD`) before any request reaches Grafana, and
-nginx does not start without a password. Then log in to Grafana as `admin` with
-`GRAFANA_ADMIN_PASSWORD`; Grafana reads it on its first start only, so after changing the admin
-password inside Grafana, set `GRAFANA_WALL_PASSWORD` if the wall should keep a separate one.
+and the "kunveno" dashboard provisioned from `grafana/` in the stack directory. Log in as `admin`
+with `GRAFANA_ADMIN_PASSWORD` from `.env`; Grafana reads it on its first start only.
+
+On a server that faces the internet, set `GRAFANA_WALL_PASSWORD` (and optionally
+`GRAFANA_WALL_USER`, default `admin`) in `.env`: nginx then asks for that password before any
+request reaches Grafana, so Grafana's own code is not open to everyone; Grafana's login follows.
+Without it nginx logs at start that `/grafana/` has no wall.
 
 The stack also runs node-exporter on `127.0.0.1:${NODE_EXPORTER_PORT}` (default 9105) for the
 "Хост" row of the dashboard: CPU load, CPU, disk and memory pressure (Linux PSI), traffic of the

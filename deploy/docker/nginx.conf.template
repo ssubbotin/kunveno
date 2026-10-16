@@ -60,12 +60,10 @@ server {
     }
 
     # Grafana serves itself from the /grafana/ subpath; it needs the original host and upgrades for live updates.
-    # A password wall comes first (grafana-wall.sh writes its file), so only people who know it reach
-    # Grafana's code; Grafana's own login follows. The wall's credentials stay here.
+    # With GRAFANA_WALL_PASSWORD set, a password wall comes first (grafana-wall.sh writes the included
+    # file; it is empty without one), so only people who know it reach Grafana's code.
     location /grafana/ {
-        auth_basic "Monitoring";
-        auth_basic_user_file /etc/nginx/kunveno-grafana.htpasswd;
-        proxy_set_header Authorization "";
+        include /etc/nginx/kunveno-grafana-wall.conf;
         proxy_pass http://127.0.0.1:${GRAFANA_PORT};
         proxy_http_version 1.1;
         proxy_set_header Host $http_host;
