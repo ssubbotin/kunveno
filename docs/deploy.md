@@ -260,6 +260,11 @@ data) and Grafana behind nginx at `https://<PUBLIC_HOST>/grafana/` with the Prom
 and the "kunveno" dashboard provisioned from `grafana/` in the stack directory. Log in as `admin`
 with `GRAFANA_ADMIN_PASSWORD` from `.env`; Grafana reads it on its first start only.
 
+On a server that faces the internet, set `GRAFANA_WALL_PASSWORD` (and optionally
+`GRAFANA_WALL_USER`, default `admin`) in `.env`: nginx then asks for that password before any
+request reaches Grafana, so Grafana's own code is not open to everyone; Grafana's login follows.
+Without it nginx logs at start that `/grafana/` has no wall.
+
 The stack also runs node-exporter on `127.0.0.1:${NODE_EXPORTER_PORT}` (default 9105) for the
 "Хост" row of the dashboard: CPU load, CPU, disk and memory pressure (Linux PSI), traffic of the
 physical interfaces, and packets the host dropped (interface drops, UDP buffer overflows). When
