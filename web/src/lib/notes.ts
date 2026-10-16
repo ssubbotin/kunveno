@@ -26,7 +26,7 @@ export async function fetchNotes(fetchFn: Fetch, slug: string, pin: string, lang
       return { ok: false, error: 'failed' };
     }
   }
-  return failure(res);
+  return downloadFailure(res);
 }
 
 export type DeleteResult = { ok: true } | { ok: false; error: NotesError; retryAfter?: number };
@@ -44,10 +44,11 @@ export async function deleteNotes(fetchFn: Fetch, slug: string, pin: string): Pr
     return { ok: false, error: 'failed' };
   }
   if (res.status === 204) return { ok: true };
-  return failure(res);
+  return downloadFailure(res);
 }
 
-function failure(res: Response): { ok: false; error: NotesError; retryAfter?: number } {
+// downloadFailure names a failed answer of the notes and summary requests.
+export function downloadFailure(res: Response): { ok: false; error: NotesError; retryAfter?: number } {
   if (res.status === 403) return { ok: false, error: 'bad_pin' };
   if (res.status === 404) return { ok: false, error: 'gone' };
   if (res.status === 409) return { ok: false, error: 'recording' };
@@ -55,10 +56,10 @@ function failure(res: Response): { ok: false; error: NotesError; retryAfter?: nu
   return { ok: false, error: 'failed' };
 }
 
-// fileName takes the server's file name when it is a plain one.
-export function fileName(disposition: string | null, slug: string): string {
+// fileName takes the server's file name when it is a plain one; otherwise <slug>-<what>.md.
+export function fileName(disposition: string | null, slug: string, what = 'notes'): string {
   const m = /filename="([^"]+)"/.exec(disposition ?? '');
-  return m && /^[\w.-]+$/.test(m[1]) && !m[1].startsWith('.') ? m[1] : `${slug}-notes.md`;
+  return m && /^[\w.-]+$/.test(m[1]) && !m[1].startsWith('.') ? m[1] : `${slug}-${what}.md`;
 }
 
 // notesUntil reads notes_until of a room list item: the time, or null when absent, malformed or past.

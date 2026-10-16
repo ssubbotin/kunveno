@@ -201,6 +201,23 @@ the date and time, who spoke, and the phrases in order, with pauses marked.
 - `notes.live: true` shows the phrases in the room as they are recognised, in the tile of the
   "Notes" participant, for checking the recognition.
 
+## Meeting summary
+
+With `notes.summary: true` (and notes on) each meeting whose notes were taken also gets a short
+summary: what happened, the decisions, the action items with who does them and the open questions,
+and a line per person when people take turns reporting. It is written by the summary service of the
+`kunveno-notes` add-on with a language model (LLM) you set up there, usually a local one (any server
+with an OpenAI-compatible API, such as vLLM or ollama).
+
+- The summary appears next to the notes in the lobby's "Last meeting" dialog about a minute after the
+  meeting ends. Until then it reads "being prepared", and "could not be written" when the model
+  failed.
+- It is kept with the notes and goes with them: the same `notes.keep`, the same PIN to download, and
+  deleting the notes or the room deletes it. Only the last meeting of each room has one.
+- It is written automatically and may contain mistakes, mostly in names and terms the recognition
+  garbled; the file says so, and the notes stay next to it.
+- The meeting's notes leave the server for the model you configured. Off by default.
+
 ## Meeting recording
 
 A participant can switch on recording in a room (More → Recording). The recorder bot then

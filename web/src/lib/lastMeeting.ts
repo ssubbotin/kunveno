@@ -3,16 +3,18 @@
 import type { Key } from './i18n/messages';
 import { notesUntil } from './notes';
 import { recordingUntil } from './recording';
+import { summaryState, type SummaryState } from './summary';
 
 type Translate = (key: Key, vars?: Record<string, string | number>) => string;
 
-export type LastKind = 'video' | 'notes';
-export type LastItem = { kind: LastKind; until: Date };
+export type LastKind = 'video' | 'notes' | 'summary';
+// state: the summary's; it is kept with the notes, so it shares their expiry.
+export type LastItem = { kind: LastKind; until: Date; state?: SummaryState };
 
 // lastItems lists what the room keeps, video first: an item counts when its feature is on for the
-// site and its expiry is a valid future time.
+// site and its expiry is a valid future time. The notes' summary follows the notes.
 export function lastItems(
-  room: { notes_until?: unknown; recording_until?: unknown } | undefined,
+  room: { notes_until?: unknown; recording_until?: unknown; summary?: unknown } | undefined,
   flags: { notesEnabled: boolean; recordingEnabled: boolean },
   now = Date.now(),
 ): LastItem[] {
@@ -21,7 +23,11 @@ export function lastItems(
   const video = flags.recordingEnabled ? recordingUntil(room.recording_until, now) : null;
   if (video) items.push({ kind: 'video', until: video });
   const notes = flags.notesEnabled ? notesUntil(room.notes_until, now) : null;
-  if (notes) items.push({ kind: 'notes', until: notes });
+  if (notes) {
+    items.push({ kind: 'notes', until: notes });
+    const state = summaryState(room.summary);
+    if (state) items.push({ kind: 'summary', until: notes, state });
+  }
   return items;
 }
 

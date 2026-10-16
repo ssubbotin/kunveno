@@ -1,12 +1,14 @@
 <script lang="ts">
-  // What is left of a room's last meeting, behind its PIN: download the video and the notes, or
-  // delete either or both after a confirmation inside the dialog.
+  // What is left of a room's last meeting, behind its PIN: download the video, the notes and the
+  // notes' summary, or delete the video, the notes or both after a confirmation inside the dialog.
+  // The summary goes with the notes.
   import { tick } from 'svelte';
   import { i18n, t } from './i18n/i18n.svelte';
   import { LANG_TAGS } from './i18n/messages';
   import { formatSummary, formatUntil, type LastItem, type LastKind, type MeetingSummary } from './lastMeeting';
   import { deleteNotes, fetchNotes, notesErrorText, saveFile } from './notes';
   import { deleteRecording, recordingErrorText, recordingLink, startDownload } from './recording';
+  import { fetchSummary } from './summary';
 
   // onchange: the room's last meeting changed or turned out gone, so the room list is stale.
   let { onchange }: { onchange: () => void } = $props();
@@ -28,7 +30,7 @@
   let confirming = $state(false);
   let choice = $state<LastKind | 'all'>('all');
   // One guard per action, against double clicks.
-  let busy = $state({ video: false, notes: false, remove: false });
+  let busy = $state({ video: false, notes: false, summary: false, remove: false });
 
   // summary: the meeting's times and number of people, null when unknown.
   export function open(roomSlug: string, name: string, kept: LastItem[], knownPin: string, summary: MeetingSummary | null = null) {
@@ -47,6 +49,9 @@
   }
 
   const has = (kind: LastKind) => items.some((i) => i.kind === kind);
+  // The summary is downloaded once ready and deleted only with the notes.
+  const downloadable = $derived(items.filter((i) => i.kind !== 'summary' || i.state === 'ready'));
+  const deletable = $derived(items.filter((i) => i.kind !== 'summary'));
   const until = (d: Date) => formatUntil(d, LANG_TAGS[i18n.lang]);
 
   function setErrors(list: string[]) {
@@ -102,17 +107,39 @@
       busy.notes = false;
     }
   }
+  async function downloadSummary() {
+    if (busy.summary || !form.reportValidity()) return;
+    busy.summary = true;
+    errors = [];
+    try {
+      const r = await fetchSummary(fetch, slug, pin, i18n.lang);
+      if (r.ok) {
+        saveFile(r.blob, r.filename);
+        dialog.close();
+        return;
+      }
+      setErrors([notesErrorText(r, t)]);
+      if (r.error === 'gone') {
+        onchange();
+        drop(['summary']);
+      }
+      if (r.error === 'bad_pin' || r.error === 'gone') pinInput.focus();
+    } finally {
+      busy.summary = false;
+    }
+  }
   // Enter in the PIN field downloads when there is one thing to download.
   function submit(ev: Event) {
     ev.preventDefault();
-    if (confirming || items.length !== 1) return;
-    void (items[0].kind === 'video' ? downloadVideo() : downloadNotes());
+    if (confirming || downloadable.length !== 1) return;
+    const kind = downloadable[0].kind;
+    void (kind === 'video' ? downloadVideo() : kind === 'notes' ? downloadNotes() : downloadSummary());
   }
 
   async function askDelete() {
     if (!form.reportValidity()) return;
     errors = [];
-    choice = items.length > 1 ? 'all' : items[0].kind;
+    choice = deletable.length > 1 ? 'all' : deletable[0].kind;
     confirming = true;
     await tick();
     cancelButton?.focus(); // the safe choice
@@ -126,7 +153,7 @@
     if (busy.remove) return;
     busy.remove = true;
     errors = [];
-    const kinds: LastKind[] = choice === 'all' ? items.map((i) => i.kind) : [choice];
+    const kinds: LastKind[] = choice === 'all' ? deletable.map((i) => i.kind) : [choice];
     const failed: string[] = [];
     const removed: LastKind[] = [];
     let badPin = false;
@@ -136,12 +163,14 @@
         const r = kind === 'video' ? await deleteRecording(fetch, slug, pin) : await deleteNotes(fetch, slug, pin);
         if (r.ok) {
           removed.push(kind);
+          if (kind === 'notes') removed.push('summary');
           changed = true;
           continue;
         }
         failed.push(kind === 'video' ? recordingErrorText(r, t, 'recording.deleteFailed') : notesErrorText(r, t, 'notes.deleteFailed'));
         if (r.error === 'gone') {
           removed.push(kind);
+          if (kind === 'notes') removed.push('summary');
           changed = true;
         }
         // The same PIN fails the same way for the other item; trying it would only count another attempt.
@@ -190,7 +219,7 @@
       <fieldset class="choice" aria-labelledby="last-question">
         {#if has('video')}<label><input type="radio" name="last-delete" value="video" bind:group={choice} />{t('last.videoName')}</label>{/if}
         {#if has('notes')}<label><input type="radio" name="last-delete" value="notes" bind:group={choice} />{t('last.notesName')}</label>{/if}
-        {#if items.length > 1}<label><input type="radio" name="last-delete" value="all" bind:group={choice} />{t('last.all')}</label>{/if}
+        {#if deletable.length > 1}<label><input type="radio" name="last-delete" value="all" bind:group={choice} />{t('last.all')}</label>{/if}
       </fieldset>
       <div class="actions">
         <button class="btn quiet" type="button" disabled={busy.remove} bind:this={cancelButton} onclick={cancelDelete}>{t('last.cancel')}</button>
@@ -205,6 +234,15 @@
               <span class="what">{t('last.videoName')}<small>{t('last.videoUntil', { time: until(item.until) })}</small></span>
               <button class="btn" type="button" disabled={busy.video} onclick={downloadVideo}
                 aria-label="{t('last.download')}: {t('last.videoName')}">{t('last.download')}</button>
+            {:else if item.kind === 'summary'}
+              <svg class="icon sheet" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6zM9 9h6M9 13h3M14 16l2 2 3-4" /></svg>
+              <span class="what">{t('last.summaryName')}<small>{t(item.state === 'ready' ? 'last.summaryReady' : item.state === 'pending' ? 'last.summaryPending' : 'last.summaryFailed')}</small></span>
+              {#if item.state === 'ready'}
+                <button class="btn" type="button" disabled={busy.summary} onclick={downloadSummary}
+                  aria-label="{t('last.download')}: {t('last.summaryName')}">{t('last.download')}</button>
+              {:else}
+                <span></span>
+              {/if}
             {:else}
               <svg class="icon sheet" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6zM9 9h6M9 13h6M9 17h4" /></svg>
               <span class="what">{t('last.notesName')}<small>{t('last.notesUntil', { time: until(item.until) })}</small></span>
@@ -216,7 +254,7 @@
       </ul>
       <!-- The irreversible delete keeps to the far edge, away from the downloads. -->
       <div class="actions">
-        <button class="btn quiet remove" type="button" disabled={busy.remove || items.length === 0} bind:this={deleteButton} onclick={askDelete}>{t('last.delete')}</button>
+        <button class="btn quiet remove" type="button" disabled={busy.remove || deletable.length === 0} bind:this={deleteButton} onclick={askDelete}>{t('last.delete')}</button>
         <button class="btn quiet" type="button" onclick={() => dialog.close()}>{t('last.close')}</button>
       </div>
     {/if}

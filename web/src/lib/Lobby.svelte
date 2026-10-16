@@ -14,7 +14,7 @@
   import MicCheck from './MicCheck.svelte';
   import { fixedName, signOut, type Me } from './auth';
 
-  type RoomItem = { slug: string; name: string; participants: number; capacity: number; created: boolean; notes_until?: string; recording_until?: string; last_meeting?: unknown };
+  type RoomItem = { slug: string; name: string; participants: number; capacity: number; created: boolean; notes_until?: string; recording_until?: string; summary?: string; last_meeting?: unknown };
   // me: the signed-in person (sign-in on), whose name is fixed by the account; onAuthRequired: the
   // server asked for a sign-in (the session ended), so the sign-in screen comes back.
   let { onJoin, error = '', me = null, onAuthRequired = () => {} }: {

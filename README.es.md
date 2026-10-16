@@ -206,6 +206,23 @@ las frases en orden, con las pausas marcadas.
 - `notes.live: true` muestra las frases en la sala a medida que se reconocen, en el recuadro del
   participante «Notas», para comprobar el reconocimiento.
 
+## Resumen de la reunión
+
+Con `notes.summary: true` (y las notas activadas) cada reunión con notas recibe también un resumen
+breve: qué pasó, las decisiones, las tareas con quién las hace y las preguntas abiertas, y una línea
+por persona cuando los participantes informan por turnos. Lo redacta el servicio de resúmenes del
+complemento `kunveno-notes` con un modelo de lenguaje (LLM) que se configura allí, normalmente uno
+local (cualquier servidor con una API compatible con OpenAI, como vLLM u ollama).
+
+- El resumen aparece junto a las notas en el diálogo «Última reunión» del vestíbulo
+  aproximadamente un minuto después del final de la reunión. Hasta entonces muestra «en
+  preparación», y «no se pudo redactar» si el modelo falló.
+- Se guarda con las notas y se va con ellas: el mismo `notes.keep`, el mismo PIN para descargarlo, y
+  borrar las notas o la sala lo borra. Solo la última reunión de cada sala tiene uno.
+- Se redacta automáticamente y puede contener errores, sobre todo en nombres y términos que el
+  reconocimiento deformó; el archivo lo indica y las notas siguen a su lado.
+- Las notas de la reunión salen del servidor hacia el modelo configurado. Desactivado por defecto.
+
 ## Grabación de la reunión
 
 Un participante puede activar la grabación en una sala (Más → Grabación). El bot de

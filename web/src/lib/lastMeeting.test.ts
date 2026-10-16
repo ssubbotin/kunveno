@@ -29,6 +29,24 @@ describe('lastItems', () => {
   });
 });
 
+describe('lastItems with a summary', () => {
+  it('adds the summary after the notes, with its state and the notes expiry', () => {
+    const items = lastItems({ notes_until: notes, summary: 'pending' }, both, now);
+    expect(items).toEqual([
+      { kind: 'notes', until: new Date(notes) },
+      { kind: 'summary', until: new Date(notes), state: 'pending' },
+    ]);
+  });
+  it('has no summary without notes or with an unknown state', () => {
+    expect(lastItems({ summary: 'ready' }, both, now)).toEqual([]);
+    expect(lastItems({ notes_until: notes, summary: 'done' }, both, now).map((i) => i.kind)).toEqual(['notes']);
+    expect(lastItems({ notes_until: notes, summary: 'ready' }, { notesEnabled: false, recordingEnabled: true }, now)).toEqual([]);
+  });
+  it('leaves the caption to the video and the notes', () => {
+    expect(lastCaption(lastItems({ notes_until: notes, summary: 'ready' }, both, now))).toEqual({ key: 'last.notes', until: new Date(notes) });
+  });
+});
+
 describe('lastCaption', () => {
   const v = { kind: 'video' as const, until: new Date(video) };
   const n = { kind: 'notes' as const, until: new Date(notes) };
