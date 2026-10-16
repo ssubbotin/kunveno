@@ -90,7 +90,8 @@ func TestSignInAndBackToTheSavedPath(t *testing.T) {
 
 func TestReturnPathStaysOnOurSite(t *testing.T) {
 	_, mux := newGate(t)
-	for _, ret := range []string{"//evil.example", "/\\evil.example", "https://evil.example/", "", "join", "/%2F%2Fevil.example"} {
+	for _, ret := range []string{"//evil.example", "/\\evil.example", "https://evil.example/", "", "join", "/%2F%2Fevil.example",
+		"/\t/evil.example", "/\n/evil.example", "/\r/evil.example", "/ok\\..\\evil", "/a\x7fb"} {
 		res := signIn(t, mux, "ann", ret)
 		if loc := res.Header.Get("Location"); loc != "/" && !(ret == "/%2F%2Fevil.example" && loc == ret) {
 			t.Errorf("return %q led to %q", ret, loc)
@@ -179,5 +180,54 @@ func TestLogoutAndMe(t *testing.T) {
 	mux.ServeHTTP(w, httptest.NewRequest("GET", "/auth/me", nil))
 	if w.Code != 401 {
 		t.Fatalf("me without a session %d", w.Code)
+	}
+}
+
+func TestReturnPathKeepsOrdinaryPaths(t *testing.T) {
+	_, mux := newGate(t)
+	for _, ret := range []string{"/join/ops", "/join/ops?x=1", "/"} {
+		if loc := signIn(t, mux, "ann", ret).Header.Get("Location"); loc != ret {
+			t.Errorf("return %q led to %q", ret, loc)
+		}
+	}
+}
+
+func startLogin(t *testing.T, mux *http.ServeMux) (*http.Cookie, string) {
+	t.Helper()
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("GET", "/auth/fake/start?return=/", nil))
+	loc, _ := url.Parse(w.Header().Get("Location"))
+	return w.Result().Cookies()[0], loc.Query().Get("state")
+}
+
+func callbackWith(mux *http.ServeMux, c *http.Cookie, state string) *http.Response {
+	r := httptest.NewRequest("GET", "/auth/fake/callback?code=ann&state="+url.QueryEscape(state), nil)
+	r.AddCookie(c)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, r)
+	return w.Result()
+}
+
+func TestLoginStateExpiresOnTheServer(t *testing.T) {
+	g, mux := newGate(t)
+	login, state := startLogin(t, mux)
+	g.Sessions.Now = func() time.Time { return time.Now().Add(loginTTL + time.Minute) }
+	res := callbackWith(mux, login, state)
+	if res.StatusCode != http.StatusBadRequest || sessionOf(res) != nil {
+		t.Fatalf("expired login state: %d", res.StatusCode)
+	}
+}
+
+func TestCookiesAreNotInterchangeable(t *testing.T) {
+	g, mux := newGate(t)
+	login, state := startLogin(t, mux)
+	asSession := &http.Cookie{Name: SessionCookie, Value: login.Value}
+	if _, ok := g.Sessions.Read(cookieRequest(asSession)); ok {
+		t.Error("a login cookie was accepted as a session")
+	}
+	sess := sessionOf(signIn(t, mux, "ann", "/"))
+	res := callbackWith(mux, &http.Cookie{Name: LoginCookie, Value: sess.Value}, state)
+	if res.StatusCode != http.StatusBadRequest || sessionOf(res) != nil {
+		t.Errorf("a session cookie was accepted as login state: %d", res.StatusCode)
 	}
 }

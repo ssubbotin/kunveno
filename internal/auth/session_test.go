@@ -102,3 +102,14 @@ func TestLoadKeyCreatesOnceWithMode0600(t *testing.T) {
 		t.Fatal("a short key was accepted")
 	}
 }
+
+func TestSignaturesCarryAPurpose(t *testing.T) {
+	s := NewSessions([]byte(strings.Repeat("k", 32)), time.Hour)
+	v := s.sign("login", []byte(`{"s":"x"}`))
+	if _, ok := s.verify("login", v); !ok {
+		t.Fatal("own purpose refused")
+	}
+	if _, ok := s.verify("session", v); ok {
+		t.Fatal("a value signed for one purpose verified for another")
+	}
+}

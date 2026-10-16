@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -73,12 +75,22 @@ func (g *Gate) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /auth/me", g.me)
 }
 
-// localPath keeps the return path on our site: "/" followed by anything but "/" or "\".
+// localPath keeps the return path on our site: one leading "/" (not "//"), no control bytes (browsers
+// strip tab, CR and LF, which would turn "/\t/x" into "//x") and no backslash, and it parses as a
+// plain path.
 func localPath(p string) string {
-	if p == "/" || (strings.HasPrefix(p, "/") && len(p) > 1 && p[1] != '/' && p[1] != '\\') {
-		return p
+	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") {
+		return "/"
 	}
-	return "/"
+	for i := 0; i < len(p); i++ {
+		if p[i] < 0x20 || p[i] == 0x7f || p[i] == '\\' {
+			return "/"
+		}
+	}
+	if u, err := url.Parse(p); err != nil || u.Scheme != "" || u.Host != "" {
+		return "/"
+	}
+	return p
 }
 
 func (g *Gate) callbackURL(typ string) string { return g.PublicURL + "/auth/" + typ + "/callback" }
@@ -94,8 +106,9 @@ func (g *Gate) start(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	b, _ := json.Marshal(map[string]string{"s": state, "p": p.Type(), "r": localPath(r.URL.Query().Get("return"))})
-	http.SetCookie(w, cookie(LoginCookie, g.Sessions.sign(b), int(loginTTL.Seconds())))
+	b, _ := json.Marshal(map[string]string{"s": state, "p": p.Type(), "r": localPath(r.URL.Query().Get("return")),
+		"e": strconv.FormatInt(g.Sessions.Now().Add(loginTTL).Unix(), 10)})
+	http.SetCookie(w, cookie(LoginCookie, g.Sessions.sign("login", b), int(loginTTL.Seconds())))
 	http.Redirect(w, r, p.AuthURL(state, g.callbackURL(p.Type())), http.StatusFound)
 }
 
@@ -109,12 +122,13 @@ func (g *Gate) callback(w http.ResponseWriter, r *http.Request) {
 	var st map[string]string
 	c, err := r.Cookie(LoginCookie)
 	if err == nil {
-		if b, ok := g.Sessions.verify(c.Value); ok {
+		if b, ok := g.Sessions.verify("login", c.Value); ok {
 			_ = json.Unmarshal(b, &st)
 		}
 	}
 	q := r.URL.Query()
-	if st == nil || st["p"] != p.Type() || st["s"] == "" || q.Get("state") != st["s"] {
+	exp, _ := strconv.ParseInt(st["e"], 10, 64)
+	if st == nil || g.Sessions.Now().Unix() >= exp || st["p"] != p.Type() || st["s"] == "" || q.Get("state") != st["s"] {
 		http.Error(w, "the sign-in expired or did not start here; try again", http.StatusBadRequest)
 		return
 	}

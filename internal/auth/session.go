@@ -63,13 +63,19 @@ type sessionPayload struct {
 // maxCookie bounds what Read decodes.
 const maxCookie = 4096
 
-func (s *Sessions) sign(payload []byte) string {
+// mac covers the purpose too, so a value signed for one cookie is worthless as another.
+func (s *Sessions) mac(purpose string, payload []byte) []byte {
 	m := hmac.New(sha256.New, s.key)
+	m.Write([]byte(purpose + "\x00"))
 	m.Write(payload)
-	return base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(m.Sum(nil))
+	return m.Sum(nil)
 }
 
-func (s *Sessions) verify(v string) ([]byte, bool) {
+func (s *Sessions) sign(purpose string, payload []byte) string {
+	return base64.RawURLEncoding.EncodeToString(payload) + "." + base64.RawURLEncoding.EncodeToString(s.mac(purpose, payload))
+}
+
+func (s *Sessions) verify(purpose, v string) ([]byte, bool) {
 	if len(v) > maxCookie {
 		return nil, false
 	}
@@ -82,9 +88,7 @@ func (s *Sessions) verify(v string) ([]byte, bool) {
 	if err1 != nil || err2 != nil {
 		return nil, false
 	}
-	m := hmac.New(sha256.New, s.key)
-	m.Write(payload)
-	if !hmac.Equal(got, m.Sum(nil)) {
+	if !hmac.Equal(got, s.mac(purpose, payload)) {
 		return nil, false
 	}
 	return payload, true
@@ -97,7 +101,7 @@ func cookie(name, value string, maxAge int) *http.Cookie {
 // Issue sets the session cookie for id, valid for the session lifetime.
 func (s *Sessions) Issue(w http.ResponseWriter, id Identity) {
 	b, _ := json.Marshal(sessionPayload{Identity: id, Exp: s.Now().Add(s.ttl).Unix()})
-	http.SetCookie(w, cookie(SessionCookie, s.sign(b), int(s.ttl.Seconds())))
+	http.SetCookie(w, cookie(SessionCookie, s.sign("session", b), int(s.ttl.Seconds())))
 }
 
 // Read returns the signed-in identity, if the cookie is present, intact and not expired.
@@ -106,7 +110,7 @@ func (s *Sessions) Read(r *http.Request) (Identity, bool) {
 	if err != nil {
 		return Identity{}, false
 	}
-	b, ok := s.verify(c.Value)
+	b, ok := s.verify("session", c.Value)
 	if !ok {
 		return Identity{}, false
 	}
