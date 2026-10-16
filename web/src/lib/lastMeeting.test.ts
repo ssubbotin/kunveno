@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { translate } from './i18n/i18n.svelte';
 import type { Lang } from './i18n/messages';
-import { formatDuration, formatSummary, formatUntil, lastCaption, lastItems, lastSummary } from './lastMeeting';
+import { formatDuration, formatSummary, formatUntil, lastCaption, lastItems, lastSummary, withoutKinds } from './lastMeeting';
 
 const now = Date.parse('2026-10-15T08:00:00Z');
 const both = { notesEnabled: true, recordingEnabled: true };
@@ -143,5 +143,16 @@ describe('formatSummary', () => {
   it('shows the year of a meeting in another year', () => {
     const m = { start: new Date(2025, 11, 31, 10, 0), end: new Date(2025, 11, 31, 10, 30), people: 2 };
     expect(formatSummary(m, 'ru-RU', tr('ru'), now)).toBe('31.12.2025, 10:00–10:30 · 30 мин · 2 участника');
+  });
+});
+
+describe('withoutKinds', () => {
+  const items = lastItems({ recording_until: video, notes_until: notes, summary: 'ready' }, both, now);
+  it('takes the summary away with the notes', () => {
+    expect(withoutKinds(items, ['notes']).map((i) => i.kind)).toEqual(['video']);
+  });
+  it('removes only what is named otherwise', () => {
+    expect(withoutKinds(items, ['video']).map((i) => i.kind)).toEqual(['notes', 'summary']);
+    expect(withoutKinds(items, ['summary']).map((i) => i.kind)).toEqual(['video', 'notes']);
   });
 });

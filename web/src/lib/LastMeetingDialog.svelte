@@ -5,7 +5,7 @@
   import { tick } from 'svelte';
   import { i18n, t } from './i18n/i18n.svelte';
   import { LANG_TAGS } from './i18n/messages';
-  import { formatSummary, formatUntil, type LastItem, type LastKind, type MeetingSummary } from './lastMeeting';
+  import { formatSummary, formatUntil, withoutKinds, type LastItem, type LastKind, type MeetingSummary } from './lastMeeting';
   import { deleteNotes, fetchNotes, notesErrorText, saveFile } from './notes';
   import { deleteRecording, recordingErrorText, recordingLink, startDownload } from './recording';
   import { fetchSummary } from './summary';
@@ -57,9 +57,10 @@
   function setErrors(list: string[]) {
     errors = [...new Set(list)]; // one wrong PIN reads once
   }
-  // drop removes an item that is gone (deleted here or elsewhere); with nothing left the dialog closes.
+  // drop removes an item that is gone (deleted here or elsewhere), the summary with the notes; with
+  // nothing left the dialog closes.
   function drop(kinds: LastKind[]) {
-    items = items.filter((i) => !kinds.includes(i.kind));
+    items = withoutKinds(items, kinds);
     if (items.length === 0 && errors.length === 0) dialog.close();
   }
 
@@ -163,14 +164,12 @@
         const r = kind === 'video' ? await deleteRecording(fetch, slug, pin) : await deleteNotes(fetch, slug, pin);
         if (r.ok) {
           removed.push(kind);
-          if (kind === 'notes') removed.push('summary');
           changed = true;
           continue;
         }
         failed.push(kind === 'video' ? recordingErrorText(r, t, 'recording.deleteFailed') : notesErrorText(r, t, 'notes.deleteFailed'));
         if (r.error === 'gone') {
           removed.push(kind);
-          if (kind === 'notes') removed.push('summary');
           changed = true;
         }
         // The same PIN fails the same way for the other item; trying it would only count another attempt.

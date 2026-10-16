@@ -31,6 +31,12 @@ export function lastItems(
   return items;
 }
 
+// withoutKinds removes items that are gone; the summary is kept with the notes, so it goes with them.
+export function withoutKinds(items: LastItem[], kinds: LastKind[]): LastItem[] {
+  const gone = kinds.includes('notes') ? [...kinds, 'summary'] : kinds;
+  return items.filter((i) => !gone.includes(i.kind));
+}
+
 // lastCaption says what is there and the nearest expiry; null when there is nothing.
 export function lastCaption(items: LastItem[]): { key: Key; until: Date } | null {
   if (items.length === 0) return null;
