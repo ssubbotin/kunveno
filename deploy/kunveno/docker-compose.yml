@@ -21,8 +21,23 @@ name: kunveno
 x-logging: &journald
   driver: journald
 
+# Every service gives up root's extra rights: no capabilities but the ones it lists, and no gaining
+# new privileges (setuid binaries) inside the container.
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
 services:
   server:
+    <<: *hardening
+    # Root at start only: hand ./data to its owner, then run as that owner (start-as-owner.sh).
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
     logging:
       <<: *journald
       options:
@@ -43,6 +58,14 @@ services:
       - /etc/localtime:/etc/localtime:ro
 
   web:
+    <<: *hardening
+    # nginx: ports 80/443, the certificate files of ./certs, workers as the nginx user.
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - NET_BIND_SERVICE
+      - DAC_OVERRIDE
     logging:
       <<: *journald
       options:
@@ -70,6 +93,7 @@ services:
   # Sound check. Idle until someone presses "Эхо-тест" in a room; then it joins that room and plays
   # its audio back after ECHO_DELAY. Talks to the server over loopback only.
   echo:
+    <<: *hardening
     logging:
       <<: *journald
       options:
@@ -86,6 +110,13 @@ services:
 
   # Video files and RTSP cameras for rooms with "player:" in config.yaml; idle otherwise.
   player:
+    <<: *hardening
+    # Root at start only: hand ./data to its owner, then run as that owner (start-as-owner.sh).
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
     logging:
       <<: *journald
       options:
@@ -106,6 +137,7 @@ services:
 
   # Metrics: scrapes the server's /metrics on loopback. Listens on loopback only.
   prometheus:
+    <<: *hardening
     logging:
       <<: *journald
       options:
@@ -129,6 +161,7 @@ services:
   # Host metrics (CPU, CPU pressure, network, packet drops) for the "Хост" panels, so a meeting's
   # trouble can be told apart from load by other software on the same machine. Loopback only.
   node-exporter:
+    <<: *hardening
     logging:
       <<: *journald
       options:
@@ -148,6 +181,7 @@ services:
   # Dashboards at https://<PUBLIC_HOST>/grafana/ (user admin). The Prometheus data source and the
   # "kunveno" dashboard come from ./grafana.
   grafana:
+    <<: *hardening
     logging:
       <<: *journald
       options:

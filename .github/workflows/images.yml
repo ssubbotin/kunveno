@@ -139,6 +139,41 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.name }}
 
+  # The released stack starts with this run's images and its hardening (no capabilities beyond
+  # each service's list, no new privileges): every service stays up, the site and Grafana answer, and
+  # the server and the player run as the owner of ./data, not root.
+  stack:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    needs: image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags, for the version
+      - name: the stack starts hardened and serves
+        run: |
+          make deploy-bundle
+          mkdir /tmp/stack && tar -xzf dist/kunveno.tgz -C /tmp/stack && cd /tmp/stack/kunveno
+          sed -i -e 's/^PUBLIC_HOST=$/PUBLIC_HOST=127.0.0.1/' -e 's/^GRAFANA_ADMIN_PASSWORD=$/GRAFANA_ADMIN_PASSWORD=x/' .env
+          echo "KUNVENO_VERSION=sha-${GITHUB_SHA::7}" >> .env
+          docker compose up -d
+          for i in $(seq 1 60); do curl -skf https://127.0.0.1/healthz > /dev/null && break; sleep 2; done
+          curl -skf https://127.0.0.1/healthz
+          curl -skf https://127.0.0.1/api/info > /dev/null
+          for i in $(seq 1 30); do curl -skf -o /dev/null https://127.0.0.1/grafana/login && break; sleep 2; done
+          curl -skf -o /dev/null https://127.0.0.1/grafana/login
+          sleep 10 # a service that dies at start has restarted by now
+          docker compose ps -a --format '{{.Service}} {{.State}} {{.Status}}'
+          if docker compose ps -a --format '{{.State}} {{.Status}}' | grep -v '^running Up'; then
+            docker compose logs --no-color | tail -50; exit 1
+          fi
+          me=$(id -u)
+          for s in server player; do
+            u=$(docker top "$(docker compose ps -q $s)" -o uid | tail -n +2 | sort -u | tr '\n' ' ')
+            echo "$s runs as uid $u"
+            [ "$u" = "$me " ] || { echo "$s runs as $u, want the owner of ./data ($me)" >&2; exit 1; }
+          done
+
   # A version tag also gets a GitHub release, once its images are published, carrying kunveno.tgz:
   # the stack directory with docker-compose.yml pinned to that release.
   release:
