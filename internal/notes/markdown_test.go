@@ -107,3 +107,29 @@ func TestFileName(t *testing.T) {
 		t.Fatalf("FileName in UTC = %q", got)
 	}
 }
+
+func TestSummaryMarkdown(t *testing.T) {
+	sm := Summary{Room: "Планёрка", Start: time.Date(2026, 10, 16, 10, 55, 0, 0, msk), End: time.Date(2026, 10, 16, 11, 38, 0, 0, msk),
+		Body: []byte("## Кратко\nВсе отчитались.\n")}
+	cases := map[string]string{
+		"ru": "# Итоги встречи «Планёрка»\n\n16.10.2026, 10:55–11:38\n\n*Составлено автоматически по заметкам встречи, возможны ошибки.*\n\n",
+		"en": "# Meeting summary “Планёрка”\n\n16.10.2026, 10:55–11:38\n\n*Written automatically from the meeting notes; it may contain mistakes.*\n\n",
+		"es": "# Resumen de la reunión «Планёрка»\n\n16.10.2026, 10:55–11:38\n\n*Redactado automáticamente a partir de las notas; puede contener errores.*\n\n",
+		"de": "# Итоги встречи «Планёрка»\n\n16.10.2026, 10:55–11:38\n\n*Составлено автоматически по заметкам встречи, возможны ошибки.*\n\n",
+	}
+	for lang, head := range cases {
+		if got := string(SummaryMarkdown(sm, lang, msk)); got != head+string(sm.Body) {
+			t.Errorf("%s:\n%q\nwant\n%q", lang, got, head+string(sm.Body))
+		}
+	}
+	sm.Room = "a*b"
+	if got := string(SummaryMarkdown(sm, "ru", msk)); !strings.HasPrefix(got, "# Итоги встречи «a\\*b»\n") {
+		t.Errorf("room not escaped: %q", got)
+	}
+}
+
+func TestSummaryFileName(t *testing.T) {
+	if got := SummaryFileName("ops", time.Date(2026, 10, 16, 10, 55, 0, 0, msk), msk); got != "ops-2026-10-16-1055-summary.md" {
+		t.Fatalf("got %q", got)
+	}
+}
