@@ -78,6 +78,8 @@ services:
       HTTPS_PORT: ${HTTPS_PORT:-443}
       KUNVENO_UPSTREAM: ${KUNVENO_UPSTREAM:-127.0.0.1:8080}
       GRAFANA_PORT: ${GRAFANA_PORT:-3000}
+      # Strict-Transport-Security for a server with a public certificate, e.g. max-age=31536000.
+      KUNVENO_HSTS: ${KUNVENO_HSTS:-}
       # The optional password wall in front of /grafana/ (grafana-wall.sh).
       GRAFANA_WALL_USER: ${GRAFANA_WALL_USER:-admin}
       GRAFANA_WALL_PASSWORD: ${GRAFANA_WALL_PASSWORD:-}

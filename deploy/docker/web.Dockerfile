@@ -29,3 +29,8 @@ COPY --chmod=0755 deploy/docker/web-cert.sh /docker-entrypoint.d/05-kunveno-cert
 COPY --chmod=0755 deploy/docker/grafana-wall.sh /docker-entrypoint.d/06-kunveno-grafana-wall.sh
 COPY --from=build /web/dist/ /usr/share/nginx/kunveno/
 COPY deploy/docker/nginx.conf.template /etc/nginx/templates/kunveno.conf.template
+COPY deploy/docker/security-headers.conf /etc/nginx/kunveno-headers.conf
+COPY deploy/docker/security-headers-common.conf /etc/nginx/kunveno-headers-common.conf
+# Rendered into the template by the entrypoint; empty sends no Strict-Transport-Security. A
+# docker-compose.yml from before 0.4.5 does not pass it, so the image defines it.
+ENV KUNVENO_HSTS=""
