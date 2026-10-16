@@ -1,36 +1,35 @@
 #!/bin/sh
-# check-user.sh IMAGE: the server and player images start as root only to hand over their data
-# directory, then run the service as its owner (start-as-owner.sh). Runs the image with the
-# capabilities the compose stack gives it and checks who the service runs as:
-#   - ./data owned by 1234: the service runs as 1234, and a file an earlier release left as root
-#     becomes 1234's;
-#   - ./data owned by root (a fresh directory made by Docker): the service runs as 10001, which now
-#     owns the directory.
-# `id` stands in for the service (the image's CMD is replaced). Run from the repository root.
+# check-user.sh IMAGE: the server and player images run as user 10001, never as root, and need no
+# capabilities. The bind-mounted ./data must belong to 10001; when it does not, the server stops at
+# once with the command that fixes it instead of failing later. Run from the repository root.
 set -eu
 img=$1
-caps="--cap-drop ALL --cap-add CHOWN --cap-add SETUID --cap-add SETGID --cap-add DAC_OVERRIDE --security-opt no-new-privileges"
 dir=$(mktemp -d)
-trap 'docker run --rm -v "$dir:/d" alpine:3.22 rm -rf /d/data /d/root >/dev/null 2>&1; rm -rf "$dir"' EXIT
-
+trap 'docker run --rm -v "$dir:/d" alpine:3.22 rm -rf /d/ok /d/root >/dev/null 2>&1; rm -rf "$dir"' EXIT
 fail() { echo "check-user: $*" >&2; exit 1; }
 
-# A data directory owned by 1234 with a file a root-run release left behind.
-docker run --rm -v "$dir:/d" alpine:3.22 sh -c 'mkdir -p /d/data/notes && touch /d/data/notes/old.jsonl && chown 1234:1234 /d/data'
-# shellcheck disable=SC2086
-got=$(docker run --rm $caps -v "$dir/data:/var/lib/kunveno" "$img" sh -c 'id -u; stat -c %u /var/lib/kunveno/notes/old.jsonl')
-[ "$got" = "1234
-1234" ] || fail "data owned by 1234: got $(echo "$got" | tr '\n' ' '), want 1234 1234"
+user=$(docker image inspect -f '{{.Config.User}}' "$img")
+[ "$user" = 10001 ] || fail "the image runs as \"$user\", want 10001"
 
-# A data directory owned by root.
-docker run --rm -v "$dir:/d" alpine:3.22 mkdir -p /d/root
-# shellcheck disable=SC2086
-got=$(docker run --rm $caps -v "$dir/root:/var/lib/kunveno" "$img" sh -c 'id -u; stat -c %u /var/lib/kunveno')
-[ "$got" = "10001
-10001" ] || fail "data owned by root: got $(echo "$got" | tr '\n' ' '), want 10001 10001"
+case $img in *kunveno-server*) ;; *) echo "check-user: $img runs as 10001"; exit 0 ;; esac
 
-# Nothing left with root's rights.
-# shellcheck disable=SC2086
-caps_now=$(docker run --rm $caps -v "$dir/data:/var/lib/kunveno" "$img" sh -c 'grep CapEff /proc/self/status')
-case $caps_now in *0000000000000000) ;; *) fail "the service keeps capabilities: $caps_now" ;; esac
-echo "check-user: $img runs as the owner of its data"
+# The server with the stack's config and no capabilities at all, on a ./data in $1; prints its log
+# after 3 s (it either stopped by then or is serving) and removes it.
+serve() {
+  cid=$(docker run -d --cap-drop ALL --security-opt no-new-privileges -e KUNVENO_ADVERTISE_IP=127.0.0.1 \
+    -v "$PWD/deploy/kunveno/config.yaml:/etc/kunveno/config.yaml:ro" -v "$1:/var/lib/kunveno" "$img")
+  sleep 3
+  docker logs "$cid" 2>&1
+  docker rm -f "$cid" > /dev/null
+}
+
+docker run --rm -v "$dir:/d" alpine:3.22 sh -c 'mkdir -p /d/ok /d/root && chown 10001:10001 /d/ok'
+
+# ./data owned by 10001: the server starts.
+out=$(serve "$dir/ok")
+echo "$out" | grep -q '"msg":"kunveno-server started"' || fail "data owned by 10001: the server did not start: $out"
+
+# ./data owned by root (as Docker creates a missing directory): it stops and names the fix.
+out=$(serve "$dir/root")
+echo "$out" | grep -q 'chown -R 10001:10001' || fail "data owned by root: no hint to chown: $out"
+echo "check-user: $img runs as 10001 and names the fix for a root-owned ./data"
