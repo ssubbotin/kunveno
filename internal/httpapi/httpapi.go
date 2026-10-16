@@ -43,8 +43,8 @@ type RoomsConfig struct {
 	Persist  func() error       // saves the created rooms after every change; may be nil
 	PINs     *ratelimit.Limiter // wrong PINs per client address, shared with joining; may be nil
 	Kept     lobby.Kept         // the notes, recordings and meeting summaries the rooms keep
-	// Deleted runs after a room was deleted, before the rooms are saved: with sign-in on it ends
-	// the room's invitations. It may be nil; an error fails the request with 500.
+	// Deleted runs after a room was deleted and the rooms saved: with sign-in on it ends the room's
+	// invitations. It may be nil; an error fails the request with 500.
 	Deleted func(slug string) error
 }
 
@@ -160,15 +160,16 @@ func remove(w http.ResponseWriter, r *http.Request, cfg RoomsConfig, slug string
 	default:
 		metrics.RoomsDeleted.Inc()
 		cfg.Kept.Forget(slug)
+		if !save(w, cfg.Persist) {
+			return
+		}
 		if cfg.Deleted != nil {
 			if err := cfg.Deleted(slug); err != nil {
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 				return
 			}
 		}
-		if save(w, cfg.Persist) {
-			w.WriteHeader(http.StatusNoContent)
-		}
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 

@@ -243,11 +243,11 @@ func routes(s server) *http.ServeMux {
 	if gate != nil {
 		deleted = func(slug string) error {
 			ids, err := gate.Invites.RemoveRoom(slug)
-			if err != nil {
-				return fmt.Errorf("cannot save the invitations: %w", err)
-			}
 			for _, id := range ids {
 				s.conf.DropInvite(id)
+			}
+			if err != nil {
+				return fmt.Errorf("cannot save the invitations: %w", err)
 			}
 			return nil
 		}
