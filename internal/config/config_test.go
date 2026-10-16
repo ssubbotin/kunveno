@@ -441,3 +441,31 @@ func TestAuthValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestAuthPublicURLNormalised(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://Meet.Example.com":      "https://meet.example.com",
+		"https://meet.example.com:443":  "https://meet.example.com",
+		"https://meet.example.com:8443": "https://meet.example.com:8443",
+		"https://meet.example.com/":     "https://meet.example.com",
+		"https://[::1]:8443":            "https://[::1]:8443",
+		"https://[::1]:443":             "https://[::1]",
+	} {
+		cfg, err := parse([]byte(strings.Replace(authOn, "https://meet.example.com", in, 1)),
+			func(string) string { return "sec" }, nil)
+		if err != nil {
+			t.Errorf("%s: %v", in, err)
+			continue
+		}
+		if cfg.Auth.PublicURL != want {
+			t.Errorf("%s: got %q, want %q", in, cfg.Auth.PublicURL, want)
+		}
+	}
+	for _, in := range []string{"https://user@meet.example.com", "https://meet.example.com#x"} {
+		_, err := parse([]byte(strings.Replace(authOn, "https://meet.example.com", in, 1)),
+			func(string) string { return "sec" }, nil)
+		if err == nil || !strings.Contains(err.Error(), "auth.public_url") {
+			t.Errorf("%s: %v, want an error naming auth.public_url", in, err)
+		}
+	}
+}

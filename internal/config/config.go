@@ -133,6 +133,25 @@ const (
 	DefaultInviteMax = "168h"
 )
 
+// normalPublicURL writes an https origin the way browsers send it in Origin: lower-case host, no
+// default port. Anything else (other scheme, user, path, query, fragment) is returned as is for
+// Validate to refuse.
+func normalPublicURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil ||
+		u.Path != "" || u.RawQuery != "" || u.Fragment != "" || strings.Contains(raw, "#") {
+		return raw
+	}
+	host := strings.ToLower(u.Hostname())
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	if p := u.Port(); p != "" && p != "443" {
+		host += ":" + p
+	}
+	return "https://" + host
+}
+
 // AuthProviderTypes are the providers this build knows.
 var AuthProviderTypes = []string{"yandex"}
 
@@ -233,7 +252,7 @@ func (c *Config) applyDefaults() {
 	if c.Auth.InviteMax == "" {
 		c.Auth.InviteMax = DefaultInviteMax
 	}
-	c.Auth.PublicURL = strings.TrimRight(c.Auth.PublicURL, "/")
+	c.Auth.PublicURL = normalPublicURL(strings.TrimRight(c.Auth.PublicURL, "/"))
 	for i := range c.Auth.Providers {
 		if strings.TrimSpace(c.Auth.Providers[i].Name) == "" {
 			c.Auth.Providers[i].Name = c.Auth.Providers[i].Type
@@ -376,7 +395,7 @@ func (c *Config) Validate() error {
 		errs = append(errs, fmt.Errorf("auth.invite_max %q must be a duration between 1h and 720h", c.Auth.InviteMax))
 	}
 	if c.Auth.Enabled {
-		if u, err := url.Parse(c.Auth.PublicURL); err != nil || u.Scheme != "https" || u.Host == "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" {
+		if u, err := url.Parse(c.Auth.PublicURL); err != nil || u.Scheme != "https" || u.Host == "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.User != nil || u.Fragment != "" || strings.Contains(c.Auth.PublicURL, "#") {
 			errs = append(errs, fmt.Errorf("auth.public_url %q must be https://<host>", c.Auth.PublicURL))
 		}
 		if len(c.Auth.Providers) == 0 {
