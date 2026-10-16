@@ -110,11 +110,6 @@ func TestSummaryGoesWithTheNotes(t *testing.T) {
 		must(t, s.Begin("ops", "Планёрка", at(15, 0)))
 		assertNoSummary(t, s, dir, "Begin")
 	})
-	t.Run("delete ended", func(t *testing.T) {
-		s, dir, _ := ready(t)
-		must(t, s.DeleteEnded("ops"))
-		assertNoSummary(t, s, dir, "DeleteEnded")
-	})
 	t.Run("delete", func(t *testing.T) {
 		s, dir, _ := ready(t)
 		must(t, s.Delete("ops"))
@@ -273,4 +268,71 @@ func TestDeleteSummaryWhilePendingOrWithoutNotes(t *testing.T) {
 	if err := s.DeleteSummary("ops"); !errors.Is(err, ErrNoSummary) {
 		t.Fatalf("open notes: %v", err)
 	}
+}
+
+// Notes and summary are deleted separately: deleting the notes keeps the summary, which stays for
+// the notes' retention, survives a restart, and goes with a new meeting or a deleted room.
+func TestSummaryOutlivesDeletedNotes(t *testing.T) {
+	end := at(10, 0).UnixMilli()
+	ready := func(t *testing.T) (*Store, string, *time.Time) {
+		s, dir, now := endedStore(t)
+		must(t, s.PutSummary("ops", end, []byte("итог")))
+		must(t, s.DeleteEnded("ops"))
+		return s, dir, now
+	}
+	t.Run("kept", func(t *testing.T) {
+		s, dir, now := ready(t)
+		if _, ok := s.Until("ops"); ok {
+			t.Fatal("the notes are still there")
+		}
+		if st := s.SummaryState("ops"); st != SummaryReady {
+			t.Fatalf("state %q", st)
+		}
+		if u, ok := s.SummaryUntil("ops"); !ok || !u.Equal(at(10, 0).Add(time.Hour)) {
+			t.Fatalf("until %v %v", u, ok)
+		}
+		if m, ok := s.SummaryMeeting("ops"); !ok || !m.Equal(at(0, 0)) {
+			t.Fatalf("meeting %v %v", m, ok)
+		}
+		sm, err := s.LoadSummary("ops")
+		must(t, err)
+		if string(sm.Body) != "итог" || sm.Room != "Планёрка" || !sm.Start.Equal(at(0, 0)) || !sm.End.Equal(at(10, 0)) {
+			t.Fatalf("summary %+v", sm)
+		}
+		s2, err := Open(dir, time.Hour, func() time.Time { return *now })
+		must(t, err)
+		if sm, err := s2.LoadSummary("ops"); err != nil || string(sm.Body) != "итог" || sm.Room != "Планёрка" {
+			t.Fatalf("after restart: %+v %v", sm, err)
+		}
+		if got := s2.PendingSummaries(); len(got) != 0 {
+			t.Fatalf("pending %v", got)
+		}
+	})
+	t.Run("expires", func(t *testing.T) {
+		s, dir, now := ready(t)
+		*now = at(10, 0).Add(time.Hour + time.Second)
+		if st := s.SummaryState("ops"); st != SummaryNone {
+			t.Fatalf("state after expiry %q", st)
+		}
+		s.Sweep()
+		assertNoSummary(t, s, dir, "expiry")
+	})
+	t.Run("new meeting", func(t *testing.T) {
+		s, dir, _ := ready(t)
+		must(t, s.Begin("ops", "Планёрка", at(15, 0)))
+		assertNoSummary(t, s, dir, "Begin")
+	})
+	t.Run("room deleted", func(t *testing.T) {
+		s, dir, _ := ready(t)
+		must(t, s.Delete("ops"))
+		assertNoSummary(t, s, dir, "Delete")
+	})
+	t.Run("deleted alone afterwards", func(t *testing.T) {
+		s, dir, _ := ready(t)
+		must(t, s.DeleteSummary("ops"))
+		assertNoSummary(t, s, dir, "DeleteSummary")
+		if files, _ := filepath.Glob(filepath.Join(dir, "ops.*")); len(files) != 0 {
+			t.Fatalf("files left %v", files)
+		}
+	})
 }

@@ -78,7 +78,7 @@ type Store struct {
 	start map[string]time.Time // slug -> start of the meeting its transcript belongs to
 	// summaries marks rooms whose notes have a summary file; failed holds the end (ms) of notes the
 	// add-on gave up on (summary.go).
-	summaries map[string]int64 // the notes' end the summary file names
+	summaries map[string]summaryRec // stored summaries, kept apart from the notes (summary.go)
 	failed    map[string]int64
 	dismissed map[string]int64 // the notes' end whose summary a person deleted
 }
@@ -91,7 +91,7 @@ func Open(dir string, keep time.Duration, now func() time.Time) (*Store, error) 
 		now = time.Now
 	}
 	s := &Store{dir: dir, keep: keep, now: now, ended: map[string]time.Time{}, start: map[string]time.Time{},
-		summaries: map[string]int64{}, failed: map[string]int64{}, dismissed: map[string]int64{}}
+		summaries: map[string]summaryRec{}, failed: map[string]int64{}, dismissed: map[string]int64{}}
 	paths, err := filepath.Glob(filepath.Join(dir, "*.jsonl"))
 	if err != nil {
 		return nil, err
@@ -302,11 +302,11 @@ func (s *Store) DeleteEnded(slug string) error {
 	}
 	delete(s.ended, slug)
 	delete(s.start, slug)
-	s.dropSummaryLocked(slug)
+	s.dropMarksLocked(slug) // the summary, a file of its own, stays
 	return nil
 }
 
-// Sweep deletes expired notes and returns their rooms, sorted.
+// Sweep deletes expired notes and returns their rooms, sorted; it also deletes expired summaries.
 func (s *Store) Sweep() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -320,9 +320,10 @@ func (s *Store) Sweep() []string {
 		}
 		delete(s.ended, slug)
 		delete(s.start, slug)
-		s.dropSummaryLocked(slug)
+		s.dropMarksLocked(slug)
 		gone = append(gone, slug)
 	}
+	s.sweepSummariesLocked()
 	sort.Strings(gone)
 	return gone
 }
