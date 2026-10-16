@@ -21,6 +21,8 @@ type Kept struct {
 	Recordings       *recording.Store
 	RecordingEnabled bool
 	Meetings         *meetings.Store // summaries of ended meetings
+	// SummaryEnabled shows the state of the meeting summary kept with the notes (notes.summary).
+	SummaryEnabled bool
 }
 
 // Material is what a room keeps, of the enabled features. A zero time means none.
@@ -28,6 +30,8 @@ type Material struct {
 	NotesUntil     time.Time         // until when the notes of its last meeting can be downloaded
 	RecordingUntil time.Time         // until when its stored recording can be downloaded
 	Meeting        *meetings.Summary // the meeting whose recording or notes are kept, if summarised
+	// Summary is the state of the notes' summary; only while NotesUntil is set and summaries are on.
+	Summary notes.SummaryState
 }
 
 // Of returns what the room keeps.
@@ -35,6 +39,9 @@ func (k Kept) Of(slug string) Material {
 	var m Material
 	if k.NotesEnabled && k.Notes != nil {
 		m.NotesUntil, _ = k.Notes.Until(slug)
+		if k.SummaryEnabled && !m.NotesUntil.IsZero() {
+			m.Summary = k.Notes.SummaryState(slug)
+		}
 	}
 	if k.RecordingEnabled && k.Recordings != nil {
 		m.RecordingUntil, _ = k.Recordings.Until(slug)

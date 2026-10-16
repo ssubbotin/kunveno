@@ -255,13 +255,16 @@ func routes(s server) *http.ServeMux {
 			return nil
 		}
 	}
+	summaries := cfg.Notes.Enabled && cfg.Notes.Summary
 	rooms := protect(httpapi.Rooms(httpapi.RoomsConfig{Registry: reg, Persist: s.persist, PINs: pins, Deleted: deleted, Kept: lobby.Kept{
 		Notes: s.notes, NotesEnabled: cfg.Notes.Enabled, Recordings: s.recordings, RecordingEnabled: cfg.Recording.Enabled, Meetings: s.meetings,
+		SummaryEnabled: summaries,
 	}}))
 	mux.Handle("/api/rooms", rooms)
 	mux.Handle("/api/rooms/", rooms)
 	mux.Handle("POST /api/rooms/{slug}/notes", protect(httpapi.NotesDownload(reg, s.notes, cfg.Notes.Enabled, pins, time.Local)))
 	mux.Handle("DELETE /api/rooms/{slug}/notes", protect(httpapi.NotesDelete(reg, s.notes, cfg.Notes.Enabled, pins)))
+	mux.Handle("POST /api/rooms/{slug}/summary", protect(httpapi.SummaryDownload(reg, s.notes, summaries, pins, time.Local)))
 	mux.Handle("POST /api/rooms/{slug}/recording", protect(httpapi.RecordingLink(reg, rec, pins, links)))
 	mux.Handle("GET /api/rooms/{slug}/recording/{token}", protect(httpapi.RecordingFile(rec, links, time.Local)))
 	mux.Handle("DELETE /api/rooms/{slug}/recording", protect(httpapi.RecordingDelete(reg, rec, pins)))
@@ -284,6 +287,9 @@ func routes(s server) *http.ServeMux {
 	mux.Handle("/api/info", httpapi.Info(cfg.UI.Title, cfg.UI.Reactions, cfg.UI.NoiseSuppression, cfg.Notes.Enabled, cfg.Notes.Live, cfg.Recording.Enabled, cfg.Media.ReconnectGrace, signIn))
 	mux.Handle("/internal/echo", httpapi.EchoRooms(reg))                      // never proxied by nginx
 	mux.Handle("/internal/notes", httpapi.NotesRooms(reg, cfg.Notes.Enabled)) // never proxied by nginx
+	summary := httpapi.SummaryInternal(s.notes, summaries, time.Local)        // never proxied by nginx
+	mux.Handle("/internal/notes/summaries", summary)
+	mux.Handle("/internal/notes/summaries/", summary)
 	promReg := metrics.NewRegistry(reg, version)
 	if gate != nil {
 		metrics.RegisterAuth(promReg, gate.Invites.Active)

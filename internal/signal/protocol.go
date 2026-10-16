@@ -39,6 +39,24 @@
 //
 // The bot uses pkg/botclient for the join and the offer/answer exchange.
 //
+// Meeting summaries (notes.summary, with notes.enabled). The summary service of the same add-on
+// writes a summary of each meeting's ready notes; it talks to the server over HTTP only, loopback
+// only, never proxied by nginx:
+//
+//   - GET /internal/notes/summaries lists [{"slug","end"}]: ready notes without a summary that the
+//     service has not given up on; end is the notes' end in Unix ms and names those notes. Empty
+//     while summaries are off.
+//   - GET /internal/notes/summaries/{slug}?end=<ms> returns {"room","start","end","notes"}, the
+//     notes as Markdown with Russian labels.
+//   - PUT /internal/notes/summaries/{slug}?end=<ms> stores the summary (Markdown, UTF-8, not blank,
+//     at most 256 KiB): 204, 400 for a bad body.
+//   - POST /internal/notes/summaries/{slug}/failed?end=<ms> records that the service gave up: 204.
+//     The room then shows the summary as failed until the server restarts.
+//   - Any of them answers 409 when the room's ready notes did not end at end: they were reopened,
+//     replaced by a new meeting, deleted or expired. The service drops such work silently.
+//
+// The server keeps the summary with the notes and removes it whenever the notes go.
+//
 // The recording bot contract (the commercial kunveno-recorder add-on), stable like the notes one:
 //
 //   - GET /internal/recording (loopback only) returns the slugs of rooms that want a recording;
