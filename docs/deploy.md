@@ -420,17 +420,22 @@ state directory handling owns that path). To offer virtual backgrounds, create
 point `backgrounds_dir` at another directory; without it the list is empty.
 
 Sign-in (`auth:` in `config.yaml`, see "Sign-in with Yandex ID") works with the packages too, with
-two differences. The unit has no `EnvironmentFile`, so give the service the secret with a drop-in:
-`sudo systemctl edit kunveno-server` and write
+two differences. The unit has no `EnvironmentFile`, so add one. Keep the secret in a file that only
+root can read (systemd reads it as root before it switches to the service user, and
+`systemctl show` does not display it):
+
+```
+sudo install -m 600 /dev/null /etc/kunveno/auth.env
+sudo editor /etc/kunveno/auth.env      # KUNVENO_AUTH_YANDEX_SECRET=<the application's password>
+sudo systemctl edit kunveno-server     # write the two lines below
+```
 
 ```
 [Service]
-Environment=KUNVENO_AUTH_YANDEX_SECRET=<the application's password>
+EnvironmentFile=/etc/kunveno/auth.env
 ```
 
-then `sudo systemctl restart kunveno-server` (`systemctl edit` stores the file world-readable under
-`/etc/systemd/system/kunveno-server.service.d/`; run `sudo chmod 600` on it to keep the secret from
-other users). And `auth.key` and
+then `sudo systemctl daemon-reload && sudo systemctl restart kunveno-server`. And `auth.key` and
 `invites.json` are in `/var/lib/kunveno`: to sign everyone out run
 `sudo rm /var/lib/kunveno/auth.key && sudo systemctl restart kunveno-server`. The nginx site in
 the package proxies `/auth/` already.

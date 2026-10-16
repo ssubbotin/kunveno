@@ -258,8 +258,8 @@ proveedor es Yandex ID; se pueden añadir otros más adelante como paquetes inde
   sigue en la reunión actual e inicia sesión de nuevo para la siguiente. Un enlace de sala abierto
   sin sesión devuelve a esa sala tras iniciar sesión, con el PIN ya escrito. "Cerrar sesión" está
   en el vestíbulo.
-- **Quién está aprobado.** El proveedor solo dice quién es la persona; decide la lista `allow` del
-  proveedor. Contiene patrones que se comparan con el login de la cuenta, por ejemplo
+- **Quién está aprobado.** El proveedor dice quién es la persona. La lista `allow` del proveedor decide si
+  se la admite. Contiene patrones que se comparan con el login de la cuenta, por ejemplo
   `*@example.com`. El login de una cuenta de organización de Yandex 360 es `name@example.com`; una
   cuenta personal de Yandex tiene un login sin "@", sea cual sea la dirección de contacto que
   indique, así que se rechaza. Los patrones son obligatorios: un `*` solo se rechaza.

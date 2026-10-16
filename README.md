@@ -249,8 +249,8 @@ can be added later as separate packages.
   (12 hours by default); when it expires the employee stays in the current meeting and signs in
   again for the next one. A room link opened while signed out leads back to that room after
   sign-in, with the PIN filled. "Sign out" is in the lobby.
-- **Who is approved.** A provider only says who the person is; the `allow` list of the provider
-  decides. It holds patterns matched against the account's login, for example `*@example.com`. The
+- **Who is approved.** A provider says who the person is. The provider's `allow` list decides whether to
+  admit them. It holds patterns matched against the account's login, for example `*@example.com`. The
   login of an organization account in Yandex 360 is `name@example.com`; a personal Yandex account
   has a login without "@", whatever contact address it lists, so it is refused. Patterns are
   required: `*` alone is rejected.
