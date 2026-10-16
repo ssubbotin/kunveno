@@ -720,6 +720,8 @@ func TestPlayerJoinsOnlyItsRoomAndStaysWhenEchoGoesOff(t *testing.T) {
 
 	ca, _ := join(t, e, "Ann")
 	send(t, ca, `{"type":"echo","on":true}`)
+	for !expect(t, ca, "participants").Echo { // the echo may join only once the room asked for it
+	}
 	echo := dial(t, e)
 	send(t, echo, `{"type":"join","room":"ops","name":"Echo","role":"echo"}`)
 	expect(t, echo, "joined")
