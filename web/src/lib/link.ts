@@ -4,7 +4,9 @@
 
 const SLUG = /^[a-z0-9-]{1,32}$/;
 
-export type JoinLink = { room: string; pin: string };
+// invite: a guest's invitation token (https://<host>/join/<slug>#invite=<token>, sign-in on); empty
+// for a room link with a PIN.
+export type JoinLink = { room: string; pin: string; invite: string };
 
 export function roomLink(origin: string, room: string, pin: string): string {
   return `${origin}/join/${room}#pin=${encodeURIComponent(pin)}`;
@@ -14,6 +16,6 @@ export function roomLink(origin: string, room: string, pin: string): string {
 export function parseJoinLink(pathname: string, hash: string): JoinLink | null {
   const m = /^\/join\/([^/]+)\/?$/.exec(pathname);
   if (!m || !SLUG.test(m[1])) return null;
-  const pin = new URLSearchParams(hash.replace(/^#/, '')).get('pin') ?? '';
-  return { room: m[1], pin };
+  const frag = new URLSearchParams(hash.replace(/^#/, ''));
+  return { room: m[1], pin: frag.get('pin') ?? '', invite: frag.get('invite') ?? '' };
 }

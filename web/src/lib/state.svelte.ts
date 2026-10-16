@@ -18,6 +18,8 @@ export class RoomState {
   selfName = $state('');
   roomSlug = $state('');
   roomName = $state('');
+  // We joined by an invitation link (sign-in on); set by the session at join.
+  guest = $state(false);
   participants = $state<Participant[]>([]);
   sharer = $state('');
   muted = $state(false);

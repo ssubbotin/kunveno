@@ -62,4 +62,11 @@ describe('parseServerMessage', () => {
     expect(m).toMatchObject({ type: 'participants', recording: true, participants: [{ botKind: 'recorder' }] });
     expect(parseServerMessage('{"type":"recording_ready"}')).toEqual({ type: 'recording_ready' });
   });
+  it('marks guests and reads the sign-in error codes', () => {
+    const m = parseServerMessage('{"type":"participants","participants":[{"id":"g","name":"Гость","muted":false,"guest":true},{"id":"a","name":"Ann","muted":false,"guest":"yes"}],"sharer":""}');
+    if (m.type !== 'participants') throw new Error('type');
+    expect(m.participants.map((p) => p.guest)).toEqual([true, undefined]);
+    expect(parseServerMessage('{"type":"error","code":"auth_required","message":"x"}')).toEqual({ type: 'error', code: 'auth_required', message: 'x' });
+    expect(parseServerMessage('{"type":"error","code":"bad_invite","message":"x"}')).toEqual({ type: 'error', code: 'bad_invite', message: 'x' });
+  });
 });

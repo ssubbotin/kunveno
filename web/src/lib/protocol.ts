@@ -1,7 +1,8 @@
-// bot marks a server-side helper such as the echo; the parser always fills it in.
+// bot marks a server-side helper such as the echo; the parser always fills it in. guest marks a
+// person who joined by an invitation link (sign-in on).
 export type Quality = 'good' | 'fair' | 'poor';
 export type BotKind = 'echo' | 'player' | 'camera' | 'notes' | 'recorder';
-export type Participant = { id: string; name: string; muted: boolean; bot?: boolean; botKind?: BotKind; quality?: Quality; camera?: boolean };
+export type Participant = { id: string; name: string; muted: boolean; bot?: boolean; botKind?: BotKind; quality?: Quality; camera?: boolean; guest?: boolean };
 const QUALITIES: readonly string[] = ['good', 'fair', 'poor'];
 
 export type ServerMessage =
@@ -22,7 +23,8 @@ export type RestartReason = 'ws_closed' | 'media_disconnected' | 'media_failed' 
 export type Restart = { reason: RestartReason; after: number; transport: 'udp' | 'tcp' | '' };
 
 export type ClientMessage =
-  | { type: 'join'; room: string; pin: string; name: string; media?: 'tcp'; client?: string; restart?: Restart }
+  // A guest sends invite (the token from the link) in place of the PIN.
+  | { type: 'join'; room: string; pin?: string; invite?: string; name: string; media?: 'tcp'; client?: string; restart?: Restart }
   | { type: 'answer'; sdp: string }
   | { type: 'candidate'; candidate: RTCIceCandidateInit }
   | { type: 'mute'; muted: boolean }
@@ -73,6 +75,7 @@ export function parseServerMessage(raw: string): ServerMessage {
           id: p.id, name: p.name, muted: p.muted, bot: p.bot === true,
           quality: QUALITIES.includes(p.quality as string) ? p.quality : undefined,
           camera: p.camera === true ? true : undefined,
+          guest: p.guest === true ? true : undefined,
           botKind: ['echo', 'player', 'camera', 'notes', 'recorder'].includes((p as { bot_kind?: unknown }).bot_kind as string)
             ? ((p as { bot_kind?: unknown }).bot_kind as BotKind) : undefined,
         })),

@@ -45,6 +45,7 @@
         <span class="name">{p.botKind === 'echo' ? t('people.echoName') : p.botKind === 'notes' ? t('people.notesName') : p.botKind === 'recorder' ? t('people.recorderName') : p.name}</span>
         <span class="tags">
           {#if p.id === selfId}<span>{t('people.you')}</span>{/if}
+          {#if p.guest}<span>{t('guest.mark')}</span>{/if}
           {#if p.botKind === 'echo'}<span>{t('people.echoTag')}</span>{/if}
           {#if p.botKind === 'notes'}
             {#if feed && compact && phrases?.length}

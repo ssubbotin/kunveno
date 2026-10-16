@@ -17,9 +17,10 @@ import { isLost } from './background/stored';
 // How long a reaction stays on the sender's tile.
 const REACTION_MS = 4000;
 
-const FATAL_CODES = new Set(['bad_pin', 'bad_room', 'room_full', 'bad_message', 'too_many_attempts']);
+const FATAL_CODES = new Set(['bad_pin', 'bad_room', 'room_full', 'bad_message', 'too_many_attempts', 'auth_required', 'bad_invite']);
 
-type Wanted = { room: string; pin: string; name: string };
+// invite: a guest's invitation token (sign-in on), sent in place of the PIN.
+type Wanted = { room: string; pin: string; name: string; invite: string };
 
 export class Session {
   readonly state = new RoomState();
@@ -74,8 +75,10 @@ export class Session {
     this.state.background = choice.kind;
   }
 
-  async join(room: string, pin: string, name: string): Promise<void> {
-    this.wanted = { room, pin, name };
+  // A guest passes the invitation token from the link and an empty PIN.
+  async join(room: string, pin: string, name: string, invite = ''): Promise<void> {
+    this.wanted = { room, pin, name, invite };
+    this.state.guest = invite !== '';
     this.reconnector.cancel();
     this.reconnector.succeeded();
     this.everJoined = false;
@@ -349,7 +352,8 @@ export class Session {
     }
     const restart: Restart | undefined = this.dropped ?? undefined;
     this.dropped = null;
-    sig.send({ type: 'join', ...this.wanted, client: this.clientId, ...(this.preferTcp ? { media: 'tcp' as const } : {}), ...(restart ? { restart } : {}) });
+    const { room, pin, name, invite } = this.wanted;
+    sig.send({ type: 'join', room, name, ...(invite ? { invite } : { pin }), client: this.clientId, ...(this.preferTcp ? { media: 'tcp' as const } : {}), ...(restart ? { restart } : {}) });
   }
 
   // noteDrop remembers why our session ended, for the next join. The first reason stays.
@@ -361,7 +365,7 @@ export class Session {
     this.state.apply(m);
     switch (m.type) {
       case 'joined':
-        if (this.wanted) rememberPin(localStorage, this.wanted.room, this.wanted.pin); // accepted
+        if (this.wanted && !this.wanted.invite) rememberPin(localStorage, this.wanted.room, this.wanted.pin); // accepted
         this.reconnector.succeeded();
         this.everJoined = true;
         this.state.status = 'connected';
