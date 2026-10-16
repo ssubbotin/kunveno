@@ -239,7 +239,20 @@ func routes(s server) *http.ServeMux {
 	links := httpapi.NewLinks(5 * time.Minute)
 	mux := http.NewServeMux()
 	mux.Handle("/ws", s.ws)
-	rooms := protect(httpapi.Rooms(httpapi.RoomsConfig{Registry: reg, Persist: s.persist, PINs: pins, Kept: lobby.Kept{
+	var deleted func(slug string) error // with sign-in on, a deleted room's invitations end with it
+	if gate != nil {
+		deleted = func(slug string) error {
+			ids, err := gate.Invites.RemoveRoom(slug)
+			if err != nil {
+				return fmt.Errorf("cannot save the invitations: %w", err)
+			}
+			for _, id := range ids {
+				s.conf.DropInvite(id)
+			}
+			return nil
+		}
+	}
+	rooms := protect(httpapi.Rooms(httpapi.RoomsConfig{Registry: reg, Persist: s.persist, PINs: pins, Deleted: deleted, Kept: lobby.Kept{
 		Notes: s.notes, NotesEnabled: cfg.Notes.Enabled, Recordings: s.recordings, RecordingEnabled: cfg.Recording.Enabled, Meetings: s.meetings,
 	}}))
 	mux.Handle("/api/rooms", rooms)

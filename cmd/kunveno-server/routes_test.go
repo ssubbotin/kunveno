@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -148,5 +149,34 @@ func TestSignInOffChangesNothing(t *testing.T) {
 	}
 	if w := do(h, "GET", "/auth/me", "", nil, ""); w.Code == http.StatusUnauthorized || w.Code == 200 {
 		t.Errorf("/auth/ served without sign-in: %d", w.Code)
+	}
+}
+
+// A deleted room takes its invitations along: a new room with the same slug never admits the old
+// room's guests without its own PIN.
+func TestDeletingARoomEndsItsInvitations(t *testing.T) {
+	gate, session := testGate(t)
+	h := testServer(t, gate)
+	if w := do(h, "POST", "/api/rooms", `{"name":"Retro","pin":"432100"}`, session, publicURL); w.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", w.Code, w.Body)
+	}
+	w := do(h, "POST", "/api/rooms/retro/invites", `{"pin":"432100","hours":24}`, session, publicURL)
+	_, tok, ok := strings.Cut(w.Body.String(), "#invite=")
+	if w.Code != http.StatusCreated || !ok {
+		t.Fatalf("invite: %d %s", w.Code, w.Body)
+	}
+	tok, _, _ = strings.Cut(tok, `"`)
+	if _, err := gate.Invites.Check("retro", tok); err != nil {
+		t.Fatalf("the fresh invitation: %v", err)
+	}
+	if w := do(h, "DELETE", "/api/rooms/retro", `{"pin":"432100"}`, session, publicURL); w.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d %s", w.Code, w.Body)
+	}
+	if w := do(h, "POST", "/api/rooms", `{"name":"Retro","pin":"999999"}`, session, publicURL); w.Code != http.StatusCreated ||
+		!strings.Contains(w.Body.String(), `"slug":"retro"`) {
+		t.Fatalf("re-create: %d %s", w.Code, w.Body)
+	}
+	if _, err := gate.Invites.Check("retro", tok); !errors.Is(err, auth.ErrBadInvite) {
+		t.Fatalf("the deleted room's invitation in the new room: %v", err)
 	}
 }

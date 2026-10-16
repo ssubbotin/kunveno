@@ -107,3 +107,24 @@ func TestRevokedExpiredInvitationIsBad(t *testing.T) {
 		t.Fatalf("a revoked, then expired invitation: %v", err)
 	}
 }
+
+func TestRemoveRoomForgetsItsInvitations(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "invites.json")
+	s, _ := OpenInvites(p)
+	tok, inv, _ := s.Create("retro", "ann@example.com", time.Hour)
+	other, _, _ := s.Create("ops", "ann@example.com", time.Hour)
+	ids, err := s.RemoveRoom("retro")
+	if err != nil || len(ids) != 1 || ids[0] != inv.ID {
+		t.Fatalf("removed %v %v", ids, err)
+	}
+	s2, _ := OpenInvites(p) // persisted
+	if _, err := s2.Check("retro", tok); !errors.Is(err, ErrBadInvite) {
+		t.Fatalf("an invitation of a deleted room: %v", err)
+	}
+	if _, err := s2.Check("ops", other); err != nil {
+		t.Fatalf("another room's invitation went too: %v", err)
+	}
+	if ids, err := s2.RemoveRoom("nope"); err != nil || len(ids) != 0 {
+		t.Fatalf("a room without invitations: %v %v", ids, err)
+	}
+}

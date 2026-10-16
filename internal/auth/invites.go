@@ -157,6 +157,32 @@ func (s *Invites) Revoke(room, id string) (Invite, error) {
 	return Invite{}, ErrBadInvite
 }
 
+// RemoveRoom forgets every invitation of room (it was deleted, and a new room may take its slug)
+// and returns the IDs of those that were kept, for disconnecting their guests.
+func (s *Invites) RemoveRoom(room string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var ids []string
+	kept := make([]Invite, 0, len(s.all))
+	for _, inv := range s.all {
+		if inv.Room != room {
+			kept = append(kept, inv)
+		} else if s.kept(inv) {
+			ids = append(ids, inv.ID)
+		}
+	}
+	if len(kept) == len(s.all) {
+		return nil, nil
+	}
+	old := s.all
+	s.all = kept
+	if err := s.save(); err != nil {
+		s.all = old
+		return nil, err
+	}
+	return ids, nil
+}
+
 // Active counts the usable invitations of every room.
 func (s *Invites) Active() int {
 	s.mu.Lock()

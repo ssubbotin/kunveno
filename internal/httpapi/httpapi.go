@@ -43,13 +43,16 @@ type RoomsConfig struct {
 	Persist  func() error       // saves the created rooms after every change; may be nil
 	PINs     *ratelimit.Limiter // wrong PINs per client address, shared with joining; may be nil
 	Kept     lobby.Kept         // the notes, recordings and meeting summaries the rooms keep
+	// Deleted runs after a room was deleted, before the rooms are saved: with sign-in on it ends
+	// the room's invitations. It may be nil; an error fails the request with 500.
+	Deleted func(slug string) error
 }
 
 // Rooms serves the room list and its changes. PINs never leave the server.
 //
 //	GET    /api/rooms          list with live participant counts, notes_until, recording_until, last_meeting
 //	POST   /api/rooms          {"name","pin"} creates a room, 201 {"slug","name"}
-//	DELETE /api/rooms/{slug}   {"pin"} deletes an empty created room, its notes, its recording and its meetings, 204
+//	DELETE /api/rooms/{slug}   {"pin"} deletes an empty created room, its notes, its recording, its meetings and its invitations, 204
 //
 // notes_until and recording_until are listed for the enabled features only. A room lists
 // last_meeting when it keeps notes or a recording (of the enabled features) of a meeting with a
@@ -157,6 +160,12 @@ func remove(w http.ResponseWriter, r *http.Request, cfg RoomsConfig, slug string
 	default:
 		metrics.RoomsDeleted.Inc()
 		cfg.Kept.Forget(slug)
+		if cfg.Deleted != nil {
+			if err := cfg.Deleted(slug); err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+				return
+			}
+		}
 		if save(w, cfg.Persist) {
 			w.WriteHeader(http.StatusNoContent)
 		}

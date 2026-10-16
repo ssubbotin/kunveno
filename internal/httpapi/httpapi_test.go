@@ -57,7 +57,9 @@ func TestCreateAndDeleteRoom(t *testing.T) {
 	reg := room.NewRegistry()
 	reg.Add(room.New("ops", "Operations", "1234", 15))
 	saves := 0
-	h := Rooms(RoomsConfig{Registry: reg, Persist: func() error { saves++; return nil }})
+	var deleted []string
+	h := Rooms(RoomsConfig{Registry: reg, Persist: func() error { saves++; return nil },
+		Deleted: func(slug string) error { deleted = append(deleted, slug); return nil }})
 	createdBefore := testutil.ToFloat64(metrics.RoomsCreated)
 	deletedBefore := testutil.ToFloat64(metrics.RoomsDeleted)
 
@@ -101,6 +103,9 @@ func TestCreateAndDeleteRoom(t *testing.T) {
 	}
 	if saves != 2 {
 		t.Fatalf("saves = %d after delete", saves)
+	}
+	if len(deleted) != 1 || deleted[0] != "retro" {
+		t.Fatalf("the deletion hook ran for %v; only the deleted room must reach it", deleted)
 	}
 	if d := testutil.ToFloat64(metrics.RoomsCreated) - createdBefore; d != 1 {
 		t.Errorf("rooms created counted %v, want 1", d)
