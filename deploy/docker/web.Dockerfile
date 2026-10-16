@@ -29,3 +29,4 @@ COPY --chmod=0755 deploy/docker/web-cert.sh /docker-entrypoint.d/05-kunveno-cert
 COPY --chmod=0755 deploy/docker/grafana-wall.sh /docker-entrypoint.d/06-kunveno-grafana-wall.sh
 COPY --from=build /web/dist/ /usr/share/nginx/kunveno/
 COPY deploy/docker/nginx.conf.template /etc/nginx/templates/kunveno.conf.template
+COPY deploy/docker/security-headers.conf /etc/nginx/kunveno-headers.conf

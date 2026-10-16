@@ -32,6 +32,12 @@ What the stack does on its own:
 - `http.listen` and `media.advertise_ip` come from `.env` (`KUNVENO_UPSTREAM`,
   `KUNVENO_ADVERTISE_IP`) when `config.yaml` leaves them out, and the address from the host's
   default route when neither sets it; the `started` log line shows the result;
+- nginx sends security headers on every page (`deploy/docker/security-headers.conf`): a
+  Content-Security-Policy that allows only the client's own scripts, WebAssembly, its worker and
+  this host's WebSocket, and forbids framing by other sites; `nosniff`, `no-referrer`, a
+  Permissions-Policy for camera, microphone and screen capture; no nginx version. Grafana under
+  `/grafana/` keeps its own page policy. Strict-Transport-Security is sent only with `KUNVENO_HSTS`
+  in `.env` (for example `max-age=31536000`), on a server with a public certificate;
 - the web container issues a self-signed certificate for `PUBLIC_HOST` and `TLS_NAMES` into
   `certs/` when it is empty, owned by the directory's owner.
 

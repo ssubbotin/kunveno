@@ -19,6 +19,7 @@ docker run --rm -v "$PWD/deploy:/deploy:ro" "$img" sh -c '
   cp /deploy/nginx/kunveno.conf /etc/nginx/conf.d/default.conf
   nginx -t
   echo "== deploy/docker/nginx.conf.template"
+  cp /deploy/docker/security-headers.conf /etc/nginx/kunveno-headers.conf
   export HTTP_PORT=80 HTTPS_PORT=443 SERVER_NAME=meet.example.internal KUNVENO_UPSTREAM=127.0.0.1:8080 GRAFANA_PORT=3000 KUNVENO_HSTS=
   envsubst "\$HTTP_PORT \$HTTPS_PORT \$SERVER_NAME \$KUNVENO_UPSTREAM \$GRAFANA_PORT \$KUNVENO_HSTS" \
     < /deploy/docker/nginx.conf.template > /etc/nginx/conf.d/default.conf
