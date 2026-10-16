@@ -19,9 +19,14 @@ no sources, no source maps, Go binaries built with `-trimpath -s -w`.
 
 What the stack does on its own:
 
-- the server, the player and nginx run as root in their containers, so `data/` and `certs/` need
-  no particular ownership; what the server writes to `data/` belongs to root (`sudo` to copy or
-  remove it);
+- the server and the player start as root only to see who owns `data/`, then run as that owner
+  (user 10001 when `data/` belongs to root, as a directory Docker creates does), so what they write
+  there belongs to whoever unpacked the stack; files that releases before 0.4.5 wrote as root are
+  handed over at the first start. `config.yaml` must be readable by that owner (the archive's is,
+  since it belongs to the same user); otherwise the server says so and stops;
+- every service runs without capabilities beyond the few it lists in `docker-compose.yml` and with
+  `no-new-privileges`; nginx's master runs as root for ports 80/443 and the files in `certs/`, its
+  workers as the nginx user;
 - `http.listen` and `media.advertise_ip` come from `.env` (`KUNVENO_UPSTREAM`,
   `KUNVENO_ADVERTISE_IP`) when `config.yaml` leaves them out, and the address from the host's
   default route when neither sets it; the `started` log line shows the result;
