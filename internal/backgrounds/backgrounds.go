@@ -110,7 +110,7 @@ func (d *Dir) check(e os.DirEntry) (Item, bool) {
 	}
 	f, err := os.Open(filepath.Join(d.path, name))
 	if err != nil {
-		d.skip(name, "unreadable")
+		d.skip(name, "unreadable: the server runs as user 10001, so the file must be readable by others (chmod 644)")
 		return Item{}, false
 	}
 	defer f.Close()

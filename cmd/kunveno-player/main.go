@@ -45,6 +45,11 @@ func main() {
 		log.Error("config", "err", err)
 		os.Exit(1)
 	}
+	// The cache sits in the stack's ./data: a bad owner stops the player now, with the fix.
+	if err := config.Writable(*cacheDir); err != nil {
+		log.Error("PLAYER_CACHE", "err", err)
+		os.Exit(1)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	log.Info("kunveno-player started", "version", version, "url", *url)
@@ -59,7 +64,11 @@ func main() {
 		if r.Player.URL != "" {
 			go serveFeed(ctx, rlog, *url, r.Slug, r.Player.Name, r.Player.URL)
 		} else {
-			go serveRoom(ctx, rlog, *url, r.Slug, r.Player.Name, filepath.Join(*mediaDir, r.Player.File), *cacheDir)
+			file := filepath.Join(*mediaDir, r.Player.File)
+			if err := config.Readable(file); err != nil {
+				rlog.Error("media file", "err", err) // the room keeps retrying, so a fixed mode is picked up
+			}
+			go serveRoom(ctx, rlog, *url, r.Slug, r.Player.Name, file, *cacheDir)
 		}
 	}
 	if players == 0 {

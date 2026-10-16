@@ -56,11 +56,12 @@ Necesitas un servidor Linux con Docker al que tus usuarios lleguen por la red.
 ```bash
 curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz
 cd kunveno
-sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && chmod 640 config.yaml
+sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && sudo chmod 640 config.yaml
 ```
 
 Los servicios se ejecutan como el usuario 10001, nunca como root: la última línea les da `data/` y
-les deja leer `config.yaml` (lo sigue editando usted).
+les deja leer `config.yaml` (lo sigues editando tú). Los archivos que pongas en `media/` y
+`backgrounds/` deben poder leerlos todos (`chmod 644`), como suele ser.
 
 El directorio es la instalación completa:
 
@@ -112,8 +113,8 @@ docker compose pull && docker compose up -d
 
 La pila usa las imágenes `latest`, así que esto descarga la nueva versión y reinicia solo los
 contenedores cuya imagen cambió; `.env`, `config.yaml` y los datos se conservan. Para quedarte en
-una versión, pon por ejemplo `KUNVENO_VERSION=0.2.4` en `.env`. Si viene de una versión anterior a
-0.4.5 (cuando los servicios corrían como root), ejecute una vez antes de arrancar: `sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && chmod 640 config.yaml`.
+una versión, pon por ejemplo `KUNVENO_VERSION=0.2.4` en `.env`. Si vienes de una versión anterior a
+0.4.5 (cuando los servicios corrían como root), ejecuta una vez antes de arrancar: `sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && sudo chmod 640 config.yaml`.
 
 ### Si algo no funciona
 
@@ -121,8 +122,8 @@ una versión, pon por ejemplo `KUNVENO_VERSION=0.2.4` en `.env`. Si viene de una
   para el audio y el vídeo. Añade `KUNVENO_ADVERTISE_IP=<la dirección a la que llegan los usuarios,
   por ejemplo la de la VPN>` a `.env` y ejecuta `docker compose up -d`.
 - **Los puertos 80 o 443 están ocupados:** define `HTTP_PORT` y `HTTPS_PORT` en `.env`.
-- **El servidor se detiene con «is not writable by the server» o «permission denied» en
-  `config.yaml`:** ejecute `sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && chmod 640 config.yaml` en el directorio y arranque de nuevo.
+- **El servidor se detiene con «is not writable by this service» o «permission denied» en
+  `config.yaml`:** ejecuta `sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && sudo chmod 640 config.yaml` en el directorio y arranca de nuevo.
 - **El servidor se detiene con «config.yaml is a directory»:** el archivo desapareció y Docker creó
   un directorio en su lugar; borra el directorio, restaura `config.yaml` desde el paquete y arranca
   de nuevo.

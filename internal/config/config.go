@@ -141,7 +141,7 @@ func Load(path string) (*Config, error) {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, readHint(err)
 	}
 	return parse(data, os.Getenv, DetectIP)
 }

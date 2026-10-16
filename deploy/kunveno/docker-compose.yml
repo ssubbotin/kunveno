@@ -2,7 +2,7 @@
 # Grafana, all from images. This directory (unpacked from kunveno.tgz) is the whole installation:
 #   .env           settings; fill in PUBLIC_HOST and GRAFANA_ADMIN_PASSWORD, the rest is optional
 #   config.yaml    rooms, PINs, title and media settings
-#   data/          rooms created in the lobby and the player's cache (written by the server)
+#   data/          rooms created in the lobby, notes, recordings and the player's cache
 #   certs/         fullchain.pem and privkey.pem; a self-signed pair is issued on first start,
 #                  replace the two files with your own and restart web
 #   backgrounds/   images offered as virtual backgrounds
@@ -11,9 +11,10 @@
 # Start with: docker compose pull && docker compose up -d
 #
 # All services use host networking: the SFU advertises the host's address and one media port
-# (UDP and TCP 7000), nginx serves 80/443 and reaches the other services on loopback. The server
-# and the player run as the owner of data/, so the files they write belong to whoever unpacked the
-# archive. Prometheus and Grafana keep their state in Docker volumes. Logs go to the host's systemd
+# (UDP and TCP 7000), nginx serves 80/443 and reaches the other services on loopback. The server,
+# the player and echo run as user 10001, never as root: data/ must belong to 10001, config.yaml be
+# readable by its group, and media/ and backgrounds/ by others (the README's line after unpacking).
+# Prometheus and Grafana keep their state in Docker volumes. Logs go to the host's systemd
 # journal and outlive container recreation:
 #   journalctl -t kunveno-server --since "7 days ago"
 name: kunveno

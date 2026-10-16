@@ -54,11 +54,12 @@ You need a Linux server with Docker that your users can reach over the network.
 ```bash
 curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz
 cd kunveno
-sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && chmod 640 config.yaml
+sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && sudo chmod 640 config.yaml
 ```
 
 The services run as user 10001, never as root: the last line gives them `data/` and lets them read
-`config.yaml` (it stays yours to edit).
+`config.yaml` (it stays yours to edit). Files you add to `media/` and `backgrounds/` must be readable
+by others (`chmod 644`), as files normally are.
 
 The directory is the whole installation:
 
@@ -111,16 +112,16 @@ docker compose pull && docker compose up -d
 The stack runs the `latest` images, so this fetches the new release and restarts only the
 containers whose image changed; `.env`, `config.yaml` and the data stay. To stay on one release,
 set `KUNVENO_VERSION=0.2.4` (for example) in `.env`. Coming from a release before 0.4.5 (when the
-services ran as root), run once before starting: `sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && chmod 640 config.yaml`.
+services ran as root), run once before starting: `sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && sudo chmod 640 config.yaml`.
 
 ### If something does not work
 
 - **Users join but hear and see nothing:** the server guessed the wrong address for media. Add
   `KUNVENO_ADVERTISE_IP=<the address users reach, e.g. the VPN one>` to `.env` and run
   `docker compose up -d`.
-- **The server stops with "is not writable by the server" or "permission denied" on `config.yaml`:**
-  run `sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && chmod 640 config.yaml` in the directory and start again.
 - **Ports 80 or 443 are taken:** set `HTTP_PORT` and `HTTPS_PORT` in `.env`.
+- **The server stops with "is not writable by this service" or "permission denied" on `config.yaml`:**
+  run `sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && sudo chmod 640 config.yaml` in the directory and start again.
 - **The server stops with "config.yaml is a directory":** the file went missing and Docker created
   a directory in its place; remove the directory, restore `config.yaml` from the archive and start
   again.

@@ -21,8 +21,9 @@ What the stack does on its own:
 
 - the server, the player and echo run as user 10001, never as root (`USER` in their images):
   `data/` must belong to 10001 and `config.yaml` be readable by its group, which the line after
-  unpacking sets up (`sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && chmod 640 config.yaml`); when they are not, the server stops
-  at once and prints the command that fixes it;
+  unpacking sets up (`sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && sudo chmod 640 config.yaml`); when they are not, the server and the
+  player stop at once and print the command that fixes it. Files in `media/` and `backgrounds/` must
+  be readable by others (`chmod 644`); the player and the background list say so when one is not;
 - every service runs without capabilities (nginx keeps the few it lists in `docker-compose.yml`) and
   with `no-new-privileges`; nginx's master runs as root for ports 80/443 and the files in `certs/`,
   its workers as the nginx user;

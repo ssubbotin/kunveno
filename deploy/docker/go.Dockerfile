@@ -31,8 +31,8 @@ USER 10001:10001
 ENTRYPOINT ["/usr/local/bin/kunveno-echo"]
 
 # The player transcodes media files once with ffmpeg, so its image carries ffmpeg.
-FROM alpine:3.22 AS player
-RUN apk add --no-cache ffmpeg && adduser -D -H -u 10001 kunveno
+FROM base AS player
+RUN apk add --no-cache ffmpeg
 COPY --from=build /out/app /usr/local/bin/kunveno-player
 USER 10001:10001
 ENTRYPOINT ["/usr/local/bin/kunveno-player"]

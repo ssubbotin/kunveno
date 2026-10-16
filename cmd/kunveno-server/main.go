@@ -17,6 +17,7 @@ import (
 
 	"github.com/ssubbotin/kunveno/internal/backgrounds"
 	"github.com/ssubbotin/kunveno/internal/conference"
+	"github.com/ssubbotin/kunveno/internal/config"
 	"github.com/ssubbotin/kunveno/internal/httpapi"
 	"github.com/ssubbotin/kunveno/internal/lobby"
 	"github.com/ssubbotin/kunveno/internal/media"
@@ -59,12 +60,15 @@ func main() {
 }
 
 func run(cfgPath string, log *slog.Logger) error {
-	cfg, err := loadConfig(cfgPath)
+	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return err
 	}
-	if err := writable(filepath.Dir(cfg.RoomsFile)); err != nil {
-		return err
+	// Every directory the server writes, so that a bad owner stops it now with the fix, not later.
+	for _, dir := range []string{filepath.Dir(cfg.RoomsFile), cfg.Notes.Dir, cfg.Recording.Dir} {
+		if err := config.Writable(dir); err != nil {
+			return err
+		}
 	}
 	engine, err := sfu.NewEngine(sfu.EngineConfig{
 		UDPPort: cfg.Media.UDPPort, TCP: cfg.Media.TCPPort > 0, TCPPort: cfg.Media.TCPPort, AdvertiseIP: cfg.Media.AdvertiseIP,
