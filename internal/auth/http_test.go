@@ -251,3 +251,22 @@ func TestRequirePassesTheIdentityOn(t *testing.T) {
 		t.Fatal("WithIdentity")
 	}
 }
+
+// A session outlives neither its provider in the config nor a narrowed allow list.
+func TestSessionFollowsTheCurrentRules(t *testing.T) {
+	g, mux := newGate(t)
+	c := sessionOf(signIn(t, mux, "ann", "/"))
+	r := httptest.NewRequest("GET", "/auth/me", nil)
+	r.AddCookie(c)
+	if _, ok := g.Session(r); !ok {
+		t.Fatal("a fresh session refused")
+	}
+	g.Rules["fake"] = Rule{"boss@example.com"}
+	if _, ok := g.Session(r); ok {
+		t.Fatal("a session accepted after the allow list stopped matching its login")
+	}
+	delete(g.Rules, "fake")
+	if _, ok := g.Session(r); ok {
+		t.Fatal("a session accepted after its provider left the config")
+	}
+}

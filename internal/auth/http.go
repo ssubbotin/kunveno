@@ -49,7 +49,12 @@ func (g *Gate) provider(typ string) Provider {
 	return nil
 }
 
-func (g *Gate) Session(r *http.Request) (Identity, bool) { return g.Sessions.Read(r) }
+// Session is the signed-in person of r. The allow rules are checked again on every call, so a
+// provider removed from the config or a narrowed allow list takes effect at once.
+func (g *Gate) Session(r *http.Request) (Identity, bool) {
+	id, ok := g.Sessions.Read(r)
+	return id, ok && g.Rules[id.Provider].Allows(id.Login)
+}
 
 // CheckInvite finds the usable invitation of room with token; with Session it is signal.Access.
 func (g *Gate) CheckInvite(room, token string) (Invite, error) { return g.Invites.Check(room, token) }
