@@ -270,3 +270,24 @@ func TestSessionFollowsTheCurrentRules(t *testing.T) {
 		t.Fatal("a session accepted after its provider left the config")
 	}
 }
+
+func TestExpiredSessionFollowsTheRules(t *testing.T) {
+	g, mux := newGate(t)
+	c := sessionOf(signIn(t, mux, "ann", "/"))
+	r := httptest.NewRequest("GET", "/ws", nil)
+	r.AddCookie(c)
+	if _, ok := g.ExpiredSession(r); ok {
+		t.Fatal("a valid session read as expired")
+	}
+	g.Sessions.Now = func() time.Time { return time.Now().Add(13 * time.Hour) }
+	if _, ok := g.Session(r); ok {
+		t.Fatal("an expired session accepted")
+	}
+	if id, ok := g.ExpiredSession(r); !ok || id.Login != "ann@example.com" {
+		t.Fatalf("expired session %+v %v", id, ok)
+	}
+	g.Rules["fake"] = Rule{"boss@example.com"}
+	if _, ok := g.ExpiredSession(r); ok {
+		t.Fatal("an expired session accepted against the current rules")
+	}
+}

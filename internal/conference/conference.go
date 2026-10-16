@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -57,7 +58,14 @@ var (
 	ErrWrite  = errors.New("write failed")
 	// ErrRevoked: the guest's invitation was revoked while the guest was joining.
 	ErrRevoked = errors.New("invitation revoked")
+	// ErrNotAdmitted: a rejoin (JoinRequest.Rejoin) of an invitation or a person not admitted to
+	// the room's current meeting.
+	ErrNotAdmitted = errors.New("not admitted to this meeting")
 )
+
+// DefaultRejoinGrace is Conference.RejoinGrace unless set: longer than the client's reconnect
+// backoff (at most 10 s) with room for a slow network.
+const DefaultRejoinGrace = time.Minute
 
 // revokedKeep is how long DropInvite remembers a revoked invitation for joins still in progress.
 // A join passes its invitation check and reaches the room within moments, so a minute is ample and
@@ -77,6 +85,22 @@ type JoinRequest struct {
 	TCPOnly         bool   // the member's UDP path failed
 	Guest           bool   // admitted by an invitation; no PIN
 	Invite          string // the invitation's ID, for DropInvite
+	Login           string // the signed-in employee's login (sign-in on)
+	// Rejoin: the invitation or the session has expired, so the member is let in only when its
+	// invitation (Guest) or login was admitted to the room's current meeting.
+	Rejoin bool
+}
+
+// admitKey names what admitted a person to a meeting: the invitation of a guest or the login of
+// an employee; empty with sign-in off.
+func (r JoinRequest) admitKey() string {
+	switch {
+	case r.Guest && r.Invite != "":
+		return "invite:" + r.Invite
+	case !r.Guest && r.Login != "":
+		return "login:" + strings.ToLower(r.Login)
+	}
+	return ""
 }
 
 // Conference is safe for concurrent use.
@@ -91,6 +115,9 @@ type Conference struct {
 	NotesStopGrace time.Duration
 	// RecordingStopGrace is how long a stopped recorder may take to upload and leave. Set before serving.
 	RecordingStopGrace time.Duration
+	// RejoinGrace is how long after a meeting ended its expired invitations and sessions still
+	// let their people back, for a blip that dropped everyone at once. Set before serving.
+	RejoinGrace time.Duration
 
 	reactions map[string]bool  // emoji participants may send (ui.reactions)
 	notes     *notes.Store     // meeting notes (notes.enabled); nil when off
@@ -109,6 +136,21 @@ type liveRoom struct {
 	room    *room.Room
 	members map[string]*Member
 	notes   notesRoom // guarded by Conference.notesMu
+	// admitted holds the invitations and logins (JoinRequest.admitKey) admitted to the current
+	// meeting; ended is when the last person left. Both guarded by Conference.mu.
+	admitted map[string]bool
+	ended    time.Time
+}
+
+// forgetEndedLocked clears the admissions of a meeting that ended more than RejoinGrace ago.
+// Called with c.mu held.
+func (c *Conference) forgetEndedLocked(lr *liveRoom) {
+	if lr.ended.IsZero() {
+		return
+	}
+	if _, active := lr.room.Meeting(); !active && time.Since(lr.ended) > c.RejoinGrace {
+		lr.admitted, lr.ended = nil, time.Time{}
+	}
 }
 
 // Member is one session in a live room.
@@ -143,7 +185,8 @@ func (m *Member) Log() *slog.Logger { return m.log }
 // New returns a conference over the rooms of reg.
 func New(reg *room.Registry, media Media, log *slog.Logger) *Conference {
 	return &Conference{reg: reg, media: media, log: log, live: map[string]*liveRoom{}, QualityEvery: 3 * time.Second,
-		NotesStopGrace: DefaultNotesStopGrace, RecordingStopGrace: DefaultRecordingStopGrace, reactions: set(config.DefaultReactions)}
+		NotesStopGrace: DefaultNotesStopGrace, RecordingStopGrace: DefaultRecordingStopGrace, RejoinGrace: DefaultRejoinGrace,
+		reactions: set(config.DefaultReactions)}
 }
 
 // lookup returns the live state of a registered room, creating it on first use. Rooms can be
@@ -189,6 +232,15 @@ func (c *Conference) Join(conn Conn, req JoinRequest) (*Member, error) {
 	case req.Role == room.BotRecorder && (c.recording == nil || !lr.room.Recording() || c.hasActiveRecorder(lr)):
 		return nil, &RefusedError{"recording not requested in this room"}
 	}
+	if !bot {
+		c.mu.Lock()
+		c.forgetEndedLocked(lr)
+		admitted := lr.admitted[req.admitKey()]
+		c.mu.Unlock()
+		if req.Rejoin && !admitted {
+			return nil, ErrNotAdmitted
+		}
+	}
 	c.replaceClient(lr, req.Client)
 	id := newID()
 	var err error
@@ -224,6 +276,12 @@ func (c *Conference) Join(conn Conn, req JoinRequest) (*Member, error) {
 		return nil, ErrRevoked
 	}
 	lr.members[id] = s
+	if key := req.admitKey(); !bot && key != "" {
+		if lr.admitted == nil {
+			lr.admitted = map[string]bool{}
+		}
+		lr.admitted[key] = true
+	}
 	// Whether a notes bot came in after the notes were switched off: a stopNotes that ran before
 	// this point missed it. One that runs after finds it among the members and stops it itself.
 	notesOffAtJoin := req.Role == room.BotNotes && !lr.room.Notes()
@@ -301,6 +359,9 @@ func (c *Conference) Leave(s *Member) {
 	others := lr.membersExcept(s.id)
 	c.mu.Unlock()
 	if _, m, ended := lr.room.LeaveEnding(s.id); ended {
+		c.mu.Lock()
+		lr.ended = time.Now() // its admissions go after RejoinGrace
+		c.mu.Unlock()
 		c.saveMeeting(lr, s, m)
 	}
 	for _, o := range others {

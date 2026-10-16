@@ -19,10 +19,12 @@ import (
 // The real sign-in satisfies Access.
 var _ Access = (*auth.Gate)(nil)
 
-// fakeAccess: the cookie "ann" is a session of Ann; the invitation "tok-ops" belongs to room ops.
+// fakeAccess: the cookie "ann" is a session of Ann, "ann-old" her session after it expired, "bob"
+// a session of Bob; the invitation "tok-ops" belongs to room ops.
 type fakeAccess struct {
 	mu      sync.Mutex
 	revoked bool
+	expired bool
 }
 
 func (a *fakeAccess) revoke() {
@@ -31,9 +33,29 @@ func (a *fakeAccess) revoke() {
 	a.mu.Unlock()
 }
 
+func (a *fakeAccess) expire() {
+	a.mu.Lock()
+	a.expired = true
+	a.mu.Unlock()
+}
+
+var ann = auth.Identity{Provider: "yandex", ID: "1", Login: "ann@example.com", Name: "Анна Иванова"}
+
 func (a *fakeAccess) Session(r *http.Request) (auth.Identity, bool) {
-	if c, err := r.Cookie(auth.SessionCookie); err == nil && c.Value == "ann" {
-		return auth.Identity{Provider: "yandex", ID: "1", Login: "ann@example.com", Name: "Анна Иванова"}, true
+	c, err := r.Cookie(auth.SessionCookie)
+	switch {
+	case err != nil:
+	case c.Value == "ann":
+		return ann, true
+	case c.Value == "bob":
+		return auth.Identity{Provider: "yandex", ID: "2", Login: "bob@example.com", Name: "Борис"}, true
+	}
+	return auth.Identity{}, false
+}
+
+func (a *fakeAccess) ExpiredSession(r *http.Request) (auth.Identity, bool) {
+	if c, err := r.Cookie(auth.SessionCookie); err == nil && c.Value == "ann-old" {
+		return ann, true
 	}
 	return auth.Identity{}, false
 }
@@ -42,7 +64,11 @@ func (a *fakeAccess) CheckInvite(room, token string) (auth.Invite, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if token == "tok-ops" && room == "ops" && !a.revoked {
-		return auth.Invite{ID: "inv1", Room: "ops"}, nil
+		inv := auth.Invite{ID: "inv1", Room: "ops"}
+		if a.expired {
+			return inv, auth.ErrExpiredInvite
+		}
+		return inv, nil
 	}
 	return auth.Invite{}, auth.ErrBadInvite
 }
@@ -254,5 +280,135 @@ func TestOnlyAdmittedGuestsAreCounted(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	if got := testutil.ToFloat64(metrics.GuestJoins); got != before+1 {
 		t.Fatalf("guest joins %v, want %v", got, before+1)
+	}
+}
+
+// leaveAndWait sends leave on c and waits until the room has want members.
+func leaveAndWait(t *testing.T, e *env, c *websocket.Conn, want int) {
+	t.Helper()
+	send(t, c, `{"type":"leave"}`)
+	waitFor(t, func() bool { return e.conf.Members("ops") == want })
+}
+
+// A guest whose link expired during the meeting comes back after a reconnect (every reconnect is
+// a fresh join) while the meeting runs; a new guest with that link does not get in.
+func TestGuestRejoinsAfterTheLinkExpiredWhileTheMeetingRuns(t *testing.T) {
+	e, a := newAuthEnv(t)
+	host := dialAs(t, e, "bob")
+	send(t, host, `{"type":"join","room":"ops","pin":"1234","name":"x"}`)
+	expect(t, host, "joined")
+	g := dialAs(t, e, "")
+	send(t, g, `{"type":"join","room":"ops","invite":"tok-ops","name":"G"}`)
+	expect(t, g, "joined")
+	a.expire()
+	leaveAndWait(t, e, g, 1)
+	g2 := dialAs(t, e, "")
+	send(t, g2, `{"type":"join","room":"ops","invite":"tok-ops","name":"G"}`)
+	expect(t, g2, "joined")
+}
+
+func TestExpiredLinkAfterTheMeetingEndedIsBad(t *testing.T) {
+	e, a := newAuthEnv(t)
+	e.conf.RejoinGrace = 0
+	host := dialAs(t, e, "bob")
+	send(t, host, `{"type":"join","room":"ops","pin":"1234","name":"x"}`)
+	expect(t, host, "joined")
+	g := dialAs(t, e, "")
+	send(t, g, `{"type":"join","room":"ops","invite":"tok-ops","name":"G"}`)
+	expect(t, g, "joined")
+	a.expire()
+	leaveAndWait(t, e, g, 1)
+	leaveAndWait(t, e, host, 0) // the meeting ends
+	time.Sleep(10 * time.Millisecond)
+	g2 := dialAs(t, e, "")
+	send(t, g2, `{"type":"join","room":"ops","invite":"tok-ops","name":"G"}`)
+	if m := expect(t, g2, "error"); m.Code != CodeBadInvite {
+		t.Fatalf("code %q", m.Code)
+	}
+}
+
+// An expired link that was never used in this meeting admits nobody.
+func TestExpiredLinkNeverUsedInTheMeetingIsBad(t *testing.T) {
+	e, a := newAuthEnv(t)
+	host := dialAs(t, e, "bob")
+	send(t, host, `{"type":"join","room":"ops","pin":"1234","name":"x"}`)
+	expect(t, host, "joined")
+	a.expire()
+	g := dialAs(t, e, "")
+	send(t, g, `{"type":"join","room":"ops","invite":"tok-ops","name":"G"}`)
+	if m := expect(t, g, "error"); m.Code != CodeBadInvite {
+		t.Fatalf("code %q", m.Code)
+	}
+}
+
+// Everyone dropped at once (a network blip): the guests come back within the grace.
+func TestGuestRejoinsWithinTheGraceAfterEveryoneDropped(t *testing.T) {
+	e, a := newAuthEnv(t)
+	g := dialAs(t, e, "")
+	send(t, g, `{"type":"join","room":"ops","invite":"tok-ops","name":"G"}`)
+	expect(t, g, "joined")
+	a.expire()
+	leaveAndWait(t, e, g, 0)
+	g2 := dialAs(t, e, "")
+	send(t, g2, `{"type":"join","room":"ops","invite":"tok-ops","name":"G"}`)
+	expect(t, g2, "joined")
+}
+
+func TestRevokedLinkNeverComesBack(t *testing.T) {
+	e, a := newAuthEnv(t)
+	host := dialAs(t, e, "bob")
+	send(t, host, `{"type":"join","room":"ops","pin":"1234","name":"x"}`)
+	expect(t, host, "joined")
+	g := dialAs(t, e, "")
+	send(t, g, `{"type":"join","room":"ops","invite":"tok-ops","name":"G"}`)
+	expect(t, g, "joined")
+	a.expire()
+	a.revoke()
+	e.conf.DropInvite("inv1")
+	expectClosed(t, g)
+	g2 := dialAs(t, e, "")
+	send(t, g2, `{"type":"join","room":"ops","invite":"tok-ops","name":"G"}`)
+	if m := expect(t, g2, "error"); m.Code != CodeBadInvite {
+		t.Fatalf("code %q", m.Code)
+	}
+}
+
+// An employee whose session expired during the meeting comes back to it; after it ended the
+// sign-in screen follows.
+func TestEmployeeRejoinsWithAnExpiredSessionWhileTheMeetingRuns(t *testing.T) {
+	e, _ := newAuthEnv(t)
+	e.conf.RejoinGrace = 0
+	host := dialAs(t, e, "bob")
+	send(t, host, `{"type":"join","room":"ops","pin":"1234","name":"x"}`)
+	expect(t, host, "joined")
+	c := dialAs(t, e, "ann")
+	send(t, c, `{"type":"join","room":"ops","pin":"1234","name":"x"}`)
+	expect(t, c, "joined")
+	leaveAndWait(t, e, c, 1)
+	c2 := dialAs(t, e, "ann-old")
+	send(t, c2, `{"type":"join","room":"ops","pin":"1234","name":"x"}`)
+	if m := expect(t, c2, "joined"); m.Self.Name != "Анна Иванова" {
+		t.Fatalf("name %q", m.Self.Name)
+	}
+	leaveAndWait(t, e, c2, 1)
+	leaveAndWait(t, e, host, 0) // the meeting ends
+	time.Sleep(10 * time.Millisecond)
+	c3 := dialAs(t, e, "ann-old")
+	send(t, c3, `{"type":"join","room":"ops","pin":"1234","name":"x"}`)
+	if m := expect(t, c3, "error"); m.Code != CodeAuthRequired {
+		t.Fatalf("code %q", m.Code)
+	}
+}
+
+// An expired session of someone who was not in this meeting is no way in.
+func TestExpiredSessionNotInTheMeetingIsRefused(t *testing.T) {
+	e, _ := newAuthEnv(t)
+	host := dialAs(t, e, "bob")
+	send(t, host, `{"type":"join","room":"ops","pin":"1234","name":"x"}`)
+	expect(t, host, "joined")
+	c := dialAs(t, e, "ann-old")
+	send(t, c, `{"type":"join","room":"ops","pin":"1234","name":"x"}`)
+	if m := expect(t, c, "error"); m.Code != CodeAuthRequired {
+		t.Fatalf("code %q", m.Code)
 	}
 }

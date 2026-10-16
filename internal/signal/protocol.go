@@ -6,8 +6,11 @@
 // "name":...} and no PIN; an unknown, expired or revoked invitation, or one for another room, is
 // refused with bad_invite, which counts toward the same per-address limit as bad_pin. Guests are
 // marked "guest":true in the participants list and cannot switch the echo, notes or recording. A
-// revoked invitation disconnects its guests. With sign-in off a join with "invite" is a
-// bad_message. Helpers (a role, over loopback) join as before either way.
+// revoked invitation disconnects its guests. Every reconnect is a fresh join, so an expired (not
+// revoked) invitation and a session expired at most one lifetime ago still let back the guests and
+// employees admitted to the room's current meeting, until a minute after it ends; anyone else gets
+// bad_invite or auth_required. With sign-in off a join with "invite" is a bad_message. Helpers (a
+// role, over loopback) join as before either way.
 //
 // The notes bot contract. The meeting-notes bot (the commercial kunveno-notes add-on, built in
 // another repository) depends on this exact protocol; treat it as a stable interface and change

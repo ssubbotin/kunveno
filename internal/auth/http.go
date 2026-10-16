@@ -56,6 +56,13 @@ func (g *Gate) Session(r *http.Request) (Identity, bool) {
 	return id, ok && g.Rules[id.Provider].Allows(id.Login)
 }
 
+// ExpiredSession is the person of an intact session that expired at most one lifetime ago and
+// whose login the rules still allow: such a person may only come back to a running meeting.
+func (g *Gate) ExpiredSession(r *http.Request) (Identity, bool) {
+	id, ok := g.Sessions.ReadExpired(r)
+	return id, ok && g.Rules[id.Provider].Allows(id.Login)
+}
+
 // CheckInvite finds the usable invitation of room with token; with Session it is signal.Access.
 func (g *Gate) CheckInvite(room, token string) (Invite, error) { return g.Invites.Check(room, token) }
 

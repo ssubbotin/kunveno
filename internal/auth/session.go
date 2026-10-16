@@ -98,24 +98,46 @@ func cookie(name, value string, maxAge int) *http.Cookie {
 	return &http.Cookie{Name: name, Value: value, Path: "/", MaxAge: maxAge, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode}
 }
 
-// Issue sets the session cookie for id, valid for the session lifetime.
+// Issue sets the session cookie for id, valid for the session lifetime. The browser keeps the
+// cookie for one more lifetime after that, so ReadExpired can still find who it was.
 func (s *Sessions) Issue(w http.ResponseWriter, id Identity) {
 	b, _ := json.Marshal(sessionPayload{Identity: id, Exp: s.Now().Add(s.ttl).Unix()})
-	http.SetCookie(w, cookie(SessionCookie, s.sign("session", b), int(s.ttl.Seconds())))
+	http.SetCookie(w, cookie(SessionCookie, s.sign("session", b), int(2*s.ttl.Seconds())))
+}
+
+// payload returns the intact session payload of r's cookie.
+func (s *Sessions) payload(r *http.Request) (sessionPayload, bool) {
+	c, err := r.Cookie(SessionCookie)
+	if err != nil {
+		return sessionPayload{}, false
+	}
+	b, ok := s.verify("session", c.Value)
+	if !ok {
+		return sessionPayload{}, false
+	}
+	var p sessionPayload
+	if json.Unmarshal(b, &p) != nil || p.Login == "" {
+		return sessionPayload{}, false
+	}
+	return p, true
 }
 
 // Read returns the signed-in identity, if the cookie is present, intact and not expired.
 func (s *Sessions) Read(r *http.Request) (Identity, bool) {
-	c, err := r.Cookie(SessionCookie)
-	if err != nil {
+	p, ok := s.payload(r)
+	if !ok || s.Now().Unix() >= p.Exp {
 		return Identity{}, false
 	}
-	b, ok := s.verify("session", c.Value)
-	if !ok {
-		return Identity{}, false
-	}
-	var p sessionPayload
-	if json.Unmarshal(b, &p) != nil || p.Login == "" || s.Now().Unix() >= p.Exp {
+	return p.Identity, true
+}
+
+// ReadExpired returns the identity of an intact session that has expired, at most one session
+// lifetime ago. It signs nobody in: the conference lets such a person back only into the meeting
+// they were admitted to.
+func (s *Sessions) ReadExpired(r *http.Request) (Identity, bool) {
+	p, ok := s.payload(r)
+	now := s.Now().Unix()
+	if !ok || now < p.Exp || now >= p.Exp+int64(s.ttl.Seconds()) {
 		return Identity{}, false
 	}
 	return p.Identity, true

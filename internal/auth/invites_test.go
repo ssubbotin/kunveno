@@ -67,19 +67,43 @@ func TestInvitesExpireAndAreSwept(t *testing.T) {
 	s.Now = func() time.Time { return now }
 	tok, _, _ := s.Create("ops", "ann@example.com", time.Hour)
 	now = now.Add(time.Hour)
-	if _, err := s.Check("ops", tok); !errors.Is(err, ErrBadInvite) {
-		t.Fatal("an expired invitation was accepted")
+	// Expired: told apart from unknown and revoked, so the guests of a running meeting can come back.
+	if inv, err := s.Check("ops", tok); !errors.Is(err, ErrExpiredInvite) || inv.ID == "" || errors.Is(err, ErrBadInvite) {
+		t.Fatalf("an expired invitation: %+v %v", inv, err)
+	}
+	if _, err := s.Check("dev", tok); !errors.Is(err, ErrBadInvite) {
+		t.Fatal("an expired invitation of another room is not a bad one")
 	}
 	if len(s.List("ops")) != 0 || s.Active() != 0 {
 		t.Fatal("an expired invitation is listed")
 	}
-	if err := s.Sweep(); err != nil {
+	count := func() int {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return len(s.all)
+	}
+	if err := s.Sweep(); err != nil || count() != 1 {
+		t.Fatalf("a freshly expired invitation was swept: %v, %d left", err, count())
+	}
+	now = now.Add(ExpiredKeep)
+	if _, err := s.Check("ops", tok); !errors.Is(err, ErrBadInvite) {
+		t.Fatalf("an invitation expired ExpiredKeep ago: %v", err)
+	}
+	if err := s.Sweep(); err != nil || count() != 0 {
+		t.Fatalf("%d entries after the sweep (%v)", count(), err)
+	}
+}
+
+func TestRevokedExpiredInvitationIsBad(t *testing.T) {
+	s, _ := OpenInvites(filepath.Join(t.TempDir(), "invites.json"))
+	now := time.Date(2026, 10, 16, 10, 0, 0, 0, time.UTC)
+	s.Now = func() time.Time { return now }
+	tok, inv, _ := s.Create("ops", "ann@example.com", time.Hour)
+	if _, err := s.Revoke("ops", inv.ID); err != nil {
 		t.Fatal(err)
 	}
-	s.mu.Lock()
-	n := len(s.all)
-	s.mu.Unlock()
-	if n != 0 {
-		t.Fatalf("%d entries after the sweep", n)
+	now = now.Add(2 * time.Hour)
+	if _, err := s.Check("ops", tok); !errors.Is(err, ErrBadInvite) || errors.Is(err, ErrExpiredInvite) {
+		t.Fatalf("a revoked, then expired invitation: %v", err)
 	}
 }

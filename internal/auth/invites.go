@@ -15,8 +15,18 @@ import (
 	"time"
 )
 
-// ErrBadInvite: the token is unknown, belongs to another room, has expired or was revoked.
+// ErrBadInvite: the token is unknown, belongs to another room, was revoked or expired more than
+// ExpiredKeep ago.
 var ErrBadInvite = errors.New("bad invite")
+
+// ErrExpiredInvite: the invitation expired (less than ExpiredKeep ago) and was not revoked. It
+// admits no new guest; the conference still lets back the guests it admitted to a meeting that is
+// still running. Check returns the invitation with it.
+var ErrExpiredInvite = errors.New("expired invite")
+
+// ExpiredKeep is how long an expired invitation is kept for its guests' reconnects to the meeting
+// they are in: the bound on how long a meeting can outlast its link.
+const ExpiredKeep = 24 * time.Hour
 
 // Invite is one guest link. Hash is the SHA-256 of the token; the token itself is never kept.
 type Invite struct {
@@ -90,15 +100,25 @@ func (s *Invites) Create(room, createdBy string, ttl time.Duration) (string, Inv
 
 func (s *Invites) usable(inv Invite) bool { return !inv.Revoked && s.Now().Before(inv.Expires) }
 
-// Check finds the usable invitation of room with this token.
+// kept: not revoked and expired less than ExpiredKeep ago (or not at all).
+func (s *Invites) kept(inv Invite) bool {
+	return !inv.Revoked && s.Now().Before(inv.Expires.Add(ExpiredKeep))
+}
+
+// Check finds the usable invitation of room with this token. An invitation that has expired but
+// is still kept comes back with ErrExpiredInvite; anything else is ErrBadInvite.
 func (s *Invites) Check(room, token string) (Invite, error) {
 	h := hashToken(token)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, inv := range s.all {
-		if inv.Hash == h && inv.Room == room && s.usable(inv) {
-			return inv, nil
+		if inv.Hash != h || inv.Room != room || !s.kept(inv) {
+			continue
 		}
+		if !s.usable(inv) {
+			return inv, ErrExpiredInvite
+		}
+		return inv, nil
 	}
 	return Invite{}, ErrBadInvite
 }
@@ -118,12 +138,13 @@ func (s *Invites) List(room string) []Invite {
 	return out
 }
 
-// Revoke ends room's invitation id at once.
+// Revoke ends room's invitation id at once. An expired one that is still kept can be revoked too,
+// which stops its guests from coming back to the running meeting.
 func (s *Invites) Revoke(room, id string) (Invite, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.all {
-		if inv := s.all[i]; inv.ID == id && inv.Room == room && s.usable(inv) {
+		if inv := s.all[i]; inv.ID == id && inv.Room == room && s.kept(inv) {
 			s.all[i].Revoked = true
 			if err := s.save(); err != nil {
 				s.all[i].Revoked = false
@@ -149,13 +170,13 @@ func (s *Invites) Active() int {
 	return n
 }
 
-// Sweep drops expired and revoked invitations from the file.
+// Sweep drops revoked invitations and those expired more than ExpiredKeep ago from the file.
 func (s *Invites) Sweep() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	kept := s.all[:0]
 	for _, inv := range s.all {
-		if s.usable(inv) {
+		if s.kept(inv) {
 			kept = append(kept, inv)
 		}
 	}

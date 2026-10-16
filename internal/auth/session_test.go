@@ -36,7 +36,9 @@ func TestSessionRoundTripAndAttributes(t *testing.T) {
 	if c.Name != SessionCookie || !c.Secure || !c.HttpOnly || c.Path != "/" || c.Domain != "" || c.SameSite != http.SameSiteLaxMode {
 		t.Fatalf("cookie attributes %+v", c)
 	}
-	if c.MaxAge != int((12 * time.Hour).Seconds()) {
+	// The browser keeps the cookie one lifetime past the session's own expiry, so an employee whose
+	// session expired mid-meeting can still come back to it (ReadExpired).
+	if c.MaxAge != int((24 * time.Hour).Seconds()) {
 		t.Fatalf("max age %d", c.MaxAge)
 	}
 	got, ok := s.Read(cookieRequest(c))
@@ -111,5 +113,35 @@ func TestSignaturesCarryAPurpose(t *testing.T) {
 	}
 	if _, ok := s.verify("session", v); ok {
 		t.Fatal("a value signed for one purpose verified for another")
+	}
+}
+
+func TestReadExpiredAcceptsASignedSessionUpToOneLifetimePastExpiry(t *testing.T) {
+	key := []byte(strings.Repeat("k", 32))
+	s := NewSessions(key, time.Hour)
+	id := Identity{Provider: "yandex", ID: "42", Login: "ann@example.com"}
+	c := issued(t, s, id)
+	if _, ok := s.ReadExpired(cookieRequest(c)); ok {
+		t.Fatal("a session still valid read as expired")
+	}
+	at := func(d time.Duration) *Sessions {
+		l := NewSessions(key, time.Hour)
+		l.Now = func() time.Time { return time.Now().Add(d) }
+		return l
+	}
+	if got, ok := at(61 * time.Minute).ReadExpired(cookieRequest(c)); !ok || got != id {
+		t.Fatalf("expired a minute ago: %+v %v", got, ok)
+	}
+	if _, ok := at(121 * time.Minute).ReadExpired(cookieRequest(c)); ok {
+		t.Fatal("a session expired more than one lifetime ago accepted")
+	}
+	tampered := *c
+	payload, sig, _ := strings.Cut(c.Value, ".")
+	tampered.Value = payload[:len(payload)-2] + "AA." + sig
+	if _, ok := at(61 * time.Minute).ReadExpired(cookieRequest(&tampered)); ok {
+		t.Fatal("a tampered expired session accepted")
+	}
+	if _, ok := NewSessions([]byte(strings.Repeat("x", 32)), time.Hour).ReadExpired(cookieRequest(c)); ok {
+		t.Fatal("a cookie signed with another key accepted")
 	}
 }
