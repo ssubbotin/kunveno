@@ -15,3 +15,7 @@ contents:
   - src: deploy/nginx/kunveno.conf
     dst: /etc/nginx/sites-available/kunveno.conf
     type: config|noreplace
+  - src: deploy/docker/security-headers.conf
+    dst: /etc/nginx/kunveno-headers.conf
+  - src: deploy/docker/security-headers-common.conf
+    dst: /etc/nginx/kunveno-headers-common.conf
