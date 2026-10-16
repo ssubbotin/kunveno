@@ -18,10 +18,13 @@ RUN CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "-s -w -X main.ver
 FROM alpine:3.22 AS base
 
 # The server and the player write to /var/lib/kunveno, which the compose stack bind-mounts from
-# the host; they run as root so that the directory needs no particular ownership.
+# the host: they start as root only to run as the directory's owner (start-as-owner.sh).
 FROM base AS server
+RUN apk add --no-cache su-exec
+COPY --chmod=0755 deploy/docker/start-as-owner.sh /usr/local/bin/start-as-owner
 COPY --from=build /out/app /usr/local/bin/kunveno-server
-ENTRYPOINT ["/usr/local/bin/kunveno-server", "-config", "/etc/kunveno/config.yaml"]
+ENTRYPOINT ["/usr/local/bin/start-as-owner"]
+CMD ["/usr/local/bin/kunveno-server", "-config", "/etc/kunveno/config.yaml"]
 
 FROM base AS echo
 RUN adduser -D -H -u 10001 kunveno
@@ -31,6 +34,8 @@ ENTRYPOINT ["/usr/local/bin/kunveno-echo"]
 
 # The player transcodes media files once with ffmpeg, so its image carries ffmpeg.
 FROM alpine:3.22 AS player
-RUN apk add --no-cache ffmpeg
+RUN apk add --no-cache ffmpeg su-exec
+COPY --chmod=0755 deploy/docker/start-as-owner.sh /usr/local/bin/start-as-owner
 COPY --from=build /out/app /usr/local/bin/kunveno-player
-ENTRYPOINT ["/usr/local/bin/kunveno-player"]
+ENTRYPOINT ["/usr/local/bin/start-as-owner"]
+CMD ["/usr/local/bin/kunveno-player"]
