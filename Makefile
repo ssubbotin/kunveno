@@ -33,7 +33,7 @@ deploy-bundle:
 	rm -rf dist/kunveno dist/kunveno.tgz && mkdir -p dist
 	cp -r deploy/kunveno dist/kunveno
 	find dist/kunveno -name .gitkeep -delete
-	chmod 600 dist/kunveno/.env dist/kunveno/config.yaml
+	chmod 600 dist/kunveno/.env
 	tar --owner=0 --group=0 --numeric-owner -czf dist/kunveno.tgz -C dist kunveno
 
 clean:

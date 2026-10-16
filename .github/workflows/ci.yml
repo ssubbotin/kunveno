@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: shellcheck -s sh deploy/docker/web-cert.sh deploy/docker/grafana-wall.sh deploy/docker/check-image.sh deploy/docker/check-nginx.sh
+      - run: shellcheck -s sh deploy/docker/web-cert.sh deploy/docker/grafana-wall.sh deploy/docker/check-user.sh deploy/docker/check-image.sh deploy/docker/check-nginx.sh
       - name: both nginx configs parse
         run: deploy/docker/check-nginx.sh
       # The released archive must run with nothing but the two values filled in.
@@ -17,7 +17,7 @@ jobs:
         run: |
           make deploy-bundle
           mkdir /tmp/stack && tar -xzf dist/kunveno.tgz -C /tmp/stack && cd /tmp/stack/kunveno
-          test -f docker-compose.yml && test -f config.yaml && test -d data && test -d certs && test -d media && test -d grafana/provisioning
+          test -f docker-compose.yml && test -f Makefile && test -f config.yaml && test ! -e data && test -d certs && test -d media && test -d grafana/provisioning
           sed -i -e 's/^PUBLIC_HOST=$/PUBLIC_HOST=10.0.0.5/' -e 's/^GRAFANA_ADMIN_PASSWORD=$/GRAFANA_ADMIN_PASSWORD=x/' .env
           docker compose config --quiet
           docker compose config --images | grep -qx 'ghcr.io/ssubbotin/kunveno-server:latest'

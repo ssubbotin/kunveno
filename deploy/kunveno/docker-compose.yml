@@ -2,18 +2,19 @@
 # Grafana, all from images. This directory (unpacked from kunveno.tgz) is the whole installation:
 #   .env           settings; fill in PUBLIC_HOST and GRAFANA_ADMIN_PASSWORD, the rest is optional
 #   config.yaml    rooms, PINs, title and media settings
-#   data/          rooms created in the lobby and the player's cache (written by the server)
+#   Makefile       make up (start or update), make down (stop; the volumes stay), make pull
 #   certs/         fullchain.pem and privkey.pem; a self-signed pair is issued on first start,
 #                  replace the two files with your own and restart web
 #   backgrounds/   images offered as virtual backgrounds
 #   media/         video files for rooms with "player: {file: …}"
 #   grafana/       Grafana's data source and dashboard, provisioned on start
-# Start with: docker compose pull && docker compose up -d
+# Start with: make up
 #
 # All services use host networking: the SFU advertises the host's address and one media port
-# (UDP and TCP 7000), nginx serves 80/443 and reaches the other services on loopback. The server
-# and the player run as the owner of data/, so the files they write belong to whoever unpacked the
-# archive. Prometheus and Grafana keep their state in Docker volumes. Logs go to the host's systemd
+# (UDP and TCP 7000), nginx serves 80/443 and reaches the other services on loopback. The server,
+# the player and echo run as user 10001, never as root, and keep what they write in the "data" volume;
+# config.yaml, media/ and backgrounds/ only need to be readable. Prometheus and Grafana keep their
+# state in volumes too. Logs go to the host's systemd
 # journal and outlive container recreation:
 #   journalctl -t kunveno-server --since "7 days ago"
 name: kunveno
@@ -21,8 +22,17 @@ name: kunveno
 x-logging: &journald
   driver: journald
 
+# Every service gives up root's extra rights: no capabilities but the ones it lists, and no gaining
+# new privileges (setuid binaries) inside the container. The kunveno services run as user 10001.
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
 services:
   server:
+    <<: *hardening
     logging:
       <<: *journald
       options:
@@ -37,12 +47,22 @@ services:
       KUNVENO_ADVERTISE_IP: ${KUNVENO_ADVERTISE_IP:-}
     volumes:
       - ./config.yaml:/etc/kunveno/config.yaml:ro
-      - ./data:/var/lib/kunveno
+      - data:/var/lib/kunveno
       - ./backgrounds:/var/lib/kunveno/backgrounds:ro
       # The host's time zone: meeting notes show times and name files in it.
       - /etc/localtime:/etc/localtime:ro
 
   web:
+    <<: *hardening
+    # nginx (the stock image): ports 80/443, the certificate files of ./certs, workers as the nginx
+    # user, and the master's signals to those workers on reload and stop.
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - NET_BIND_SERVICE
+      - DAC_OVERRIDE
+      - KILL
     logging:
       <<: *journald
       options:
@@ -70,6 +90,7 @@ services:
   # Sound check. Idle until someone presses "Эхо-тест" in a room; then it joins that room and plays
   # its audio back after ECHO_DELAY. Talks to the server over loopback only.
   echo:
+    <<: *hardening
     logging:
       <<: *journald
       options:
@@ -86,6 +107,7 @@ services:
 
   # Video files and RTSP cameras for rooms with "player:" in config.yaml; idle otherwise.
   player:
+    <<: *hardening
     logging:
       <<: *journald
       options:
@@ -102,10 +124,11 @@ services:
     volumes:
       - ./config.yaml:/etc/kunveno/config.yaml:ro
       - ./media:/media:ro
-      - ./data:/var/lib/kunveno
+      - data:/var/lib/kunveno
 
   # Metrics: scrapes the server's /metrics on loopback. Listens on loopback only.
   prometheus:
+    <<: *hardening
     logging:
       <<: *journald
       options:
@@ -129,6 +152,7 @@ services:
   # Host metrics (CPU, CPU pressure, network, packet drops) for the "Хост" panels, so a meeting's
   # trouble can be told apart from load by other software on the same machine. Loopback only.
   node-exporter:
+    <<: *hardening
     logging:
       <<: *journald
       options:
@@ -148,6 +172,7 @@ services:
   # Dashboards at https://<PUBLIC_HOST>/grafana/ (user admin). The Prometheus data source and the
   # "kunveno" dashboard come from ./grafana.
   grafana:
+    <<: *hardening
     logging:
       <<: *journald
       options:
@@ -197,5 +222,9 @@ configs:
             - files: ["/etc/prometheus/targets/*.json"]
 
 volumes:
+  # Rooms created in the lobby, meeting summaries, notes, recordings and the player's cache. Docker
+  # creates it owned by the services' user (10001); make down keeps it, docker compose down -v deletes
+  # it with everything in it.
+  data:
   prometheus-data:
   grafana-data:

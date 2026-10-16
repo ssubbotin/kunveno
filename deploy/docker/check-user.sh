@@ -1,0 +1,47 @@
+#!/bin/sh
+# check-user.sh IMAGE: the server and player images run as user 10001, never as root, and need no
+# capabilities. Its data directory must belong to 10001 (the stack's volume does); a bind mount that
+# does not stops the service at once with the command that fixes it. Run from the repository root.
+set -eu
+img=$1
+case $img in
+  *kunveno-server*) name=kunveno-server ;;
+  *kunveno-player*) name=kunveno-player ;;
+  *) echo "check-user: $img is neither the server nor the player" >&2; exit 1 ;;
+esac
+dir=$(mktemp -d)
+trap 'docker run --rm -v "$dir:/d" alpine:3.22 rm -rf /d/ok /d/root >/dev/null 2>&1; rm -rf "$dir"' EXIT
+fail() { echo "check-user: $*" >&2; exit 1; }
+
+user=$(docker image inspect -f '{{.Config.User}}' "$img")
+[ "$user" = 10001:10001 ] || fail "the image runs as \"$user\", want 10001:10001"
+
+# The service with the stack's config and no capabilities at all, on a ./data in $1; prints its log
+# after 3 s (it either stopped by then or is running) and removes it.
+serve() {
+  cid=$(docker run -d --cap-drop ALL --security-opt no-new-privileges -e KUNVENO_ADVERTISE_IP=127.0.0.1 \
+    -v "$cfg:/etc/kunveno/config.yaml:ro" -v "$1:/var/lib/kunveno" "$img")
+  sleep 3
+  docker logs "$cid" 2>&1
+  docker rm -f "$cid" > /dev/null
+}
+
+docker run --rm -v "$dir:/d" alpine:3.22 sh -c 'mkdir -p /d/ok /d/root && chown 10001:10001 /d/ok'
+
+# The stack's config; for the player, one room that plays a file, so that it needs its cache (without
+# such a room it sits idle and checks nothing).
+cfg=$PWD/deploy/kunveno/config.yaml
+if [ "$name" = kunveno-player ]; then
+  cfg=$dir/config.yaml
+  printf 'rooms:\n  - slug: tv\n    name: TV\n    pin: "1234"\n    player:\n      file: film.mkv\n' > "$cfg"
+  chmod 644 "$cfg"
+fi
+
+# ./data owned by 10001: the service starts.
+out=$(serve "$dir/ok")
+echo "$out" | grep -q "\"msg\":\"$name started\"" || fail "data owned by 10001: $name did not start: $out"
+
+# ./data owned by root (as Docker creates a missing directory): it stops and names the fix.
+out=$(serve "$dir/root")
+echo "$out" | grep -q 'sudo chown -R 10001:10001 /var/lib/kunveno' || fail "data owned by root: no hint to chown: $out"
+echo "check-user: $img runs as 10001 and names the fix for a root-owned ./data"

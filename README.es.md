@@ -58,13 +58,18 @@ curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno
 cd kunveno
 ```
 
+Los servicios se ejecutan como el usuario 10001, nunca como root. Lo que escriben (salas creadas en
+la página de inicio, notas, grabaciones) vive en el volumen de Docker `kunveno_data`; a los archivos de
+aquí les basta con poder leerse, como suele ser (`config.yaml` y lo que pongas en `media/` y
+`backgrounds/`).
+
 El directorio es la instalación completa:
 
 ```
 docker-compose.yml
+Makefile        make up (arrancar o actualizar), make down (parar), make pull
 .env            ajustes: rellena dos líneas, el resto es opcional
 config.yaml     salas, PIN y título; los valores por defecto funcionan tal cual
-data/           salas creadas desde la página de inicio, caché del reproductor
 certs/          certificado TLS: autofirmado en el primer arranque, o el tuyo
 backgrounds/    imágenes que se ofrecen como fondos virtuales
 media/          archivos de vídeo para salas con reproductor
@@ -81,7 +86,7 @@ GRAFANA_ADMIN_PASSWORD=...      # cualquier contraseña fuerte; genera una con: 
 **3. Arranca:**
 
 ```bash
-docker compose pull && docker compose up -d
+make up
 ```
 
 **4. Abre `https://<PUBLIC_HOST>/`** y entra en una sala con su PIN de `config.yaml`. El
@@ -96,26 +101,37 @@ vídeo).
 |---|---|
 | Aplicar cambios de `config.yaml` | `docker compose restart server player` |
 | Leer los registros | `journalctl -t kunveno-server -f` |
-| Supervisión | `https://<PUBLIC_HOST>/grafana/`, usuario `admin`, la contraseña de `.env`. En un servidor expuesto a internet, defina `GRAFANA_WALL_PASSWORD` en `.env`: el navegador la pedirá (usuario `GRAFANA_WALL_USER`, `admin` por defecto) antes del inicio de sesión de Grafana |
+| Supervisión | `https://<PUBLIC_HOST>/grafana/`, usuario `admin`, la contraseña de `.env`. En un servidor expuesto a internet, define `GRAFANA_WALL_PASSWORD` en `.env`: el navegador la pedirá (usuario `GRAFANA_WALL_USER`, `admin` por defecto) antes del inicio de sesión de Grafana |
 | Usar tu propio certificado | sustituye `certs/fullchain.pem` y `certs/privkey.pem`, luego `docker compose restart web` |
-| Copia de seguridad | copia el directorio (`data/` lo escribe root, así que con `sudo`) |
+| Parar | `make down`: los contenedores se van, los volúmenes (salas, notas, grabaciones) se quedan. `docker compose down -v` los borraría |
+| Copia de seguridad | copia el directorio y el volumen de datos: `docker run --rm -v kunveno_data:/d -v "$PWD":/b alpine tar czf /b/data.tgz -C /d .` |
 
 **Actualizar** a una nueva versión, dentro del directorio:
 
 ```bash
-docker compose pull && docker compose up -d
+make up
 ```
 
 La pila usa las imágenes `latest`, así que esto descarga la nueva versión y reinicia solo los
 contenedores cuya imagen cambió; `.env`, `config.yaml` y los datos se conservan. Para quedarte en
 una versión, pon por ejemplo `KUNVENO_VERSION=0.2.4` en `.env`.
 
+**Si vienes de una versión anterior a 0.4.5** (los servicios corrían como root y guardaban sus datos
+en `./data`): toma los archivos nuevos de la pila, arranca e importa los datos antiguos una vez:
+
+```bash
+curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz --strip-components=1 kunveno/docker-compose.yml kunveno/Makefile
+make up && make import-data && make up
+```
+
 ### Si algo no funciona
 
 - **Los usuarios entran pero no oyen ni ven nada:** el servidor eligió una dirección equivocada
   para el audio y el vídeo. Añade `KUNVENO_ADVERTISE_IP=<la dirección a la que llegan los usuarios,
-  por ejemplo la de la VPN>` a `.env` y ejecuta `docker compose up -d`.
+  por ejemplo la de la VPN>` a `.env` y ejecuta `make up`.
 - **Los puertos 80 o 443 están ocupados:** define `HTTP_PORT` y `HTTPS_PORT` en `.env`.
+- **El servidor se detiene con «permission denied» en `config.yaml`:** se ejecuta como el usuario
+  10001 y tiene que poder leer el archivo: `chmod 644 config.yaml`.
 - **El servidor se detiene con «config.yaml is a directory»:** el archivo desapareció y Docker creó
   un directorio en su lugar; borra el directorio, restaura `config.yaml` desde el paquete y arranca
   de nuevo.
@@ -309,10 +325,10 @@ repasa las comprobaciones manuales de [docs/test-matrix.md](docs/test-matrix.md)
 | `notes.enabled` | `true` ofrece notas de la reunión en las salas; necesita el complemento `kunveno-notes` (por defecto `false`, que oculta todo lo relativo a las notas) |
 | `notes.keep` | cuánto se guardan las notas tras terminar: un número entero y `m`, `h` o `d` (`90m`, `12h`, `1d`, `2d`; por defecto `1d`) |
 | `notes.live` | `true` muestra las frases en la sala a medida que se reconocen, para comprobar el reconocimiento (por defecto `false`) |
-| `notes.dir` | dónde se guardan las notas (`/var/lib/kunveno/notes`, que en el stack es `data/notes`) |
+| `notes.dir` | dónde se guardan las notas (`/var/lib/kunveno/notes`, en el stack, el volumen de datos) |
 | `recording.enabled` | `true` ofrece la grabación de la reunión en las salas; necesita el complemento `kunveno-recorder` (por defecto `false`, que oculta todo lo relativo a la grabación) |
 | `recording.keep` | cuánto se guarda una grabación tras terminar: un número entero y `m`, `h` o `d` (`90m`, `12h`, `1d`, `2d`; por defecto `1d`) |
-| `recording.dir` | dónde se guardan las grabaciones (`/var/lib/kunveno/recordings`, que en el stack es `data/recordings`) |
+| `recording.dir` | dónde se guardan las grabaciones (`/var/lib/kunveno/recordings`, en el stack, el volumen de datos) |
 | `recording.max_size` | la grabación más grande que acepta el servidor: un número entero y `MB` o `GB` (`500MB`, `8GB`; por defecto `8GB`) |
 
 `.env`, junto al archivo compose, fija la versión (`KUNVENO_VERSION`), los puertos, el nombre
@@ -325,8 +341,9 @@ público del equipo para Grafana y su contraseña de administrador.
   registra su ruta de audio y vídeo (UDP o TCP), los cambios de calidad y los PIN erróneos.
 - Métricas: `/metrics` en el servidor (solo loopback); Grafana en `https://<servidor>/grafana/`
   con el panel «kunveno» ya provisto.
-- Datos que conservar en el servidor, todos junto a `docker-compose.yml`: `config.yaml`, `.env`,
-  `data/` (salas creadas desde la página de inicio, caché del reproductor), `certs/` y `media/`.
+- Datos que conservar: junto a `docker-compose.yml` `config.yaml`, `.env`, `certs/` y `media/`; y el
+  volumen de Docker `kunveno_data` (salas creadas desde la página de inicio, notas, grabaciones,
+  caché del reproductor).
 - Una cámara RTSP debe ser alcanzable desde el servidor; el reproductor la recoge por TCP. Mientras
   el directo esté caído, el reproductor sigue en la sala sin vídeo.
 

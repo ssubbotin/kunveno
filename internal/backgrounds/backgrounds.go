@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"golang.org/x/image/draw"
+
+	"github.com/ssubbotin/kunveno/internal/access"
 	_ "golang.org/x/image/webp"
 )
 
@@ -110,7 +112,10 @@ func (d *Dir) check(e os.DirEntry) (Item, bool) {
 	}
 	f, err := os.Open(filepath.Join(d.path, name))
 	if err != nil {
-		d.skip(name, "unreadable")
+		if perr := access.Readable(filepath.Join(d.path, name)); perr != nil {
+			err = perr // names the fix when it is a permission problem
+		}
+		d.skip(name, "unreadable: "+err.Error())
 		return Item{}, false
 	}
 	defer f.Close()

@@ -1,7 +1,6 @@
 # Running kunveno
 
-The README covers setup: unpack `kunveno.tgz`, fill in two values in `.env`, then
-`docker compose pull && docker compose up -d`. This guide holds what comes after: certificates,
+The README covers setup: unpack `kunveno.tgz`, fill in two values in `.env`, then `make up`. This guide holds what comes after: certificates,
 the firewall, troubleshooting, the helpers, monitoring, previews of pull requests, and the Debian
 packages as an alternative to Docker (appendix).
 
@@ -11,34 +10,41 @@ nginx with the client, the server and the echo and player helpers run from publi
 builds and publishes to GHCR (`.github/workflows/images.yml`): `ghcr.io/ssubbotin/kunveno-server`,
 `-web`, `-echo`, `-player`; Prometheus, Grafana and node-exporter are the upstream images. A tag `vX.Y.Z`
 publishes `X.Y.Z` and `latest` and a GitHub release with `kunveno.tgz`: the stack directory
-`deploy/kunveno` (`docker-compose.yml`, which runs `latest` unless `.env` sets `KUNVENO_VERSION`, `.env`, `config.yaml`, `grafana/`
-with the data source and the dashboard, empty `data/`, `certs/` and `media/`). Pushes to `main`
+`deploy/kunveno` (`docker-compose.yml`, which runs `latest` unless `.env` sets `KUNVENO_VERSION`, a `Makefile` with
+`make up`, `make down`, `make pull` and `make import-data`, `.env`, `config.yaml`, `grafana/` with
+the data source and the dashboard, empty `certs/` and `media/`). Pushes to `main`
 publish `main` and `sha-<commit>`; a pull request from a branch of this repository publishes a
 preview `pr-<number>`. CI checks the kunveno images before pushing (`deploy/docker/check-image.sh`):
 no sources, no source maps, Go binaries built with `-trimpath -s -w`.
 
 What the stack does on its own:
 
-- the server, the player and nginx run as root in their containers, so `data/` and `certs/` need
-  no particular ownership; what the server writes to `data/` belongs to root (`sudo` to copy or
-  remove it);
+- the server, the player and echo run as user 10001, never as root (`USER` in their images), and
+  keep what they write (rooms created in the lobby, meeting summaries, notes, recordings, the
+  player's cache) in the named volume `kunveno_data`, which Docker creates owned by 10001 from the
+  images' `/var/lib/kunveno`. `make down` keeps it; `docker compose down -v` deletes it. On the host
+  `config.yaml`, `media/` and `backgrounds/` only need to be readable by others, as the archive ships
+  them; an unreadable one is named at start with its fix. Releases before 0.4.5 kept the data in
+  `./data`: `make import-data` copies it into the volume once;
+- every service runs without capabilities (nginx keeps the few it lists in `docker-compose.yml`) and
+  with `no-new-privileges`; nginx's master runs as root for ports 80/443 and the files in `certs/`,
+  its workers as the nginx user;
 - `http.listen` and `media.advertise_ip` come from `.env` (`KUNVENO_UPSTREAM`,
   `KUNVENO_ADVERTISE_IP`) when `config.yaml` leaves them out, and the address from the host's
   default route when neither sets it; the `started` log line shows the result;
 - the web container issues a self-signed certificate for `PUBLIC_HOST` and `TLS_NAMES` into
   `certs/` when it is empty, owned by the directory's owner.
 
-**Trying a pull request on the host.** Add `KUNVENO_VERSION=pr-<number>` to `.env`, run
-`docker compose pull && docker compose up -d`, and remove the line afterwards (then pull and up
-again) to return to the latest release.
+**Trying a pull request on the host.** Add `KUNVENO_VERSION=pr-<number>` to `.env`, run `make up`,
+and remove the line afterwards (then `make up` again) to return to the latest release.
 
-**When a release changes the stack files.** `docker compose pull && docker compose up -d` updates
-the images only. When a release changes `docker-compose.yml` or `grafana/` (its notes say so), take
-them from the archive first, in the stack directory; `.env`, `config.yaml` and the data stay:
+**When a release changes the stack files.** `make up` updates the images only. When a release
+changes `docker-compose.yml`, the `Makefile` or `grafana/` (its notes say so), take them from the
+archive first, in the stack directory; `.env`, `config.yaml` and the data stay:
 
 ```bash
-curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz --strip-components=1 kunveno/docker-compose.yml kunveno/grafana kunveno/backgrounds
-docker compose pull && docker compose up -d
+curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz --strip-components=1 kunveno/docker-compose.yml kunveno/Makefile kunveno/grafana kunveno/backgrounds
+make up
 ```
 
 This also restores the built-in background images if you deleted them.
@@ -121,7 +127,7 @@ A room with `player: {file: <name>}` in `config.yaml` gets a participant that pl
 loop, video on its tile and sound as audio, always on. Put the file in `media/` next to
 `docker-compose.yml` (any format ffmpeg reads). On start the `player` service transcodes it once to
 VP8 640x360 at 15 fps with a keyframe every 2 s, and Opus, and caches the result in
-`data/player-cache`; changing the file re-encodes it. The player joins over loopback only, and only
+the data volume (`player-cache`); changing the file re-encodes it. The player joins over loopback only, and only
 rooms with `player:` accept it. It takes one place in the room and sends about 0.5 Mbit/s to the
 server while running. `journalctl -t kunveno-player` shows the transcoding and the loop rounds.
 
@@ -142,7 +148,7 @@ and run `docker compose restart server`; with `false` (the default) the server i
 switch, refuses the notes bot, lists no rooms at `/internal/notes`, leaves `notes_until` out of
 `/api/rooms`, answers downloads with 404, and the client shows nothing about notes.
 
-- **Storage.** The server writes `data/notes/<room>.jsonl` (mode 0600), one line per phrase plus
+- **Storage.** The server writes `notes/<room>.jsonl` in the data volume (mode 0600), one line per phrase plus
   the meeting's header, pauses and end; a restart loses nothing already written, and a file cut off
   by a restart ends at its last line. Markdown is built on every download, in the server's time
   zone (the stack mounts the host's `/etc/localtime`). Notes expire `notes.keep` after the notes
@@ -194,7 +200,7 @@ ignores the recording switch, refuses the recorder, lists no rooms at `/internal
 about recording. The recorder needs CPU for the video encoder and disk for the file (an hour of
 meeting is a few hundred megabytes); `recording.max_size` (default 8GB) caps one file.
 
-- **Storage.** The server writes `data/recordings/<room>.mp4` and `<room>.json` (the meeting's
+- **Storage.** The server writes `recordings/<room>.mp4` in the data volume and `<room>.json` (the meeting's
   start and end), both mode 0600, in a directory of mode 0700. An upload in progress is a `*.tmp`
   file; the server removes leftover ones at start, so a restart during an upload leaves no broken
   recording. Recordings expire `recording.keep` after the meeting ends and are swept every minute,
@@ -241,7 +247,7 @@ The Debian packages have no recorder add-on; with them leave `recording.enabled`
 When the last person leaves a room, the server saves the meeting's summary: its start, its end and
 the number of people who took part (a person who rejoined under the same name counts once; bots
 never count; no names are kept). The summaries live in `meetings.json` next to `rooms_file`
-(`data/meetings.json` in the Docker stack, `/var/lib/kunveno/meetings.json` with the Debian
+(`meetings.json` in the data volume of the Docker stack, `/var/lib/kunveno/meetings.json` with the Debian
 packages), mode 0600, replaced atomically on every change. The file keeps the last 5 meetings of each
 room, drops a meeting 30 days after its end (swept every minute), and loses a room's entries when
 the room is deleted. A file that cannot be read is logged and replaced: the server starts with no
