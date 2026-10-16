@@ -214,6 +214,8 @@ with an OpenAI-compatible API, such as vLLM or ollama).
   failed.
 - It is kept with the notes and goes with them: the same `notes.keep`, the same PIN to download, and
   deleting the notes or the room deletes it. Only the last meeting of each room has one.
+- The summary alone can be deleted in the same dialog: the notes stay, and no new summary is written
+  for them.
 - It is written automatically and may contain mistakes, mostly in names and terms the recognition
   garbled; the file says so, and the notes stay next to it.
 - The meeting's notes leave the server for the model you configured. Off by default.

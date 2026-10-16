@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fetchSummary, summaryState } from './summary';
+import { deleteSummary, fetchSummary, summaryState } from './summary';
 
 function fakeFetch(res: Response | Error) {
   const calls: { url: string; init: RequestInit }[] = [];
@@ -42,5 +42,20 @@ describe('fetchSummary', () => {
     expect(await fetchSummary(fakeFetch(new Response('', { status: 429, headers: { 'Retry-After': '42' } })).fn, 'ops', 'x', 'ru'))
       .toEqual({ ok: false, error: 'too_many', retryAfter: 42 });
     expect(await fetchSummary(fakeFetch(new Error('offline')).fn, 'ops', 'x', 'ru')).toEqual({ ok: false, error: 'failed' });
+  });
+});
+
+describe('deleteSummary', () => {
+  it('sends DELETE with the PIN', async () => {
+    const f = fakeFetch(new Response(null, { status: 204 }));
+    expect(await deleteSummary(f.fn, 'ops', '1234')).toEqual({ ok: true });
+    expect(f.calls[0].url).toBe('/api/rooms/ops/summary');
+    expect(f.calls[0].init.method).toBe('DELETE');
+    expect(JSON.parse(String(f.calls[0].init.body))).toEqual({ pin: '1234' });
+  });
+  it('names the failures', async () => {
+    expect(await deleteSummary(fakeFetch(new Response('', { status: 403 })).fn, 'ops', 'x')).toEqual({ ok: false, error: 'bad_pin' });
+    expect(await deleteSummary(fakeFetch(new Response('', { status: 404 })).fn, 'ops', 'x')).toEqual({ ok: false, error: 'gone' });
+    expect(await deleteSummary(fakeFetch(new Error('offline')).fn, 'ops', 'x')).toEqual({ ok: false, error: 'failed' });
   });
 });

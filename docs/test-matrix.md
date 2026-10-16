@@ -189,5 +189,7 @@ and `notes.enabled: true`, `notes.summary: true`; check 59 also without them):
     note that it was written automatically.
 61. Switch notes on again in the same room before the summary is ready, then leave: the old summary
     never appears; a new one is prepared for the longer notes.
-62. Delete the notes in the dialog: the summary row disappears with them. Stop the model: the next
-    meeting's summary reads "could not be written" after the add-on's three attempts.
+62. Delete the summary alone in the dialog: the notes stay, the summary row is gone and does not come
+    back after a server restart. Delete the notes ("Notes, with the summary"): both rows disappear.
+63. Stop the model: the next meeting's summary reads "could not be written" after the add-on's three
+    attempts.

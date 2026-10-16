@@ -37,6 +37,13 @@ export function withoutKinds(items: LastItem[], kinds: LastKind[]): LastItem[] {
   return items.filter((i) => !gone.includes(i.kind));
 }
 
+// deleteRequests lists the delete requests a choice in the dialog needs: the summary goes with the
+// notes, so it is asked for only when chosen alone.
+export function deleteRequests(choice: LastKind | 'all', items: LastItem[]): LastKind[] {
+  const kinds = choice === 'all' ? items.map((i) => i.kind) : [choice];
+  return kinds.includes('notes') ? kinds.filter((k) => k !== 'summary') : kinds;
+}
+
 // lastCaption says what is there and the nearest expiry; null when there is nothing.
 export function lastCaption(items: LastItem[]): { key: Key; until: Date } | null {
   if (items.length === 0) return null;

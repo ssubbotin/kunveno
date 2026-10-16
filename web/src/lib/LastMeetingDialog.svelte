@@ -1,14 +1,14 @@
 <script lang="ts">
   // What is left of a room's last meeting, behind its PIN: download the video, the notes and the
-  // notes' summary, or delete the video, the notes or both after a confirmation inside the dialog.
-  // The summary goes with the notes.
+  // notes' summary, or delete any of them after a confirmation inside the dialog. The summary goes
+  // with the notes.
   import { tick } from 'svelte';
   import { i18n, t } from './i18n/i18n.svelte';
   import { LANG_TAGS } from './i18n/messages';
-  import { formatSummary, formatUntil, withoutKinds, type LastItem, type LastKind, type MeetingSummary } from './lastMeeting';
+  import { deleteRequests, formatSummary, formatUntil, withoutKinds, type LastItem, type LastKind, type MeetingSummary } from './lastMeeting';
   import { deleteNotes, fetchNotes, notesErrorText, saveFile } from './notes';
   import { deleteRecording, recordingErrorText, recordingLink, startDownload } from './recording';
-  import { fetchSummary } from './summary';
+  import { deleteSummary, fetchSummary } from './summary';
 
   // onchange: the room's last meeting changed or turned out gone, so the room list is stale.
   let { onchange }: { onchange: () => void } = $props();
@@ -49,9 +49,9 @@
   }
 
   const has = (kind: LastKind) => items.some((i) => i.kind === kind);
-  // The summary is downloaded once ready and deleted only with the notes.
+  // The summary is downloaded once ready; it can be deleted alone, and goes with the notes.
   const downloadable = $derived(items.filter((i) => i.kind !== 'summary' || i.state === 'ready'));
-  const deletable = $derived(items.filter((i) => i.kind !== 'summary'));
+  const deletable = $derived(items);
   const until = (d: Date) => formatUntil(d, LANG_TAGS[i18n.lang]);
 
   function setErrors(list: string[]) {
@@ -154,20 +154,20 @@
     if (busy.remove) return;
     busy.remove = true;
     errors = [];
-    const kinds: LastKind[] = choice === 'all' ? deletable.map((i) => i.kind) : [choice];
+    const kinds = deleteRequests(choice, deletable);
     const failed: string[] = [];
     const removed: LastKind[] = [];
     let badPin = false;
     let changed = false;
     try {
       for (const kind of kinds) {
-        const r = kind === 'video' ? await deleteRecording(fetch, slug, pin) : await deleteNotes(fetch, slug, pin);
+        const r = kind === 'video' ? await deleteRecording(fetch, slug, pin) : kind === 'notes' ? await deleteNotes(fetch, slug, pin) : await deleteSummary(fetch, slug, pin);
         if (r.ok) {
           removed.push(kind);
           changed = true;
           continue;
         }
-        failed.push(kind === 'video' ? recordingErrorText(r, t, 'recording.deleteFailed') : notesErrorText(r, t, 'notes.deleteFailed'));
+        failed.push(kind === 'video' ? recordingErrorText(r, t, 'recording.deleteFailed') : notesErrorText(r, t, kind === 'notes' ? 'notes.deleteFailed' : 'summary.deleteFailed'));
         if (r.error === 'gone') {
           removed.push(kind);
           changed = true;
@@ -217,7 +217,8 @@
       <p class="question" id="last-question" role="alert">{t('last.deleteWhat')}</p>
       <fieldset class="choice" aria-labelledby="last-question">
         {#if has('video')}<label><input type="radio" name="last-delete" value="video" bind:group={choice} />{t('last.videoName')}</label>{/if}
-        {#if has('notes')}<label><input type="radio" name="last-delete" value="notes" bind:group={choice} />{t('last.notesName')}</label>{/if}
+        {#if has('notes')}<label><input type="radio" name="last-delete" value="notes" bind:group={choice} />{t(has('summary') ? 'last.notesWithSummary' : 'last.notesName')}</label>{/if}
+        {#if has('summary')}<label><input type="radio" name="last-delete" value="summary" bind:group={choice} />{t('last.summaryName')}</label>{/if}
         {#if deletable.length > 1}<label><input type="radio" name="last-delete" value="all" bind:group={choice} />{t('last.all')}</label>{/if}
       </fieldset>
       <div class="actions">

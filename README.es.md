@@ -219,6 +219,8 @@ local (cualquier servidor con una API compatible con OpenAI, como vLLM u ollama)
   preparación», y «no se pudo redactar» si el modelo falló.
 - Se guarda con las notas y se va con ellas: el mismo `notes.keep`, el mismo PIN para descargarlo, y
   borrar las notas o la sala lo borra. Solo la última reunión de cada sala tiene uno.
+- En el mismo diálogo se puede borrar solo el resumen: las notas se quedan y no se redacta otro
+  resumen para ellas.
 - Se redacta automáticamente y puede contener errores, sobre todo en nombres y términos que el
   reconocimiento deformó; el archivo lo indica y las notas siguen a su lado.
 - Las notas de la reunión salen del servidor hacia el modelo configurado. Desactivado por defecto.
