@@ -99,12 +99,63 @@ func TestReturnPathStaysOnOurSite(t *testing.T) {
 	}
 }
 
-func TestRefusedAccountGetsNoSession(t *testing.T) {
-	_, mux := newGate(t)
-	res := signIn(t, mux, "eve", "/")
-	if sessionOf(res) != nil || res.StatusCode != http.StatusForbidden {
-		t.Fatalf("refused account: %d, session %v", res.StatusCode, sessionOf(res))
+// signInBack checks that a failed sign-in went back to the page it started on (want: the path
+// and query), which shows the sign-in screen with the reason, and left no session.
+func signInBack(t *testing.T, res *http.Response, want string) {
+	t.Helper()
+	if res.StatusCode != http.StatusFound || res.Header.Get("Location") != want || sessionOf(res) != nil {
+		t.Fatalf("want back to %s: %d to %q, session %v", want, res.StatusCode, res.Header.Get("Location"), sessionOf(res))
 	}
+}
+
+func TestFailedSignInKeepsTheReturnPathOnOurSite(t *testing.T) {
+	_, mux := newGate(t)
+	for ret, want := range map[string]string{
+		"/join/ops":           "/join/ops?signin=refused",
+		"/join/ops?x=1":       "/join/ops?signin=refused&x=1",
+		"/?signin=cancelled":  "/?signin=refused",
+		"//evil.example":      "/?signin=refused",
+		"/%2F%2Fevil.example": "/%2F%2Fevil.example?signin=refused",
+	} {
+		signInBack(t, signIn(t, mux, "eve", ret), want)
+	}
+}
+
+func countResults(g *Gate) *[]string {
+	var got []string
+	g.OnSignIn = func(p, res string) { got = append(got, p+":"+res) }
+	return &got
+}
+
+func TestRefusedAccountGetsNoSession(t *testing.T) {
+	g, mux := newGate(t)
+	got := countResults(g)
+	signInBack(t, signIn(t, mux, "eve", "/join/ops"), "/join/ops?signin=refused")
+	if len(*got) != 1 || (*got)[0] != "fake:refused" {
+		t.Fatalf("counted %v", *got)
+	}
+}
+
+// Cancel in the provider's window comes back with ?error= and no code: no exchange, no provider
+// error.
+func TestCancelledSignInIsNoProviderError(t *testing.T) {
+	g, mux := newGate(t)
+	got := countResults(g)
+	login, state := startLogin(t, mux)
+	r := httptest.NewRequest("GET", "/auth/fake/callback?error=access_denied&state="+url.QueryEscape(state), nil)
+	r.AddCookie(login)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, r)
+	signInBack(t, w.Result(), "/?signin=cancelled")
+	if len(*got) != 1 || (*got)[0] != "fake:cancelled" {
+		t.Fatalf("counted %v", *got)
+	}
+	login, state = startLogin(t, mux) // no error and no code either
+	r = httptest.NewRequest("GET", "/auth/fake/callback?state="+url.QueryEscape(state), nil)
+	r.AddCookie(login)
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, r)
+	signInBack(t, w.Result(), "/?signin=cancelled")
 }
 
 func TestCallbackChecksState(t *testing.T) {
@@ -122,16 +173,18 @@ func TestCallbackChecksState(t *testing.T) {
 	} {
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, r)
-		if w.Code != http.StatusBadRequest || sessionOf(w.Result()) != nil {
-			t.Errorf("%s: %d", name, w.Code)
+		if w.Code != http.StatusFound || w.Header().Get("Location") != "/?signin=expired" || sessionOf(w.Result()) != nil {
+			t.Errorf("%s: %d to %q", name, w.Code, w.Header().Get("Location"))
 		}
 	}
 }
 
 func TestProviderErrorIsUnavailable(t *testing.T) {
-	_, mux := newGate(t)
-	if res := signIn(t, mux, "down", "/"); res.StatusCode != http.StatusBadGateway || sessionOf(res) != nil {
-		t.Fatalf("provider error: %d", res.StatusCode)
+	g, mux := newGate(t)
+	got := countResults(g)
+	signInBack(t, signIn(t, mux, "down", "/join/ops"), "/join/ops?signin=unavailable")
+	if len(*got) != 1 || (*got)[0] != "fake:error" {
+		t.Fatalf("counted %v", *got)
 	}
 }
 
@@ -212,10 +265,7 @@ func TestLoginStateExpiresOnTheServer(t *testing.T) {
 	g, mux := newGate(t)
 	login, state := startLogin(t, mux)
 	g.Sessions.Now = func() time.Time { return time.Now().Add(loginTTL + time.Minute) }
-	res := callbackWith(mux, login, state)
-	if res.StatusCode != http.StatusBadRequest || sessionOf(res) != nil {
-		t.Fatalf("expired login state: %d", res.StatusCode)
-	}
+	signInBack(t, callbackWith(mux, login, state), "/?signin=expired")
 }
 
 func TestCookiesAreNotInterchangeable(t *testing.T) {
@@ -226,10 +276,7 @@ func TestCookiesAreNotInterchangeable(t *testing.T) {
 		t.Error("a login cookie was accepted as a session")
 	}
 	sess := sessionOf(signIn(t, mux, "ann", "/"))
-	res := callbackWith(mux, &http.Cookie{Name: LoginCookie, Value: sess.Value}, state)
-	if res.StatusCode != http.StatusBadRequest || sessionOf(res) != nil {
-		t.Errorf("a session cookie was accepted as login state: %d", res.StatusCode)
-	}
+	signInBack(t, callbackWith(mux, &http.Cookie{Name: LoginCookie, Value: sess.Value}, state), "/?signin=expired")
 }
 
 func TestRequirePassesTheIdentityOn(t *testing.T) {

@@ -293,7 +293,8 @@ the application.
    `public_url` or one that is not `https://`, a provider without `client_id`, without the secret
    in the environment or with an empty `allow`; the message is in `journalctl -t kunveno-server`.
 5. **Check:** open the address in a private window: the sign-in screen appears. An organization
-   account gets into the lobby; a personal account sees a page saying it is not allowed.
+   account gets into the lobby; a personal account comes back to the sign-in screen, which says the
+   account is not allowed and asks to choose the organization's account.
 
 **State.** `auth.key` (the signing key of sessions, 32 random bytes, mode 0600) and `invites.json`
 (guest invitations; only the SHA-256 of each token) live next to `rooms_file`: in the stack that
@@ -306,17 +307,24 @@ docker compose exec server rm /var/lib/kunveno/auth.key && docker compose restar
 ```
 
 Employees in meetings stay connected and sign in again for the next one. Invitations stay valid
-(they do not depend on the key). Expired and revoked invitations are removed by a periodic sweep.
+(they do not depend on the key). Revoked invitations are removed by a periodic sweep, expired
+ones a day after they expired: until then their guests can still reconnect to the meeting they are
+in.
 
 **Behind the scenes.** nginx proxies `/auth/` to the server like `/api/`. Every `/api/` route
 except `/api/info` and `/api/backgrounds` needs a session; `/healthz`, `/metrics` and `/internal/`
 are outside the sign-in (the helpers join over loopback as before). The log records sign-ins and
 refusals (provider, login) and invitations created, revoked and used; tokens, secrets, cookies and
 codes are never logged. A provider that does not answer within 10 seconds counts as unavailable,
-and the sign-in screen says so.
+and the sign-in screen says so. Every failed sign-in comes back to the page it started from with
+the sign-in screen and a notice: cancelled in the provider's window, an account the `allow` list
+refuses, the provider unavailable, or a sign-in that took longer than 10 minutes. The
+`kunveno_signins_total` counter labels them `cancelled`, `refused` and `error` (a provider
+failure).
 
 **Guests** need no setup: an employee creates a link in a room (More, "Invite a guest"). Revoking
-a link disconnects its guests at once; an expired link admits no new guests and those inside stay.
+a link disconnects its guests at once; an expired link admits no new guests and those inside stay
+to the end of the meeting, reconnects included. Deleting a room ends its links.
 
 **Going back.** Set `enabled: false` (or remove the `auth:` block) and run `docker compose
 restart server`: everything works as before, and `auth.key` and `invites.json` are ignored.

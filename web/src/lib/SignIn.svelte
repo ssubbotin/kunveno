@@ -1,12 +1,14 @@
 <script lang="ts">
   // The sign-in screen (sign-in on, no session): one button per provider. The server takes the
-  // person to the provider and back to this page; a refused account ends on the server's own page.
+  // person to the provider and back to this page; a sign-in that failed comes back here with a
+  // notice (cancelled, refused account, provider unavailable, took too long).
   import { signInURL } from './auth';
   import { i18n, setLang, t } from './i18n/i18n.svelte';
   import { LANGS, LANG_NAMES, type Lang } from './i18n/messages';
   import { requireSignIn, site } from './site.svelte';
 
-  // notice: why the person is here again (a join refused for want of a session).
+  // notice: why the person is here again (a join refused for want of a session, or a sign-in that
+  // failed).
   let { notice = '' }: { notice?: string } = $props();
 
   // No providers known: /api/info could not be read; Retry asks again.

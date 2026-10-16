@@ -1,5 +1,6 @@
 // Sign-in (auth.enabled on the server): who is signed in, the way to the provider and back, and the
 // guest's invitation. With sign-in off none of this is used.
+import type { Key } from './i18n/messages';
 import type { JoinLink } from './link';
 import { STARTUP_TIMEOUT_MS, timeoutSignal } from './site.svelte';
 
@@ -73,4 +74,27 @@ export function guestFrom(link: JoinLink | null, storage: Storage): { room: stri
   const kept = storage.getItem(INVITE_KEY);
   if (link.pin === '' && kept && storage.getItem(ROOM_KEY) === link.room) return { room: link.room, invite: kept };
   return null;
+}
+
+// Why a sign-in came back without a session: the server's callback adds ?signin=<reason> to the
+// page the sign-in started from. Each reason has its text on the sign-in screen.
+export const SIGN_IN_NOTICES = {
+  cancelled: 'auth.cancelled',
+  refused: 'auth.refused',
+  unavailable: 'auth.unavailable',
+  expired: 'auth.loginExpired',
+} as const satisfies Record<string, Key>;
+export type SignInNotice = keyof typeof SIGN_IN_NOTICES;
+
+// takeSignInNotice reads ?signin= once and takes it off the address bar (keeping the rest of the
+// address, the fragment included), so a reload or a shared address does not show it again. An
+// unknown value is dropped as well and gives no notice.
+export function takeSignInNotice(location: Pick<Location, 'pathname' | 'search' | 'hash'>, replace: (url: string) => void): SignInNotice | '' {
+  const q = new URLSearchParams(location.search);
+  const v = q.get('signin');
+  if (v === null) return '';
+  q.delete('signin');
+  const rest = q.toString();
+  replace(location.pathname + (rest ? `?${rest}` : '') + location.hash);
+  return Object.hasOwn(SIGN_IN_NOTICES, v) ? (v as SignInNotice) : '';
 }

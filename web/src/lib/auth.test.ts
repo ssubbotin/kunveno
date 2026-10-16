@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { INVITE_KEY, fetchMe, fixedName, guestFrom, restoreHash, signInURL } from './auth';
+import { INVITE_KEY, SIGN_IN_NOTICES, fetchMe, fixedName, guestFrom, restoreHash, signInURL, takeSignInNotice } from './auth';
+import { messages } from './i18n/messages';
 
 function memory(): Storage {
   const m = new Map<string, string>();
@@ -86,5 +87,34 @@ describe('fetchMe at start-up', () => {
     void fetchMe().then((v) => (me = v));
     await vi.advanceTimersByTimeAsync(3000);
     expect(me).toBeNull();
+  });
+});
+
+describe('the notice of a failed sign-in', () => {
+  function take(search: string, pathname = '/', hash = '') {
+    let replaced: string | null = null;
+    const notice = takeSignInNotice({ pathname, search, hash } as Location, (u) => { replaced = u; });
+    return { notice, replaced };
+  }
+
+  it('reads the reason the server sent back and clears it from the address bar', () => {
+    expect(take('?signin=refused')).toEqual({ notice: 'refused', replaced: '/' });
+    expect(take('?signin=cancelled', '/join/ops', '#pin=1234')).toEqual({ notice: 'cancelled', replaced: '/join/ops#pin=1234' });
+    expect(take('?x=1&signin=unavailable')).toEqual({ notice: 'unavailable', replaced: '/?x=1' });
+    expect(take('?signin=expired')).toEqual({ notice: 'expired', replaced: '/' });
+  });
+
+  it('ignores an unknown reason and leaves an address without one alone', () => {
+    expect(take('?signin=<b>hi</b>')).toEqual({ notice: '', replaced: '/' });
+    expect(take('')).toEqual({ notice: '', replaced: null });
+    expect(take('?x=1')).toEqual({ notice: '', replaced: null });
+  });
+
+  it('has a text for every reason in every language', () => {
+    for (const lang of ['ru', 'en', 'es'] as const) {
+      for (const key of Object.values(SIGN_IN_NOTICES)) {
+        expect(messages[lang][key], `${lang} ${key}`).toBeTruthy();
+      }
+    }
   });
 });

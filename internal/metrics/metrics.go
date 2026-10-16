@@ -109,7 +109,7 @@ var (
 	})
 	// SignIns and GuestJoins are registered only with sign-in on (RegisterAuth).
 	SignIns = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "kunveno_signins_total", Help: "Sign-ins by provider and result (ok, refused or error).",
+		Name: "kunveno_signins_total", Help: "Sign-ins by provider and result (ok, refused, cancelled or error).",
 	}, []string{"provider", "result"})
 	GuestJoins = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "kunveno_guest_joins_total", Help: "Guests admitted to rooms by an invitation.",

@@ -255,7 +255,10 @@ proveedor es Yandex ID; se pueden añadir otros más adelante como paquetes inde
   Tras iniciar sesión el nombre sale de la cuenta (recortado a 32 caracteres) y el nombre del
   mensaje de entrada se ignora. El PIN de la sala se sigue pidiendo, con el mismo límite de
   intentos fallidos. La sesión dura `auth.session` (12 horas por defecto); al caducar, el empleado
-  sigue en la reunión actual e inicia sesión de nuevo para la siguiente. Un enlace de sala abierto
+  sigue en la reunión actual (también tras una reconexión) e inicia sesión de nuevo para la
+  siguiente. Si el inicio de sesión falla, la pantalla de inicio de sesión dice por qué: se canceló
+  en la ventana del proveedor, la lista `allow` rechaza la cuenta o el proveedor no está
+  disponible. Un enlace de sala abierto
   sin sesión devuelve a esa sala tras iniciar sesión, con el PIN ya escrito. "Cerrar sesión" está
   en el vestíbulo.
 - **Quién está aprobado.** El proveedor dice quién es la persona. La lista `allow` del proveedor decide si
@@ -271,7 +274,8 @@ proveedor es Yandex ID; se pueden añadir otros más adelante como paquetes inde
   SHA-256. El mismo diálogo lista los enlaces activos de la sala con "Revocar".
 - **Cuándo termina el acceso.** Revocar un enlace desconecta al instante a los invitados que
   entraron con él. Un enlace caducado no admite invitados nuevos; los que ya están dentro se
-  quedan hasta el final de la reunión.
+  quedan hasta el final de la reunión, también tras una reconexión. Borrar una sala anula sus
+  enlaces.
 - **Lo que un invitado no puede hacer.** Los invitados solo llegan a la sala de su enlace. No ven
   el vestíbulo, no activan la grabación, las notas ni la prueba de eco, no descargan notas ni
   grabaciones y no crean enlaces. La grabación y las notas que activó un empleado continúan

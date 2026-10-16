@@ -160,26 +160,54 @@ func (g *Gate) callback(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	exp, _ := strconv.ParseInt(st["e"], 10, 64)
 	if st == nil || g.Sessions.Now().Unix() >= exp || st["p"] != p.Type() || st["s"] == "" || q.Get("state") != st["s"] {
-		http.Error(w, "the sign-in expired or did not start here; try again", http.StatusBadRequest)
+		backToSignIn(w, r, st["r"], "expired") // the sign-in expired or did not start here
+		return
+	}
+	if q.Get("error") != "" || q.Get("code") == "" {
+		// The person cancelled in the provider's window (error=access_denied): no code to exchange.
+		g.Log.Info("sign-in cancelled", "provider", p.Type(), "error", q.Get("error"))
+		g.count(p.Type(), "cancelled")
+		backToSignIn(w, r, st["r"], "cancelled")
 		return
 	}
 	id, err := p.Exchange(r.Context(), q.Get("code"), g.callbackURL(p.Type()))
 	if err != nil {
 		g.Log.Warn("sign-in failed", "provider", p.Type(), "err", err)
 		g.count(p.Type(), "error")
-		http.Error(w, "sign-in is unavailable, try later", http.StatusBadGateway)
+		backToSignIn(w, r, st["r"], "unavailable")
 		return
 	}
 	if !g.Rules[p.Type()].Allows(id.Login) {
 		g.Log.Info("sign-in refused", "provider", p.Type(), "login", id.Login)
 		g.count(p.Type(), "refused")
-		http.Error(w, "this account is not allowed", http.StatusForbidden)
+		backToSignIn(w, r, st["r"], "refused")
 		return
 	}
 	g.Log.Info("signed in", "provider", p.Type(), "login", id.Login)
 	g.count(p.Type(), "ok")
 	g.Sessions.Issue(w, id)
 	http.Redirect(w, r, localPath(st["r"]), http.StatusFound)
+}
+
+// backToSignIn ends a failed sign-in on the page it started from (ret, the saved return path;
+// "/" when unknown) with ?signin=<reason>: expired, cancelled, unavailable or refused. Without a
+// session that page is the sign-in screen, which tells why; a room link keeps its path and gets
+// its saved fragment (the PIN) back for the next try.
+func backToSignIn(w http.ResponseWriter, r *http.Request, ret, reason string) {
+	fallback := "/?signin=" + reason
+	u, err := url.Parse(localPath(ret))
+	if err != nil {
+		http.Redirect(w, r, fallback, http.StatusFound)
+		return
+	}
+	q := u.Query()
+	q.Set("signin", reason)
+	u.RawQuery, u.Fragment = q.Encode(), ""
+	out := u.String()
+	if localPath(out) != out {
+		out = fallback
+	}
+	http.Redirect(w, r, out, http.StatusFound)
 }
 
 func (g *Gate) count(provider, result string) {

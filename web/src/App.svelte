@@ -5,14 +5,16 @@
   import SignIn from './lib/SignIn.svelte';
   import GuestJoin from './lib/GuestJoin.svelte';
   import { Session } from './lib/session';
-  import { i18n } from './lib/i18n/i18n.svelte';
+  import { i18n, translate } from './lib/i18n/i18n.svelte';
   import { errorText } from './lib/i18n/errors';
-  import { INVITE_KEY, fetchMe, guestFrom, restoreHash, type Me } from './lib/auth';
+  import { INVITE_KEY, SIGN_IN_NOTICES, fetchMe, guestFrom, restoreHash, takeSignInNotice, type Me } from './lib/auth';
   import { parseJoinLink } from './lib/link';
   import { loadInfo, requireSignIn, site } from './lib/site.svelte';
 
   // A room link's fragment comes back after the sign-in redirect, before anything reads it.
   restoreHash(location, sessionStorage, (u) => history.replaceState(null, '', u));
+  // Why a sign-in just failed (the server's ?signin=), read once and taken off the address.
+  const signInNotice = takeSignInNotice(location, (u) => history.replaceState(null, '', u));
   const startLink = parseJoinLink(location.pathname, location.hash);
 
   const session = new Session();
@@ -90,7 +92,7 @@
 {:else if site.auth.enabled && guest}
   <GuestJoin expired={guestExpired} error={joinError} onJoin={joinGuest} />
 {:else if site.auth.enabled && !me}
-  <SignIn notice={signInCode ? errorText(i18n.lang, signInCode, {}) : ''} />
+  <SignIn notice={signInCode ? errorText(i18n.lang, signInCode, {}) : signInNotice ? translate(i18n.lang, SIGN_IN_NOTICES[signInNotice]) : ''} />
 {:else}
   <Lobby onJoin={join} error={joinError} {me} onAuthRequired={authRequired} />
 {/if}

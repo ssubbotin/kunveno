@@ -246,8 +246,10 @@ can be added later as separate packages.
 - **Employees.** The lobby shows a sign-in screen with one button per provider. After sign-in the
   name comes from the account (cut to 32 characters) and the join message's name is ignored. The
   room PIN is still asked, with the same limit on wrong attempts. A session lasts `auth.session`
-  (12 hours by default); when it expires the employee stays in the current meeting and signs in
-  again for the next one. A room link opened while signed out leads back to that room after
+  (12 hours by default); when it expires the employee stays in the current meeting, reconnects
+  included, and signs in again for the next one. A sign-in that fails comes back to the sign-in
+  screen with the reason: cancelled in the provider's window, an account the `allow` list refuses,
+  or a provider that is unavailable. A room link opened while signed out leads back to that room after
   sign-in, with the PIN filled. "Sign out" is in the lobby.
 - **Who is approved.** A provider says who the person is. The provider's `allow` list decides whether to
   admit them. It holds patterns matched against the account's login, for example `*@example.com`. The
@@ -261,7 +263,8 @@ can be added later as separate packages.
   so it reaches neither server logs nor a `Referer`; the server stores only its SHA-256.
   The same dialog lists the room's active links with "Revoke".
 - **When access ends.** Revoking a link disconnects the guests who joined with it at once. An
-  expired link admits no new guests; those already inside stay to the end of the meeting.
+  expired link admits no new guests; those already inside stay to the end of the meeting,
+  reconnects included. Deleting a room ends its links.
 - **What a guest cannot do.** Guests reach only the room of their link. They cannot see the
   lobby, switch recording, notes or the echo test, download notes or recordings, or create links.
   Recording and notes an employee switched on continue after the last employee leaves.
