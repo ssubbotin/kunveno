@@ -189,3 +189,35 @@ func TestAuthOnHelpersJoinWithoutSession(t *testing.T) {
 	send(t, bot, `{"type":"join","room":"ops","name":"Echo","role":"echo"}`)
 	expect(t, bot, "joined")
 }
+
+// A guest whose join is still in progress when its invitation is revoked never ends up in the
+// room: the revocation found nobody to disconnect, so the join itself must refuse it.
+func TestInvitationRevokedDuringTheGuestsJoinRefusesIt(t *testing.T) {
+	e, a := newAuthEnv(t)
+	entered, release := make(chan struct{}), make(chan struct{})
+	e.media.setHold(func() {
+		entered <- struct{}{}
+		<-release
+	})
+	g := dialAs(t, e, "")
+	send(t, g, `{"type":"join","room":"ops","invite":"tok-ops","name":"G"}`)
+	select {
+	case <-entered: // the invitation was checked; the guest is inside media setup
+	case <-time.After(5 * time.Second):
+		t.Fatal("the guest's join never reached media setup")
+	}
+	e.media.setHold(nil)
+	a.revoke()
+	if n := e.conf.DropInvite("inv1"); n != 0 {
+		t.Fatalf("dropped %d before the guest was a member", n)
+	}
+	close(release)
+	if m := expect(t, g, "error"); m.Code != CodeBadInvite {
+		t.Fatalf("code %q", m.Code)
+	}
+	expectClosed(t, g)
+	r, _ := e.reg.Get("ops")
+	if n := len(r.Snapshot().Participants); n != 0 || e.conf.Members("ops") != 0 {
+		t.Fatalf("left behind: %d participants, %d members", n, e.conf.Members("ops"))
+	}
+}

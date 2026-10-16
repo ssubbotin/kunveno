@@ -321,6 +321,8 @@ func (h *Handler) join(s *session, m ClientMessage, who *auth.Identity) (*confer
 		return nil, CodeBadPIN, "wrong pin"
 	case errors.Is(err, room.ErrFull):
 		return nil, CodeRoomFull, "room is full"
+	case errors.Is(err, conference.ErrRevoked):
+		return nil, CodeBadInvite, "the invitation has expired or was revoked"
 	case errors.Is(err, conference.ErrMedia):
 		return nil, CodeMediaFailed, "media setup failed"
 	case errors.Is(err, conference.ErrWrite):

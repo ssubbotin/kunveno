@@ -55,7 +55,14 @@ var (
 	ErrNoRoom = errors.New("no such room")
 	ErrMedia  = errors.New("media setup failed")
 	ErrWrite  = errors.New("write failed")
+	// ErrRevoked: the guest's invitation was revoked while the guest was joining.
+	ErrRevoked = errors.New("invitation revoked")
 )
+
+// revokedKeep is how long DropInvite remembers a revoked invitation for joins still in progress.
+// A join passes its invitation check and reaches the room within moments, so a minute is ample and
+// keeps the set small: it holds only the invitations revoked in the last minute.
+const revokedKeep = time.Minute
 
 // RefusedError is a helper refused by the room: it was not asked for, or one is already there.
 type RefusedError struct{ Reason string }
@@ -93,8 +100,9 @@ type Conference struct {
 	recording *recording.Store // meeting recording (recording.enabled); nil when off
 	meetings  *meetings.Store  // summaries of ended meetings; nil keeps none
 
-	mu   sync.Mutex
-	live map[string]*liveRoom // slug -> members
+	mu      sync.Mutex
+	live    map[string]*liveRoom // slug -> members
+	revoked map[string]time.Time // invitation ID -> when DropInvite revoked it; see revokedKeep
 }
 
 type liveRoom struct {
@@ -207,6 +215,14 @@ func (c *Conference) Join(conn Conn, req JoinRequest) (*Member, error) {
 	}
 	s.peer = peer
 	c.mu.Lock()
+	if req.Guest && c.revokedLocked(req.Invite) {
+		// DropInvite ran after this guest's invitation was checked and found nobody to disconnect.
+		c.mu.Unlock()
+		_ = peer.Close()
+		lr.room.Leave(id)
+		s.log.Info("invitation revoked during the join; guest refused")
+		return nil, ErrRevoked
+	}
 	lr.members[id] = s
 	// Whether a notes bot came in after the notes were switched off: a stopNotes that ran before
 	// this point missed it. One that runs after finds it among the members and stops it itself.
@@ -384,12 +400,23 @@ func (c *Conference) SetEcho(s *Member, on bool) {
 }
 
 // DropInvite disconnects the guests who joined with invitation id (it was revoked) and returns
-// how many there were.
+// how many there were. A guest whose join is still in progress is refused by Join with ErrRevoked.
+// Call it after the store has revoked the invitation, so no new join can pass the check.
 func (c *Conference) DropInvite(id string) int {
 	if id == "" {
 		return 0
 	}
 	c.mu.Lock()
+	now := time.Now()
+	for r, at := range c.revoked {
+		if now.Sub(at) > revokedKeep {
+			delete(c.revoked, r)
+		}
+	}
+	if c.revoked == nil {
+		c.revoked = map[string]time.Time{}
+	}
+	c.revoked[id] = now // a guest still joining with it is refused when it reaches the room
 	var drop []*Member
 	for _, lr := range c.live {
 		for _, m := range lr.members {
@@ -404,6 +431,13 @@ func (c *Conference) DropInvite(id string) int {
 		m.conn.Abort("invite revoked") // Close would wait for each guest's answer
 	}
 	return len(drop)
+}
+
+// revokedLocked reports whether DropInvite revoked invitation id within revokedKeep. Called with
+// c.mu held.
+func (c *Conference) revokedLocked(id string) bool {
+	at, ok := c.revoked[id]
+	return ok && time.Since(at) <= revokedKeep
 }
 
 // StartShare gives s the share lock, or tells it ShareBusy.
