@@ -22,7 +22,8 @@ x-logging: &journald
   driver: journald
 
 # Every service gives up root's extra rights: no capabilities but the ones it lists, and no gaining
-# new privileges (setuid binaries) inside the container.
+# new privileges (setuid binaries) inside the container. The kunveno services run as user 10001:
+# ./data must belong to it and config.yaml be readable by its group (see the README).
 x-hardening: &hardening
   security_opt:
     - no-new-privileges:true
@@ -32,12 +33,6 @@ x-hardening: &hardening
 services:
   server:
     <<: *hardening
-    # Root at start only: hand ./data to its owner, then run as that owner (start-as-owner.sh).
-    cap_add:
-      - CHOWN
-      - SETUID
-      - SETGID
-      - DAC_OVERRIDE
     logging:
       <<: *journald
       options:
@@ -111,12 +106,6 @@ services:
   # Video files and RTSP cameras for rooms with "player:" in config.yaml; idle otherwise.
   player:
     <<: *hardening
-    # Root at start only: hand ./data to its owner, then run as that owner (start-as-owner.sh).
-    cap_add:
-      - CHOWN
-      - SETUID
-      - SETGID
-      - DAC_OVERRIDE
     logging:
       <<: *journald
       options:

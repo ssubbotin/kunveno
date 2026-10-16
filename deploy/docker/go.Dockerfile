@@ -15,27 +15,24 @@ ARG VERSION=dev
 # -trimpath drops build paths, -s -w drops the symbol table and DWARF debug data.
 RUN CGO_ENABLED=0 go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=${VERSION}" -o /out/app ./cmd/${APP}
 
+# Every service runs as user 10001, never as root. The stack's bind-mounted ./data and config.yaml
+# must be readable (data: writable) by it; the server names the fix when they are not.
 FROM alpine:3.22 AS base
+RUN adduser -D -H -u 10001 kunveno
 
-# The server and the player write to /var/lib/kunveno, which the compose stack bind-mounts from
-# the host: they start as root only to run as the directory's owner (start-as-owner.sh).
 FROM base AS server
-RUN apk add --no-cache su-exec
-COPY --chmod=0755 deploy/docker/start-as-owner.sh /usr/local/bin/start-as-owner
 COPY --from=build /out/app /usr/local/bin/kunveno-server
-ENTRYPOINT ["/usr/local/bin/start-as-owner"]
-CMD ["/usr/local/bin/kunveno-server", "-config", "/etc/kunveno/config.yaml"]
+USER 10001:10001
+ENTRYPOINT ["/usr/local/bin/kunveno-server", "-config", "/etc/kunveno/config.yaml"]
 
 FROM base AS echo
-RUN adduser -D -H -u 10001 kunveno
-USER kunveno
 COPY --from=build /out/app /usr/local/bin/kunveno-echo
+USER 10001:10001
 ENTRYPOINT ["/usr/local/bin/kunveno-echo"]
 
 # The player transcodes media files once with ffmpeg, so its image carries ffmpeg.
 FROM alpine:3.22 AS player
-RUN apk add --no-cache ffmpeg su-exec
-COPY --chmod=0755 deploy/docker/start-as-owner.sh /usr/local/bin/start-as-owner
+RUN apk add --no-cache ffmpeg && adduser -D -H -u 10001 kunveno
 COPY --from=build /out/app /usr/local/bin/kunveno-player
-ENTRYPOINT ["/usr/local/bin/start-as-owner"]
-CMD ["/usr/local/bin/kunveno-player"]
+USER 10001:10001
+ENTRYPOINT ["/usr/local/bin/kunveno-player"]

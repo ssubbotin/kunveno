@@ -56,7 +56,11 @@ Necesitas un servidor Linux con Docker al que tus usuarios lleguen por la red.
 ```bash
 curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz
 cd kunveno
+sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && chmod 640 config.yaml
 ```
+
+Los servicios se ejecutan como el usuario 10001, nunca como root: la última línea les da `data/` y
+les deja leer `config.yaml` (lo sigue editando usted).
 
 El directorio es la instalación completa:
 
@@ -98,7 +102,7 @@ vídeo).
 | Leer los registros | `journalctl -t kunveno-server -f` |
 | Supervisión | `https://<PUBLIC_HOST>/grafana/`, usuario `admin`, la contraseña de `.env`. En un servidor expuesto a internet, defina `GRAFANA_WALL_PASSWORD` en `.env`: el navegador la pedirá (usuario `GRAFANA_WALL_USER`, `admin` por defecto) antes del inicio de sesión de Grafana |
 | Usar tu propio certificado | sustituye `certs/fullchain.pem` y `certs/privkey.pem`, luego `docker compose restart web` |
-| Copia de seguridad | copia el directorio (`data/` lo escribe root, así que con `sudo`) |
+| Copia de seguridad | copia el directorio (`data/` pertenece al usuario 10001, así que con `sudo`) |
 
 **Actualizar** a una nueva versión, dentro del directorio:
 
@@ -108,7 +112,8 @@ docker compose pull && docker compose up -d
 
 La pila usa las imágenes `latest`, así que esto descarga la nueva versión y reinicia solo los
 contenedores cuya imagen cambió; `.env`, `config.yaml` y los datos se conservan. Para quedarte en
-una versión, pon por ejemplo `KUNVENO_VERSION=0.2.4` en `.env`.
+una versión, pon por ejemplo `KUNVENO_VERSION=0.2.4` en `.env`. Si viene de una versión anterior a
+0.4.5 (cuando los servicios corrían como root), ejecute una vez antes de arrancar: `sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && chmod 640 config.yaml`.
 
 ### Si algo no funciona
 
@@ -116,6 +121,8 @@ una versión, pon por ejemplo `KUNVENO_VERSION=0.2.4` en `.env`.
   para el audio y el vídeo. Añade `KUNVENO_ADVERTISE_IP=<la dirección a la que llegan los usuarios,
   por ejemplo la de la VPN>` a `.env` y ejecuta `docker compose up -d`.
 - **Los puertos 80 o 443 están ocupados:** define `HTTP_PORT` y `HTTPS_PORT` en `.env`.
+- **El servidor se detiene con «is not writable by the server» o «permission denied» en
+  `config.yaml`:** ejecute `sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && chmod 640 config.yaml` en el directorio y arranque de nuevo.
 - **El servidor se detiene con «config.yaml is a directory»:** el archivo desapareció y Docker creó
   un directorio en su lugar; borra el directorio, restaura `config.yaml` desde el paquete y arranca
   de nuevo.

@@ -54,7 +54,11 @@ You need a Linux server with Docker that your users can reach over the network.
 ```bash
 curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz
 cd kunveno
+sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && chmod 640 config.yaml
 ```
+
+The services run as user 10001, never as root: the last line gives them `data/` and lets them read
+`config.yaml` (it stays yours to edit).
 
 The directory is the whole installation:
 
@@ -96,7 +100,7 @@ video).
 | Read the logs | `journalctl -t kunveno-server -f` |
 | Monitoring | `https://<PUBLIC_HOST>/grafana/`, user `admin`, the password from `.env`. On a server that faces the internet set `GRAFANA_WALL_PASSWORD` in `.env`: the browser then asks for it (user `GRAFANA_WALL_USER`, default `admin`) before Grafana's login |
 | Use your own certificate | replace `certs/fullchain.pem` and `certs/privkey.pem`, then `docker compose restart web` |
-| Back up | copy the directory (`data/` is written by root, so with `sudo`) |
+| Back up | copy the directory (`data/` belongs to user 10001, so with `sudo`) |
 
 **Upgrade** to a new release, in the directory:
 
@@ -106,13 +110,16 @@ docker compose pull && docker compose up -d
 
 The stack runs the `latest` images, so this fetches the new release and restarts only the
 containers whose image changed; `.env`, `config.yaml` and the data stay. To stay on one release,
-set `KUNVENO_VERSION=0.2.4` (for example) in `.env`.
+set `KUNVENO_VERSION=0.2.4` (for example) in `.env`. Coming from a release before 0.4.5 (when the
+services ran as root), run once before starting: `sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && chmod 640 config.yaml`.
 
 ### If something does not work
 
 - **Users join but hear and see nothing:** the server guessed the wrong address for media. Add
   `KUNVENO_ADVERTISE_IP=<the address users reach, e.g. the VPN one>` to `.env` and run
   `docker compose up -d`.
+- **The server stops with "is not writable by the server" or "permission denied" on `config.yaml`:**
+  run `sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && chmod 640 config.yaml` in the directory and start again.
 - **Ports 80 or 443 are taken:** set `HTTP_PORT` and `HTTPS_PORT` in `.env`.
 - **The server stops with "config.yaml is a directory":** the file went missing and Docker created
   a directory in its place; remove the directory, restore `config.yaml` from the archive and start

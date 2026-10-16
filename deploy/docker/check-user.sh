@@ -9,7 +9,7 @@ trap 'docker run --rm -v "$dir:/d" alpine:3.22 rm -rf /d/ok /d/root >/dev/null 2
 fail() { echo "check-user: $*" >&2; exit 1; }
 
 user=$(docker image inspect -f '{{.Config.User}}' "$img")
-[ "$user" = 10001 ] || fail "the image runs as \"$user\", want 10001"
+[ "$user" = 10001:10001 ] || fail "the image runs as \"$user\", want 10001:10001"
 
 case $img in *kunveno-server*) ;; *) echo "check-user: $img runs as 10001"; exit 0 ;; esac
 

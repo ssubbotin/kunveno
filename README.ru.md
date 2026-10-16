@@ -53,7 +53,11 @@
 ```bash
 curl -fsSL https://github.com/ssubbotin/kunveno/releases/latest/download/kunveno.tgz | tar xz
 cd kunveno
+sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && chmod 640 config.yaml
 ```
+
+Службы работают от пользователя 10001, без прав root: последняя строка отдаёт им `data/` и
+разрешает читать `config.yaml` (править его по-прежнему можете вы).
 
 Этот каталог и есть вся установка:
 
@@ -95,7 +99,7 @@ docker compose pull && docker compose up -d
 | Посмотреть журнал | `journalctl -t kunveno-server -f` |
 | Мониторинг | `https://<PUBLIC_HOST>/grafana/`, пользователь `admin`, пароль из `.env`. На сервере, открытом в интернет, задайте `GRAFANA_WALL_PASSWORD` в `.env`: тогда браузер сначала спросит этот пароль (пользователь `GRAFANA_WALL_USER`, по умолчанию `admin`), а потом откроется вход в Grafana |
 | Поставить свой сертификат | заменить `certs/fullchain.pem` и `certs/privkey.pem`, затем `docker compose restart web` |
-| Сделать резервную копию | скопировать каталог (`data/` пишет root, поэтому через `sudo`) |
+| Сделать резервную копию | скопировать каталог (`data/` принадлежит пользователю 10001, поэтому через `sudo`) |
 
 **Обновление** до нового выпуска, в каталоге установки:
 
@@ -105,7 +109,8 @@ docker compose pull && docker compose up -d
 
 Стек работает на образах `latest`, поэтому команда скачивает новый выпуск и перезапускает только
 контейнеры, у которых сменился образ; `.env`, `config.yaml` и данные остаются. Чтобы остаться на
-одном выпуске, задайте в `.env`, например, `KUNVENO_VERSION=0.2.4`.
+одном выпуске, задайте в `.env`, например, `KUNVENO_VERSION=0.2.4`. При переходе с выпуска раньше 0.4.5
+(тогда службы работали от root) один раз перед запуском выполните `sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && chmod 640 config.yaml`.
 
 ### Если что-то не работает
 
@@ -113,6 +118,8 @@ docker compose pull && docker compose up -d
   звука и видео. Добавьте в `.env` строку `KUNVENO_ADVERTISE_IP=<адрес, по которому к серверу
   приходят пользователи, например адрес в VPN>` и выполните `docker compose up -d`.
 - **Порты 80 или 443 заняты:** задайте `HTTP_PORT` и `HTTPS_PORT` в `.env`.
+- **Сервер останавливается с сообщением «is not writable by the server» или «permission denied» на
+  `config.yaml`:** выполните в каталоге `sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && chmod 640 config.yaml` и запустите снова.
 - **Сервер останавливается с сообщением «config.yaml is a directory»:** файл пропал, и Docker
   создал на его месте каталог; удалите каталог, восстановите `config.yaml` из архива и запустите
   снова.

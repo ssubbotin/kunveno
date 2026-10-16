@@ -106,7 +106,7 @@ jobs:
           cache-to: type=gha,scope=${{ matrix.name }},mode=max
       - name: check for leaked sources and debug data
         run: deploy/docker/check-image.sh check/${{ matrix.name }}:ci
-      - name: the service runs as the owner of its data, without root's rights
+      - name: the service runs as user 10001 and names the fix for a root-owned ./data
         if: matrix.name == 'kunveno-server' || matrix.name == 'kunveno-player'
         run: deploy/docker/check-user.sh check/${{ matrix.name }}:ci
       # Known vulnerabilities with a fix available fail the build, so a release never ships them.
@@ -141,7 +141,7 @@ jobs:
 
   # The released stack starts with this run's images and its hardening (no capabilities beyond
   # each service's list, no new privileges): every service stays up, the site and Grafana answer, and
-  # the server and the player run as the owner of ./data, not root.
+  # the server and the player run as user 10001, not root.
   stack:
     if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     needs: image
@@ -156,6 +156,8 @@ jobs:
           mkdir /tmp/stack && tar -xzf dist/kunveno.tgz -C /tmp/stack && cd /tmp/stack/kunveno
           sed -i -e 's/^PUBLIC_HOST=$/PUBLIC_HOST=127.0.0.1/' -e 's/^GRAFANA_ADMIN_PASSWORD=$/GRAFANA_ADMIN_PASSWORD=x/' .env
           echo "KUNVENO_VERSION=sha-${GITHUB_SHA::7}" >> .env
+          # As the README says after unpacking: the services run as user 10001.
+          sudo chown -R 10001:10001 data && sudo chgrp 10001 config.yaml && chmod 640 config.yaml
           docker compose up -d
           for i in $(seq 1 60); do curl -skf https://127.0.0.1/healthz > /dev/null && break; sleep 2; done
           curl -skf https://127.0.0.1/healthz
@@ -167,11 +169,11 @@ jobs:
           if docker compose ps -a --format '{{.State}} {{.Status}}' | grep -v '^running Up'; then
             docker compose logs --no-color | tail -50; exit 1
           fi
-          me=$(id -u)
+          me=10001
           for s in server player; do
             u=$(docker top "$(docker compose ps -q $s)" -o pid,uid | tail -n +2 | awk '{print $2}' | sort -u | tr '\n' ' ')
             echo "$s runs as uid $u"
-            [ "$u" = "$me " ] || { echo "$s runs as $u, want the owner of ./data ($me)" >&2; exit 1; }
+            [ "$u" = "$me " ] || { echo "$s runs as $u, want $me" >&2; exit 1; }
           done
 
   # A version tag also gets a GitHub release, once its images are published, carrying kunveno.tgz:

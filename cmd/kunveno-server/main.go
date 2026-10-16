@@ -17,7 +17,6 @@ import (
 
 	"github.com/ssubbotin/kunveno/internal/backgrounds"
 	"github.com/ssubbotin/kunveno/internal/conference"
-	"github.com/ssubbotin/kunveno/internal/config"
 	"github.com/ssubbotin/kunveno/internal/httpapi"
 	"github.com/ssubbotin/kunveno/internal/lobby"
 	"github.com/ssubbotin/kunveno/internal/media"
@@ -60,8 +59,11 @@ func main() {
 }
 
 func run(cfgPath string, log *slog.Logger) error {
-	cfg, err := config.Load(cfgPath)
+	cfg, err := loadConfig(cfgPath)
 	if err != nil {
+		return err
+	}
+	if err := writable(filepath.Dir(cfg.RoomsFile)); err != nil {
 		return err
 	}
 	engine, err := sfu.NewEngine(sfu.EngineConfig{
