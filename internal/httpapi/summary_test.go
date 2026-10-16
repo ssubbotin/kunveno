@@ -244,3 +244,32 @@ func TestRoomListSummaryState(t *testing.T) {
 		t.Fatalf("expired notes: %v", ops)
 	}
 }
+
+func TestSummaryDelete(t *testing.T) {
+	reg, store, _, end := summaryRig(t)
+	if err := store.PutSummary("ops", end, []byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	h := SummaryDelete(reg, store, true, ratelimit.New(5, 10*time.Minute, time.Minute))
+	if rec := del(h, "/api/rooms/ops/summary", `{"pin":"0000"}`, "10.0.0.1"); rec.Code != http.StatusForbidden {
+		t.Fatalf("wrong PIN: %d", rec.Code)
+	}
+	if rec := del(h, "/api/rooms/ops/summary", `{"pin":"1234"}`, "10.0.0.2"); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d %s", rec.Code, rec.Body)
+	}
+	if store.SummaryState("ops") != notes.SummaryNone {
+		t.Fatal("still there")
+	}
+	if _, ok := store.Until("ops"); !ok {
+		t.Fatal("the notes went too")
+	}
+	if rec := del(h, "/api/rooms/ops/summary", `{"pin":"1234"}`, "10.0.0.2"); rec.Code != http.StatusNotFound {
+		t.Fatalf("second delete: %d", rec.Code)
+	}
+	if rec := internal(SummaryInternal(store, true, msk), "GET", "/internal/notes/summaries", nil); strings.TrimSpace(rec.Body.String()) != "[]" {
+		t.Fatalf("listed again for the add-on: %s", rec.Body)
+	}
+	if rec := del(SummaryDelete(reg, store, false, nil), "/api/rooms/ops/summary", `{"pin":"1234"}`, "10.0.0.3"); rec.Code != http.StatusNotFound {
+		t.Fatalf("while off: %d", rec.Code)
+	}
+}

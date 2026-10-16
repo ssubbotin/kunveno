@@ -265,6 +265,7 @@ func routes(s server) *http.ServeMux {
 	mux.Handle("POST /api/rooms/{slug}/notes", protect(httpapi.NotesDownload(reg, s.notes, cfg.Notes.Enabled, pins, time.Local)))
 	mux.Handle("DELETE /api/rooms/{slug}/notes", protect(httpapi.NotesDelete(reg, s.notes, cfg.Notes.Enabled, pins)))
 	mux.Handle("POST /api/rooms/{slug}/summary", protect(httpapi.SummaryDownload(reg, s.notes, summaries, pins, time.Local)))
+	mux.Handle("DELETE /api/rooms/{slug}/summary", protect(httpapi.SummaryDelete(reg, s.notes, summaries, pins)))
 	mux.Handle("POST /api/rooms/{slug}/recording", protect(httpapi.RecordingLink(reg, rec, pins, links)))
 	mux.Handle("GET /api/rooms/{slug}/recording/{token}", protect(httpapi.RecordingFile(rec, links, time.Local)))
 	mux.Handle("DELETE /api/rooms/{slug}/recording", protect(httpapi.RecordingDelete(reg, rec, pins)))

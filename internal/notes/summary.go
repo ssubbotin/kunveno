@@ -47,6 +47,9 @@ type Summary struct {
 
 const summarySuffix = ".summary.md"
 
+// deletedSuffix marks a summary a person deleted: the notes stay, the summary is not written again.
+const deletedSuffix = ".summary.deleted"
+
 func (s *Store) summaryPath(slug string, end int64) string {
 	return filepath.Join(s.dir, slug+"."+strconv.FormatInt(end, 10)+summarySuffix)
 }
@@ -73,7 +76,7 @@ func (s *Store) PendingSummaries() []Pending {
 	var out []Pending
 	for slug := range s.ended {
 		end, ok := s.readyEndLocked(slug)
-		if _, has := s.summaries[slug]; !ok || has {
+		if _, has := s.summaries[slug]; !ok || has || s.dismissed[slug] == end {
 			continue
 		}
 		if f, failed := s.failed[slug]; failed && f == end {
@@ -93,7 +96,7 @@ func (s *Store) PutSummary(slug string, end int64, body []byte) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if got, ok := s.readyEndLocked(slug); !ok || got != end {
+	if got, ok := s.readyEndLocked(slug); !ok || got != end || s.dismissed[slug] == end {
 		return ErrStale
 	}
 	path := s.summaryPath(slug, end)
@@ -126,7 +129,7 @@ func (s *Store) SummaryState(slug string) SummaryState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	end, ok := s.readyEndLocked(slug)
-	if !ok {
+	if !ok || s.dismissed[slug] == end {
 		return SummaryNone
 	}
 	if _, has := s.summaries[slug]; has {
@@ -168,23 +171,58 @@ func (s *Store) LoadSummary(slug string) (Summary, error) {
 func (s *Store) dropSummaryLocked(slug string) {
 	delete(s.summaries, slug)
 	delete(s.failed, slug)
-	paths, _ := filepath.Glob(filepath.Join(s.dir, slug+".*"+summarySuffix))
+	delete(s.dismissed, slug)
+	paths, _ := filepath.Glob(filepath.Join(s.dir, slug+".*.summary.*")) // the summary, its tmp, a deletion mark
 	for _, path := range paths {
 		_ = os.Remove(path)
 	}
 }
 
-// openSummaries marks the summaries of the transcripts Open loaded, each only when its file names
-// the end of its room's notes, and removes every other summary file.
+// openSummaries marks the summaries and deletion marks of the transcripts Open loaded, each only
+// when its file names the end of its room's notes, and removes every other such file and any
+// temporary file a crash left.
 func (s *Store) openSummaries() {
-	paths, _ := filepath.Glob(filepath.Join(s.dir, "*"+summarySuffix))
-	for _, path := range paths {
-		slug, endText, _ := strings.Cut(strings.TrimSuffix(filepath.Base(path), summarySuffix), ".")
-		end, err := strconv.ParseInt(endText, 10, 64)
-		if ended, ok := s.ended[slug]; ok && err == nil && slugRe.MatchString(slug) && !ended.IsZero() && ended.UnixMilli() == end {
-			s.summaries[slug] = end
-			continue
+	for suffix, into := range map[string]map[string]int64{summarySuffix: s.summaries, deletedSuffix: s.dismissed} {
+		paths, _ := filepath.Glob(filepath.Join(s.dir, "*"+suffix))
+		for _, path := range paths {
+			slug, endText, _ := strings.Cut(strings.TrimSuffix(filepath.Base(path), suffix), ".")
+			end, err := strconv.ParseInt(endText, 10, 64)
+			if ended, ok := s.ended[slug]; ok && err == nil && slugRe.MatchString(slug) && !ended.IsZero() && ended.UnixMilli() == end {
+				into[slug] = end
+				continue
+			}
+			_ = os.Remove(path)
 		}
+	}
+	tmps, _ := filepath.Glob(filepath.Join(s.dir, "*"+summarySuffix+".tmp"))
+	for _, path := range tmps {
 		_ = os.Remove(path)
 	}
+}
+
+// DeleteSummary deletes the summary of the room's ready notes at a person's request, whether it
+// is written, still pending or failed: the notes stay and the summary is not written again for
+// them. ErrNoSummary when the room has no ready notes or their summary is already deleted.
+func (s *Store) DeleteSummary(slug string) error {
+	if !slugRe.MatchString(slug) {
+		return ErrNoSummary
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	end, ok := s.readyEndLocked(slug)
+	if !ok || s.dismissed[slug] == end {
+		return ErrNoSummary
+	}
+	mark := filepath.Join(s.dir, slug+"."+strconv.FormatInt(end, 10)+deletedSuffix)
+	if err := os.WriteFile(mark, nil, 0o600); err != nil {
+		return err
+	}
+	if err := os.Remove(s.summaryPath(slug, end)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		_ = os.Remove(mark)
+		return err
+	}
+	delete(s.summaries, slug)
+	delete(s.failed, slug)
+	s.dismissed[slug] = end
+	return nil
 }

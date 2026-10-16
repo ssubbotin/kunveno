@@ -142,3 +142,23 @@ func SummaryDownload(reg *room.Registry, store *notes.Store, enabled bool, pins 
 		_, _ = w.Write(notes.SummaryMarkdown(sm, req.Lang, loc))
 	})
 }
+
+// SummaryDelete serves DELETE /api/rooms/{slug}/summary with {"pin"}: it deletes the summary of the
+// room's last meeting and keeps the notes; the summary is not written again for them. 204; the same
+// checks as SummaryDownload first; 404 when there is no summary to delete.
+func SummaryDelete(reg *room.Registry, store *notes.Store, enabled bool, pins *ratelimit.Limiter) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		slug, _, ok := pinAccess(w, r, http.MethodDelete, "/summary", "summary", reg, enabled && store != nil, pins)
+		if !ok {
+			return
+		}
+		switch err := store.DeleteSummary(slug); {
+		case errors.Is(err, notes.ErrNoSummary):
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "no summary"})
+		case err != nil:
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		default:
+			w.WriteHeader(http.StatusNoContent)
+		}
+	})
+}

@@ -80,6 +80,7 @@ type Store struct {
 	// add-on gave up on (summary.go).
 	summaries map[string]int64 // the notes' end the summary file names
 	failed    map[string]int64
+	dismissed map[string]int64 // the notes' end whose summary a person deleted
 }
 
 // Open reads the transcripts in dir (a missing dir holds none). A file without an end line was cut
@@ -90,7 +91,7 @@ func Open(dir string, keep time.Duration, now func() time.Time) (*Store, error) 
 		now = time.Now
 	}
 	s := &Store{dir: dir, keep: keep, now: now, ended: map[string]time.Time{}, start: map[string]time.Time{},
-		summaries: map[string]int64{}, failed: map[string]int64{}}
+		summaries: map[string]int64{}, failed: map[string]int64{}, dismissed: map[string]int64{}}
 	paths, err := filepath.Glob(filepath.Join(dir, "*.jsonl"))
 	if err != nil {
 		return nil, err

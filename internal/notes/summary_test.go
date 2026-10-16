@@ -221,3 +221,56 @@ func TestOpenDropsASummaryOfOtherNotes(t *testing.T) {
 		t.Fatalf("old summary file kept (%v)", err)
 	}
 }
+
+// A summary deleted on its own stays deleted: the notes stay, the add-on is not asked for it again
+// and cannot store it, even after a restart.
+func TestDeleteSummaryAlone(t *testing.T) {
+	s, dir, now := endedStore(t)
+	end := at(10, 0).UnixMilli()
+	must(t, s.PutSummary("ops", end, []byte("x")))
+	must(t, s.DeleteSummary("ops"))
+	if st := s.SummaryState("ops"); st != SummaryNone {
+		t.Fatalf("state after delete %q", st)
+	}
+	if _, ok := s.Until("ops"); !ok {
+		t.Fatal("the notes went with the summary")
+	}
+	if got := s.PendingSummaries(); len(got) != 0 {
+		t.Fatalf("deleted summary pending again %v", got)
+	}
+	if err := s.PutSummary("ops", end, []byte("again")); !errors.Is(err, ErrStale) {
+		t.Fatalf("upload after delete: %v", err)
+	}
+	if err := s.DeleteSummary("ops"); !errors.Is(err, ErrNoSummary) {
+		t.Fatalf("second delete: %v", err)
+	}
+	s2, err := Open(dir, time.Hour, func() time.Time { return *now })
+	must(t, err)
+	if st := s2.SummaryState("ops"); st != SummaryNone || len(s2.PendingSummaries()) != 0 {
+		t.Fatalf("after restart: state %q, pending %v", st, s2.PendingSummaries())
+	}
+	if files, _ := filepath.Glob(filepath.Join(dir, "ops.*.summary.md")); len(files) != 0 {
+		t.Fatalf("summary file kept %v", files)
+	}
+	// New notes in the room get a summary again.
+	must(t, s2.Resume("ops", at(11, 0)))
+	must(t, s2.End("ops", at(12, 0)))
+	if st := s2.SummaryState("ops"); st != SummaryPending {
+		t.Fatalf("state for new notes %q", st)
+	}
+}
+
+func TestDeleteSummaryWhilePendingOrWithoutNotes(t *testing.T) {
+	s, _, _ := endedStore(t)
+	must(t, s.DeleteSummary("ops")) // pending: the add-on will not write it
+	if got := s.PendingSummaries(); len(got) != 0 {
+		t.Fatalf("pending %v", got)
+	}
+	if err := s.DeleteSummary("nope"); !errors.Is(err, ErrNoSummary) {
+		t.Fatalf("unknown room: %v", err)
+	}
+	must(t, s.Begin("ops", "Планёрка", at(15, 0)))
+	if err := s.DeleteSummary("ops"); !errors.Is(err, ErrNoSummary) {
+		t.Fatalf("open notes: %v", err)
+	}
+}
