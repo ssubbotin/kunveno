@@ -169,7 +169,7 @@ jobs:
           fi
           me=$(id -u)
           for s in server player; do
-            u=$(docker top "$(docker compose ps -q $s)" -o uid | tail -n +2 | sort -u | tr '\n' ' ')
+            u=$(docker top "$(docker compose ps -q $s)" -o pid,uid | tail -n +2 | awk '{print $2}' | sort -u | tr '\n' ' ')
             echo "$s runs as uid $u"
             [ "$u" = "$me " ] || { echo "$s runs as $u, want the owner of ./data ($me)" >&2; exit 1; }
           done
