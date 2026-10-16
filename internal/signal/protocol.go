@@ -55,9 +55,10 @@
 //   - Any of them answers 409 when the room's ready notes did not end at end: they were reopened,
 //     replaced by a new meeting, deleted or expired. The service drops such work silently.
 //
-// The server keeps the summary with the notes and removes it whenever the notes go. A person may
-// also delete the summary alone: those notes are then never listed again and an upload for them
-// gets 409.
+// The server keeps the summary in a file of its own next to the notes, for as long as the notes
+// would be kept; deleting the notes keeps it, and a new meeting in the room or a deleted room removes
+// it. A person may delete the summary alone: while its notes stay they are never listed again and an
+// upload for them gets 409.
 //
 // The recording bot contract (the commercial kunveno-recorder add-on), stable like the notes one:
 //

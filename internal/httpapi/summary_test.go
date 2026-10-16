@@ -6,11 +6,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ssubbotin/kunveno/internal/lobby"
+	"github.com/ssubbotin/kunveno/internal/meetings"
 	"github.com/ssubbotin/kunveno/internal/notes"
 	"github.com/ssubbotin/kunveno/internal/ratelimit"
 	"github.com/ssubbotin/kunveno/internal/room"
@@ -271,5 +273,40 @@ func TestSummaryDelete(t *testing.T) {
 	}
 	if rec := del(SummaryDelete(reg, store, false, nil), "/api/rooms/ops/summary", `{"pin":"1234"}`, "10.0.0.3"); rec.Code != http.StatusNotFound {
 		t.Fatalf("while off: %d", rec.Code)
+	}
+}
+
+// Deleting the notes keeps the summary: the room still lists it, with its own expiry and meeting.
+func TestRoomListSummaryWithoutNotes(t *testing.T) {
+	reg, store, _, end := summaryRig(t)
+	meets := meetings.Open(filepath.Join(t.TempDir(), "meetings.json"), nil)
+	if err := meets.Add("ops", meetings.Summary{Start: meetingAt(9, 37), End: meetingAt(10, 2), People: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PutSummary("ops", end, []byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.DeleteEnded("ops"); err != nil {
+		t.Fatal(err)
+	}
+	var list []map[string]any
+	rec := do(t, Rooms(RoomsConfig{Registry: reg, Kept: lobby.Kept{Notes: store, NotesEnabled: true, SummaryEnabled: true, Meetings: meets}}), "GET", "/api/rooms", "")
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	it := list[0]
+	if _, has := it["notes_until"]; has {
+		t.Fatalf("notes listed after their deletion: %v", it)
+	}
+	until, err := time.Parse(time.RFC3339, fmt.Sprint(it["summary_until"]))
+	if it["summary"] != "ready" || err != nil || !until.Equal(meetingAt(10, 2).Add(24*time.Hour)) {
+		t.Fatalf("summary %v until %v (%v)", it["summary"], it["summary_until"], err)
+	}
+	if it["last_meeting"] == nil {
+		t.Fatal("no last_meeting for a room that keeps only a summary")
+	}
+	dl := SummaryDownload(reg, store, true, nil, msk)
+	if rec := post(dl, "/api/rooms/ops/summary", `{"pin":"1234"}`, "10.0.0.1"); rec.Code != 200 || !strings.HasPrefix(rec.Body.String(), "# Итоги встречи «Операции»") {
+		t.Fatalf("download without notes: %d %s", rec.Code, rec.Body)
 	}
 }

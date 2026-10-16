@@ -27,8 +27,10 @@ type roomItem struct {
 	NotesUntil string `json:"notes_until,omitempty"`
 	// RecordingUntil (RFC 3339) says until when the room's stored recording can be downloaded.
 	RecordingUntil string `json:"recording_until,omitempty"`
-	// Summary is the state of the notes' summary (pending, ready, failed) while summaries are on.
-	Summary string `json:"summary,omitempty"`
+	// Summary is the state of the meeting's summary (pending, ready, failed) while summaries are on,
+	// and SummaryUntil (RFC 3339) until when the room shows it; the notes may be gone meanwhile.
+	Summary      string `json:"summary,omitempty"`
+	SummaryUntil string `json:"summary_until,omitempty"`
 	// LastMeeting describes the meeting whose notes or recording are kept: no names, no PIN.
 	LastMeeting *meetingItem `json:"last_meeting,omitempty"`
 }
@@ -85,6 +87,9 @@ func list(w http.ResponseWriter, cfg RoomsConfig) {
 			item.NotesUntil = kept.NotesUntil.Format(time.RFC3339)
 		}
 		item.Summary = string(kept.Summary)
+		if !kept.SummaryUntil.IsZero() {
+			item.SummaryUntil = kept.SummaryUntil.Format(time.RFC3339)
+		}
 		if !kept.RecordingUntil.IsZero() {
 			item.RecordingUntil = kept.RecordingUntil.Format(time.RFC3339)
 		}
