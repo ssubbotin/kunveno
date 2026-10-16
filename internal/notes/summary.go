@@ -6,13 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
 
 // A meeting summary is written by the kunveno-notes add-on from a room's ended notes and kept next
-// to them as dir/<slug>.summary.md. It belongs to one ended transcript, named by the transcript's
-// end in Unix milliseconds: an upload for any other end is refused, and every way the notes go
+// to them as dir/<slug>.<end>.summary.md. It belongs to one ended transcript, named by the
+// transcript's end in Unix milliseconds, which the file name carries: an upload for any other end is refused, and every way the notes go
 // (a new meeting, reopening, deletion, expiry, a deleted room) takes the summary with them.
 
 // SummaryState is what the room's ready notes have of a summary.
@@ -46,7 +47,9 @@ type Summary struct {
 
 const summarySuffix = ".summary.md"
 
-func (s *Store) summaryPath(slug string) string { return filepath.Join(s.dir, slug+summarySuffix) }
+func (s *Store) summaryPath(slug string, end int64) string {
+	return filepath.Join(s.dir, slug+"."+strconv.FormatInt(end, 10)+summarySuffix)
+}
 
 // readyEndLocked is the end of the room's ready notes in ms; false when there are none.
 func (s *Store) readyEndLocked(slug string) (int64, bool) {
@@ -70,7 +73,7 @@ func (s *Store) PendingSummaries() []Pending {
 	var out []Pending
 	for slug := range s.ended {
 		end, ok := s.readyEndLocked(slug)
-		if !ok || s.summaries[slug] {
+		if _, has := s.summaries[slug]; !ok || has {
 			continue
 		}
 		if f, failed := s.failed[slug]; failed && f == end {
@@ -93,14 +96,16 @@ func (s *Store) PutSummary(slug string, end int64, body []byte) error {
 	if got, ok := s.readyEndLocked(slug); !ok || got != end {
 		return ErrStale
 	}
-	tmp := s.summaryPath(slug) + ".tmp"
+	path := s.summaryPath(slug, end)
+	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, body, 0o600); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, s.summaryPath(slug)); err != nil {
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
-	s.summaries[slug] = true
+	s.summaries[slug] = end
 	delete(s.failed, slug)
 	return nil
 }
@@ -121,10 +126,10 @@ func (s *Store) SummaryState(slug string) SummaryState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	end, ok := s.readyEndLocked(slug)
-	switch {
-	case !ok:
+	if !ok {
 		return SummaryNone
-	case s.summaries[slug]:
+	}
+	if _, has := s.summaries[slug]; has {
 		return SummaryReady
 	}
 	if f, failed := s.failed[slug]; failed && f == end {
@@ -140,10 +145,11 @@ func (s *Store) LoadSummary(slug string) (Summary, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.readyEndLocked(slug); !ok || !s.summaries[slug] {
+	end, ok := s.readyEndLocked(slug)
+	if have, has := s.summaries[slug]; !ok || !has || have != end {
 		return Summary{}, ErrNoSummary
 	}
-	body, err := os.ReadFile(s.summaryPath(slug))
+	body, err := os.ReadFile(s.summaryPath(slug, end))
 	if errors.Is(err, fs.ErrNotExist) {
 		return Summary{}, ErrNoSummary
 	}
@@ -162,17 +168,21 @@ func (s *Store) LoadSummary(slug string) (Summary, error) {
 func (s *Store) dropSummaryLocked(slug string) {
 	delete(s.summaries, slug)
 	delete(s.failed, slug)
-	_ = os.Remove(s.summaryPath(slug))
+	paths, _ := filepath.Glob(filepath.Join(s.dir, slug+".*"+summarySuffix))
+	for _, path := range paths {
+		_ = os.Remove(path)
+	}
 }
 
-// openSummaries marks the summaries of the transcripts Open loaded and removes any other summary
-// file.
+// openSummaries marks the summaries of the transcripts Open loaded, each only when its file names
+// the end of its room's notes, and removes every other summary file.
 func (s *Store) openSummaries() {
 	paths, _ := filepath.Glob(filepath.Join(s.dir, "*"+summarySuffix))
 	for _, path := range paths {
-		slug := strings.TrimSuffix(filepath.Base(path), summarySuffix)
-		if _, ok := s.ended[slug]; ok && slugRe.MatchString(slug) {
-			s.summaries[slug] = true
+		slug, endText, _ := strings.Cut(strings.TrimSuffix(filepath.Base(path), summarySuffix), ".")
+		end, err := strconv.ParseInt(endText, 10, 64)
+		if ended, ok := s.ended[slug]; ok && err == nil && slugRe.MatchString(slug) && !ended.IsZero() && ended.UnixMilli() == end {
+			s.summaries[slug] = end
 			continue
 		}
 		_ = os.Remove(path)

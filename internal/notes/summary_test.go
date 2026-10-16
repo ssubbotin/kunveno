@@ -24,7 +24,13 @@ func endedStore(t *testing.T) (s *Store, dir string, now *time.Time) {
 	return s, dir, now
 }
 
-func summaryFile(dir string) string { return filepath.Join(dir, "ops.summary.md") }
+// summaryFile is a summary file of ops, or the name one would have.
+func summaryFile(dir string) string {
+	if files, _ := filepath.Glob(filepath.Join(dir, "ops.*.summary.md")); len(files) > 0 {
+		return files[0]
+	}
+	return filepath.Join(dir, "ops.none.summary.md")
+}
 
 func assertNoSummary(t *testing.T, s *Store, dir, after string) {
 	t.Helper()
@@ -186,5 +192,32 @@ func TestOpenDropsOrphanSummaries(t *testing.T) {
 	*now = at(1, 0).Add(2 * time.Hour) // "old" expired; ops (ended 10:00) still kept
 	if st := s2.SummaryState("old"); st != SummaryNone {
 		t.Fatalf("expired room after restart %q", st)
+	}
+}
+
+// A summary belongs to the notes that ended at its end: a file left from other notes (a crash
+// between a new meeting's start and the summary's removal) is not served after a restart.
+func TestOpenDropsASummaryOfOtherNotes(t *testing.T) {
+	s, dir, now := endedStore(t)
+	must(t, s.PutSummary("ops", at(10, 0).UnixMilli(), []byte("old")))
+	// The old summary's file survives while the room's notes are replaced by a later meeting.
+	files, _ := filepath.Glob(filepath.Join(dir, "ops*.summary.md"))
+	if len(files) != 1 {
+		t.Fatalf("summary files %v", files)
+	}
+	saved, err := os.ReadFile(files[0])
+	must(t, err)
+	must(t, s.Begin("ops", "Планёрка", at(12, 0)))
+	must(t, s.End("ops", at(15, 0)))
+	must(t, os.WriteFile(files[0], saved, 0o600))
+
+	*now = at(16, 0)
+	s2, err := Open(dir, time.Hour, func() time.Time { return *now })
+	must(t, err)
+	if st := s2.SummaryState("ops"); st != SummaryPending {
+		t.Fatalf("state %q: an old meeting's summary was taken for the new notes", st)
+	}
+	if _, err := os.Stat(files[0]); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("old summary file kept (%v)", err)
 	}
 }
