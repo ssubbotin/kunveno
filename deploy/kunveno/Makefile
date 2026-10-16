@@ -21,11 +21,12 @@ pull:
 
 # Releases before 0.4.5 kept rooms created in the lobby, meeting summaries, notes and recordings in
 # ./data; they now live in the data volume. Stops the server and the player, copies ./data over
-# what the volume holds and gives it to the services' user, 10001; then run make up.
+# what the volume holds and gives it to the services' user, 10001 (backgrounds/, mounted read-only
+# inside, is left alone); then run make up.
 import-data:
 	@test -d data || { echo "no ./data here: nothing to import"; exit 1; }
 	docker compose stop server player
 	docker compose run --rm --no-deps --user 0 --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER \
 		--entrypoint sh -v "$(CURDIR)/data:/old:ro" server \
-		-c 'cp -r /old/. /var/lib/kunveno/ && chown -R 10001:10001 /var/lib/kunveno'
+		-c 'cp -r /old/. /var/lib/kunveno/ && find /var/lib/kunveno -path /var/lib/kunveno/backgrounds -prune -o -exec chown 10001:10001 {} +'
 	@echo "imported: run make up; remove ./data once the rooms, notes and recordings show up"
