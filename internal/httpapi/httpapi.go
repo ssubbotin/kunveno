@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ssubbotin/kunveno/internal/auth"
 	"github.com/ssubbotin/kunveno/internal/lobby"
 	"github.com/ssubbotin/kunveno/internal/metrics"
 	"github.com/ssubbotin/kunveno/internal/ratelimit"
@@ -212,14 +213,27 @@ func local(r *http.Request) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
+// SignInInfo is the sign-in block of /api/info: whether people sign in, and the providers' buttons.
+type SignInInfo struct {
+	Enabled   bool                `json:"enabled"`
+	Providers []auth.ProviderInfo `json:"providers"`
+}
+
 // Info serves GET /api/info: installation details the client shows: the title, the reactions
 // participants can send, whether the noise filter is on by default, whether meeting notes are
 // offered (notes.enabled), whether phrases are shown live (notes.live) and whether meeting
-// recording is offered (recording.enabled) and how many seconds a client waits on a disconnected
-// media connection before restarting (media.reconnect_grace).
-func Info(title string, reactions []string, noiseSuppression, notesEnabled, notesLive, recordingEnabled bool, reconnectGrace int) http.Handler {
+// recording is offered (recording.enabled), how many seconds a client waits on a disconnected
+// media connection before restarting (media.reconnect_grace) and, as "auth", whether sign-in is on
+// and with which providers (signIn; nil is off).
+func Info(title string, reactions []string, noiseSuppression, notesEnabled, notesLive, recordingEnabled bool, reconnectGrace int, signIn *SignInInfo) http.Handler {
+	in := SignInInfo{Providers: []auth.ProviderInfo{}}
+	if signIn != nil && signIn.Enabled {
+		in.Enabled = true
+		in.Providers = append(in.Providers, signIn.Providers...)
+	}
 	body := map[string]any{"title": title, "reactions": reactions, "noise_suppression": noiseSuppression,
-		"notes": notesEnabled, "notes_live": notesEnabled && notesLive, "recording": recordingEnabled, "reconnect_grace": reconnectGrace}
+		"notes": notesEnabled, "notes_live": notesEnabled && notesLive, "recording": recordingEnabled, "reconnect_grace": reconnectGrace,
+		"auth": in}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)

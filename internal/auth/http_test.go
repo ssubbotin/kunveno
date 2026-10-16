@@ -231,3 +231,23 @@ func TestCookiesAreNotInterchangeable(t *testing.T) {
 		t.Errorf("a session cookie was accepted as login state: %d", res.StatusCode)
 	}
 }
+
+func TestRequirePassesTheIdentityOn(t *testing.T) {
+	g, mux := newGate(t)
+	c := sessionOf(signIn(t, mux, "ann", "/"))
+	var got Identity
+	var ok bool
+	h := g.Require(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { got, ok = IdentityFrom(r.Context()) }))
+	r := httptest.NewRequest("GET", "/api/rooms", nil)
+	r.AddCookie(c)
+	h.ServeHTTP(httptest.NewRecorder(), r)
+	if !ok || got.Login != "ann@example.com" || got.Name != "Ann" {
+		t.Fatalf("identity %+v %v", got, ok)
+	}
+	if _, ok := IdentityFrom(context.Background()); ok {
+		t.Fatal("an identity without Require")
+	}
+	if id, ok := IdentityFrom(WithIdentity(context.Background(), Identity{Login: "bob@example.com"})); !ok || id.Login != "bob@example.com" {
+		t.Fatal("WithIdentity")
+	}
+}

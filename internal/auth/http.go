@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -56,10 +57,25 @@ func (g *Gate) CheckInvite(room, token string) (Invite, error) { return g.Invite
 // SameOrigin reports whether the request comes from our own pages.
 func (g *Gate) SameOrigin(r *http.Request) bool { return r.Header.Get("Origin") == g.PublicURL }
 
+type identityKey struct{}
+
+// WithIdentity returns ctx carrying id, as Require passes it to the handler it guards.
+func WithIdentity(ctx context.Context, id Identity) context.Context {
+	return context.WithValue(ctx, identityKey{}, id)
+}
+
+// IdentityFrom is the signed-in person of a request that passed Require.
+func IdentityFrom(ctx context.Context) (Identity, bool) {
+	id, ok := ctx.Value(identityKey{}).(Identity)
+	return id, ok
+}
+
 // Require lets through only signed-in requests; state-changing ones must also come from our site.
+// The handler finds the person with IdentityFrom(r.Context()).
 func (g *Gate) Require(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, ok := g.Session(r); !ok {
+		id, ok := g.Session(r)
+		if !ok {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "auth_required"})
 			return
 		}
@@ -67,7 +83,7 @@ func (g *Gate) Require(h http.Handler) http.Handler {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "cross-site request"})
 			return
 		}
-		h.ServeHTTP(w, r)
+		h.ServeHTTP(w, r.WithContext(WithIdentity(r.Context(), id)))
 	})
 }
 

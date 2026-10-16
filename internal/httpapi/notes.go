@@ -106,33 +106,52 @@ func pinAccess(w http.ResponseWriter, r *http.Request, method, suffix, what stri
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return "", req, false
 	}
-	ip := ratelimit.ClientIP(r)
-	if pins != nil {
-		if ok, wait := pins.Allow(ip); !ok {
-			w.Header().Set("Retry-After", strconv.Itoa(int((wait+time.Second-1)/time.Second)))
-			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many wrong PINs; try again later"})
-			return "", req, false
-		}
+	ip, ok := pinAllowed(w, r, pins)
+	if !ok {
+		return "", req, false
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request body"})
 		return "", req, false
 	}
+	if !pinMatches(w, reg, slug, req.PIN, ip, pins, what) {
+		return "", req, false
+	}
+	return slug, req, true
+}
+
+// pinAllowed is the per-address PIN limit (429 with Retry-After while the address is blocked). It
+// returns the client address for pinMatches.
+func pinAllowed(w http.ResponseWriter, r *http.Request, pins *ratelimit.Limiter) (string, bool) {
+	ip := ratelimit.ClientIP(r)
+	if pins != nil {
+		if ok, wait := pins.Allow(ip); !ok {
+			w.Header().Set("Retry-After", strconv.Itoa(int((wait+time.Second-1)/time.Second)))
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many wrong PINs; try again later"})
+			return ip, false
+		}
+	}
+	return ip, true
+}
+
+// pinMatches checks that the room exists (404) and that pin is its PIN (403, counted toward the
+// limit under the metric label what).
+func pinMatches(w http.ResponseWriter, reg *room.Registry, slug, pin, ip string, pins *ratelimit.Limiter, what string) bool {
 	rm, found := reg.Get(slug)
 	if !found {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": room.ErrNotFound.Error()})
-		return "", req, false
+		return false
 	}
-	if !rm.CheckPIN(req.PIN) {
+	if !rm.CheckPIN(pin) {
 		metrics.PINFailures.WithLabelValues(what).Inc()
 		if pins != nil && pins.Fail(ip) {
 			metrics.PINBlocks.Inc()
 		}
 		writeJSON(w, http.StatusForbidden, map[string]string{"error": room.ErrBadPIN.Error()})
-		return "", req, false
+		return false
 	}
 	if pins != nil {
 		pins.Success(ip)
 	}
-	return slug, req, true
+	return true
 }

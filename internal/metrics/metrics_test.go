@@ -85,3 +85,25 @@ func TestHandlerServesLocalOnly(t *testing.T) {
 		t.Fatalf("proxied: %d, want 403", rec.Code)
 	}
 }
+
+func TestSignInMetricsOnlyWithSignIn(t *testing.T) {
+	off := NewRegistry(room.NewRegistry(), "test")
+	if n, err := testutil.GatherAndCount(off, "kunveno_invites_active", "kunveno_guest_joins_total"); err != nil || n != 0 {
+		t.Fatalf("sign-in metrics without sign-in: %d %v", n, err)
+	}
+	on := NewRegistry(room.NewRegistry(), "test")
+	active := 3
+	RegisterAuth(on, func() int { return active })
+	SignIns.WithLabelValues("yandex", "ok").Inc()
+	want := `
+# HELP kunveno_invites_active Guest invitations that can be used right now.
+# TYPE kunveno_invites_active gauge
+kunveno_invites_active 3
+`
+	if err := testutil.GatherAndCompare(on, strings.NewReader(want), "kunveno_invites_active"); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := testutil.GatherAndCount(on, "kunveno_guest_joins_total", "kunveno_signins_total"); err != nil || n != 2 {
+		t.Fatalf("guest joins and sign-ins: %d %v", n, err)
+	}
+}

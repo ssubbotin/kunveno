@@ -330,6 +330,9 @@ func (h *Handler) join(s *session, m ClientMessage, who *auth.Identity) (*confer
 	default:
 		return nil, CodeBadMessage, err.Error()
 	}
+	if req.Guest {
+		metrics.GuestJoins.Inc()
+	}
 	if r := m.Restart; r != nil && m.Role == "" {
 		member.Log().Info("rejoin", "name", m.Name, "reason", r.Reason, "after", r.After, "transport", r.Transport)
 		metrics.ClientRestarts.WithLabelValues(r.Reason).Inc()

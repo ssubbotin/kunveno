@@ -8,8 +8,11 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/ssubbotin/kunveno/internal/auth"
+	"github.com/ssubbotin/kunveno/internal/metrics"
 	"github.com/ssubbotin/kunveno/internal/notes"
 )
 
@@ -219,5 +222,37 @@ func TestInvitationRevokedDuringTheGuestsJoinRefusesIt(t *testing.T) {
 	r, _ := e.reg.Get("ops")
 	if n := len(r.Snapshot().Participants); n != 0 || e.conf.Members("ops") != 0 {
 		t.Fatalf("left behind: %d participants, %d members", n, e.conf.Members("ops"))
+	}
+}
+
+// counterReaches waits for c to reach want: joins are counted after "joined" has gone out.
+func counterReaches(c prometheus.Collector, want float64) bool {
+	for i := 0; i < 100; i++ {
+		if testutil.ToFloat64(c) == want {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return false
+}
+
+func TestOnlyAdmittedGuestsAreCounted(t *testing.T) {
+	e, _ := newAuthEnv(t)
+	before := testutil.ToFloat64(metrics.GuestJoins)
+	bad := dialAs(t, e, "")
+	send(t, bad, `{"type":"join","room":"ops","invite":"nope","name":"Гость"}`)
+	expect(t, bad, "error")
+	ann := dialAs(t, e, "ann")
+	send(t, ann, `{"type":"join","room":"ops","pin":"1234","name":"x"}`)
+	expect(t, ann, "joined")
+	g := dialAs(t, e, "")
+	send(t, g, `{"type":"join","room":"ops","invite":"tok-ops","name":"Гость"}`)
+	expect(t, g, "joined")
+	if !counterReaches(metrics.GuestJoins, before+1) {
+		t.Fatalf("guest joins %v, want %v", testutil.ToFloat64(metrics.GuestJoins), before+1)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if got := testutil.ToFloat64(metrics.GuestJoins); got != before+1 {
+		t.Fatalf("guest joins %v, want %v", got, before+1)
 	}
 }
