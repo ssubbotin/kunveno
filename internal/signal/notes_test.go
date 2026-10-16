@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -260,6 +261,35 @@ func TestNotesBotClosedAfterGrace(t *testing.T) {
 	}
 	expectClosed(t, bot)
 	waitReady(t, store)
+}
+
+// The last person leaves after the notes bot was told joined but before its join ended: the bot
+// was in the room while the notes were on, so what it heard is kept.
+func TestLastPersonLeavingWhileTheNotesBotFinishesItsJoin(t *testing.T) {
+	e, store := newNotesEnv(t, false)
+	ca, ida := join(t, e, "Ann")
+	notesOn(t, ca, true)
+	r, _ := e.reg.Get("ops")
+	var once sync.Once
+	e.media.setOnNegotiate(func(id string) {
+		if id == ida {
+			return
+		}
+		once.Do(func() { // inside the bot's join, after its joined went out
+			_ = ca.CloseNow()
+			for deadline := time.Now().Add(5 * time.Second); r.Notes() && time.Now().Before(deadline); {
+				time.Sleep(time.Millisecond)
+			}
+		})
+	})
+	bot, _ := joinNotesBot(t, e)
+	expect(t, bot, "stop")
+	send(t, bot, phrase(ida, "До свидания.", 2*time.Second))
+	send(t, bot, `{"type":"leave"}`)
+	tr := waitReady(t, store)
+	if len(tr.Phrases) != 1 || tr.Phrases[0].Name != "Ann" {
+		t.Fatalf("transcript = %+v", tr)
+	}
 }
 
 func TestLastPersonLeavingStopsNotes(t *testing.T) {

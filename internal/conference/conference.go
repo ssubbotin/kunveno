@@ -208,6 +208,9 @@ func (c *Conference) Join(conn Conn, req JoinRequest) (*Member, error) {
 	s.peer = peer
 	c.mu.Lock()
 	lr.members[id] = s
+	// Whether a notes bot came in after the notes were switched off: a stopNotes that ran before
+	// this point missed it. One that runs after finds it among the members and stops it itself.
+	notesOffAtJoin := req.Role == room.BotNotes && !lr.room.Notes()
 	others := lr.membersExcept(id)
 	c.mu.Unlock()
 	// Subscribe before announcing the join, so the first offer already carries every existing track.
@@ -242,7 +245,7 @@ func (c *Conference) Join(conn Conn, req JoinRequest) (*Member, error) {
 	s.log.Info("joined", "name", req.Name)
 	c.broadcast(lr)
 	peer.Negotiate()
-	if s.botKind == room.BotNotes && !lr.room.Notes() {
+	if notesOffAtJoin && !lr.room.Notes() {
 		c.mu.Lock()
 		s.stoppedAtJoin = true // it heard nothing while the notes were on
 		c.mu.Unlock()

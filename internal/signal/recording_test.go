@@ -222,3 +222,29 @@ func readType(t *testing.T, c *websocket.Conn) string {
 	_ = json.Unmarshal(data, &m)
 	return m.Type
 }
+
+// The last person leaves after the recorder was told joined but before its join ended: it is
+// stopped once, and its leaving clears the room's recording mark.
+func TestLastPersonLeavingWhileTheRecorderFinishesItsJoin(t *testing.T) {
+	e, store := newRecordingEnv(t)
+	e.conf.RecordingStopGrace = time.Minute
+	ca, ida := join(t, e, "Ann")
+	recordingOn(t, ca, true)
+	r, _ := e.reg.Get("ops")
+	var once sync.Once
+	e.media.setOnNegotiate(func(id string) {
+		if id == ida {
+			return
+		}
+		once.Do(func() { // inside the recorder's join, after its joined went out
+			_ = ca.CloseNow()
+			for deadline := time.Now().Add(5 * time.Second); r.Recording() && time.Now().Before(deadline); {
+				time.Sleep(time.Millisecond)
+			}
+		})
+	})
+	bot, _ := joinRecorder(t, e)
+	expect(t, bot, "stop")
+	send(t, bot, `{"type":"leave"}`)
+	waitFor(t, func() bool { return store.Delete("ops") == recording.ErrNoRecording })
+}
