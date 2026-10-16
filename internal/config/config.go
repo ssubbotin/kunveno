@@ -189,6 +189,22 @@ const (
 	EnvAdvertiseIP = "KUNVENO_ADVERTISE_IP" // media.advertise_ip
 )
 
+// CheckSecrets reports sign-in providers whose secret is missing from the environment. Only the
+// server needs the secrets, so Validate leaves this out: the player reads the same config.yaml
+// without them.
+func (c *Config) CheckSecrets() error {
+	if !c.Auth.Enabled {
+		return nil
+	}
+	var errs []error
+	for i, p := range c.Auth.Providers {
+		if p.Secret == "" {
+			errs = append(errs, fmt.Errorf("auth.providers[%d]: %s is not set", i, SecretEnv(p.Type)))
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // Load reads and validates the file at path. Settings the file leaves out come from the
 // environment (EnvListen, EnvAdvertiseIP); media.advertise_ip falls back to the host's primary
 // IPv4 address (DetectIP).
@@ -417,9 +433,6 @@ func (c *Config) Validate() error {
 		}
 		if p.ClientID == "" {
 			errs = append(errs, fmt.Errorf("auth.providers[%d].client_id is empty", i))
-		}
-		if p.Secret == "" {
-			errs = append(errs, fmt.Errorf("auth.providers[%d]: %s is not set", i, SecretEnv(p.Type)))
 		}
 		if len(p.Allow) == 0 {
 			errs = append(errs, fmt.Errorf("auth.providers[%d].allow is empty: nobody could sign in", i))

@@ -430,7 +430,6 @@ func TestAuthValidation(t *testing.T) {
 		"no providers":     {strings.Replace(authOn, "  providers:\n    - type: yandex\n      name: Yandex 360\n      client_id: cid\n      allow: [\"*@example.com\"]\n", "", 1), env, "auth.providers"},
 		"http public_url":  {strings.Replace(authOn, "https://meet", "http://meet", 1), env, "auth.public_url"},
 		"no public_url":    {strings.Replace(authOn, "  public_url: https://meet.example.com\n", "", 1), env, "auth.public_url"},
-		"no secret":        {authOn, func(string) string { return "" }, "KUNVENO_AUTH_YANDEX_SECRET"},
 		"empty allow":      {strings.Replace(authOn, `["*@example.com"]`, "[]", 1), env, "allow"},
 		"unknown provider": {strings.Replace(authOn, "type: yandex", "type: myspace", 1), env, "auth.providers[0].type"},
 		"bad session":      {authOn + "  session: forever\n", env, "auth.session"},
@@ -439,6 +438,26 @@ func TestAuthValidation(t *testing.T) {
 		if _, err := parse([]byte(c.yaml), c.env, nil); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v, want an error naming %q", name, err, c.want)
 		}
+	}
+}
+
+// The player and other readers of config.yaml do not get the provider secret: a missing secret is
+// the server's start error (CheckSecrets), never a parse error.
+func TestAuthSecretIsCheckedOnlyByTheServer(t *testing.T) {
+	cfg, err := parse([]byte(authOn), func(string) string { return "" }, nil)
+	if err != nil {
+		t.Fatalf("a config without the secret did not parse: %v", err)
+	}
+	if err := cfg.CheckSecrets(); err == nil || !strings.Contains(err.Error(), "KUNVENO_AUTH_YANDEX_SECRET") {
+		t.Fatalf("CheckSecrets: %v, want an error naming KUNVENO_AUTH_YANDEX_SECRET", err)
+	}
+	cfg, _ = parse([]byte(authOn), func(k string) string { return map[string]string{"KUNVENO_AUTH_YANDEX_SECRET": "sec"}[k] }, nil)
+	if err := cfg.CheckSecrets(); err != nil {
+		t.Fatalf("with the secret: %v", err)
+	}
+	off, _ := parse([]byte(strings.Replace(authOn, "enabled: true", "enabled: false", 1)), func(string) string { return "" }, nil)
+	if err := off.CheckSecrets(); err != nil {
+		t.Fatalf("sign-in off needs no secret: %v", err)
 	}
 }
 

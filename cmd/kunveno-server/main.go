@@ -67,6 +67,9 @@ func run(cfgPath string, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	if err := cfg.CheckSecrets(); err != nil {
+		return err
+	}
 	// Every directory the server writes, so that a bad owner stops it now with the fix, not later.
 	// The notes and recording directories only when their feature is on.
 	dirs := []string{filepath.Dir(cfg.RoomsFile)}
