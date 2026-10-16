@@ -117,11 +117,11 @@ jobs:
             -e KUNVENO_UPSTREAM=127.0.0.1:8080 -e GRAFANA_PORT=3000 -e PUBLIC_HOST=127.0.0.1 \
             check/kunveno-web:ci)
           sleep 3
-          docker exec "$cid" grep -n kunveno_hsts /etc/nginx/conf.d/kunveno.conf || true
           out=$(docker exec "$cid" wget -S -O /dev/null --no-check-certificate https://127.0.0.1/ 2>&1 || true)
-          docker logs "$cid" 2>&1 | tail -5
+          log=$(docker logs "$cid" 2>&1)
           docker rm -f "$cid" > /dev/null
           echo "$out"
+          if echo "$log" | grep -E '\[(emerg|error)\]'; then echo "nginx logs errors with an older compose file's environment" >&2; exit 1; fi
           echo "$out" | grep -q "HTTP/1.1 200" || { echo "the web image does not serve with an older compose file's environment" >&2; exit 1; }
           if echo "$out" | grep -qi "strict-transport-security"; then echo "HSTS sent without KUNVENO_HSTS" >&2; exit 1; fi
       - name: the service runs as user 10001 and names the fix for a root-owned ./data
