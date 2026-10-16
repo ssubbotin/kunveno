@@ -23,6 +23,7 @@ ui:
 #   enabled: false            # true offers "Take notes" in rooms; false hides every notes control
 #   keep: 1d                  # how long notes stay after they end: 90m, 12h, 1d, 2d
 #   live: false               # debug: show phrases in the room as they are recognised
+#   summary: false            # true: a summary of each meeting's notes, written by an LLM (the add-on's summary overlay)
 #   dir: /var/lib/kunveno/notes
 # Meeting recording: the screen and everyone's audio as one video per meeting. Needs the
 # kunveno-recorder add-on (its compose overlay); set enabled: true together with installing it,

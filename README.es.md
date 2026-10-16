@@ -389,6 +389,7 @@ repasa las comprobaciones manuales de [docs/test-matrix.md](docs/test-matrix.md)
 | `notes.enabled` | `true` ofrece notas de la reunión en las salas; necesita el complemento `kunveno-notes` (por defecto `false`, que oculta todo lo relativo a las notas) |
 | `notes.keep` | cuánto se guardan las notas tras terminar: un número entero y `m`, `h` o `d` (`90m`, `12h`, `1d`, `2d`; por defecto `1d`) |
 | `notes.live` | `true` muestra las frases en la sala a medida que se reconocen, para comprobar el reconocimiento (por defecto `false`) |
+| `notes.summary` | `true` ofrece junto a las notas un resumen de cada reunión, redactado por el servicio de resúmenes del complemento con un LLM; requiere `notes.enabled` (por defecto `false`) |
 | `notes.dir` | dónde se guardan las notas (`/var/lib/kunveno/notes`, en el stack, el volumen de datos) |
 | `recording.enabled` | `true` ofrece la grabación de la reunión en las salas; necesita el complemento `kunveno-recorder` (por defecto `false`, que oculta todo lo relativo a la grabación) |
 | `recording.keep` | cuánto se guarda una grabación tras terminar: un número entero y `m`, `h` o `d` (`90m`, `12h`, `1d`, `2d`; por defecto `1d`) |

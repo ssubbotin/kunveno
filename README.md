@@ -371,6 +371,7 @@ through the manual checks in [docs/test-matrix.md](docs/test-matrix.md).
 | `notes.enabled` | `true` offers meeting notes in rooms; needs the `kunveno-notes` add-on (default `false`, which hides every notes control) |
 | `notes.keep` | how long notes stay after they end: a whole number and `m`, `h` or `d` (`90m`, `12h`, `1d`, `2d`; default `1d`) |
 | `notes.live` | `true` shows phrases in the room as they are recognised, for checking the recognition (default `false`) |
+| `notes.summary` | `true` offers a summary of each meeting's notes next to them, written by the add-on's summary service with an LLM; needs `notes.enabled` (default `false`) |
 | `notes.dir` | where the notes are kept (`/var/lib/kunveno/notes`, in the stack's data volume) |
 | `recording.enabled` | `true` offers meeting recording in rooms; needs the `kunveno-recorder` add-on (default `false`, which hides every recording control) |
 | `recording.keep` | how long a recording stays after it ends: a whole number and `m`, `h` or `d` (`90m`, `12h`, `1d`, `2d`; default `1d`) |

@@ -85,8 +85,11 @@ type Config struct {
 		// DefaultNotesKeep when unset. A pointer, so that an empty value is an error.
 		Keep *string `yaml:"keep"`
 		// Live sends each phrase to the room as it is recognised, for checking the recognition.
-		Live bool   `yaml:"live"`
-		Dir  string `yaml:"dir"`
+		Live bool `yaml:"live"`
+		// Summary offers a summary of each meeting's notes, written by the summary service of the
+		// kunveno-notes add-on with an LLM; needs Enabled.
+		Summary bool   `yaml:"summary"`
+		Dir     string `yaml:"dir"`
 		// KeepFor is Keep parsed; set by Parse and Load.
 		KeepFor time.Duration `yaml:"-"`
 	} `yaml:"notes"`
@@ -359,6 +362,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Media.ReconnectGrace < 3 || c.Media.ReconnectGrace > 120 {
 		errs = append(errs, fmt.Errorf("media.reconnect_grace %d out of range 3..120", c.Media.ReconnectGrace))
+	}
+	if c.Notes.Summary && !c.Notes.Enabled {
+		errs = append(errs, errors.New("notes.summary needs notes.enabled"))
 	}
 	if c.Notes.Keep != nil {
 		if _, err := notes.ParseKeep(*c.Notes.Keep); err != nil {
