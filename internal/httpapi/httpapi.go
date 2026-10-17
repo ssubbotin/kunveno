@@ -31,6 +31,8 @@ type roomItem struct {
 	// and SummaryUntil (RFC 3339) until when the room shows it; the notes may be gone meanwhile.
 	Summary      string `json:"summary,omitempty"`
 	SummaryUntil string `json:"summary_until,omitempty"`
+	// Meetings is how many meetings the room lists (GET /api/rooms/{slug}/meetings).
+	Meetings int `json:"meetings,omitempty"`
 	// LastMeeting describes the meeting whose notes or recording are kept: no names, no PIN.
 	LastMeeting *meetingItem `json:"last_meeting,omitempty"`
 }
@@ -87,6 +89,7 @@ func list(w http.ResponseWriter, cfg RoomsConfig) {
 			item.NotesUntil = kept.NotesUntil.Format(time.RFC3339)
 		}
 		item.Summary = string(kept.Summary)
+		item.Meetings = kept.Meetings
 		if !kept.SummaryUntil.IsZero() {
 			item.SummaryUntil = kept.SummaryUntil.Format(time.RFC3339)
 		}

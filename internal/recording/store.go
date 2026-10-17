@@ -474,3 +474,6 @@ func FileName(slug string, part time.Time, loc *time.Location) string {
 func (s *Store) Has(slug string, meeting int64) bool {
 	return len(s.Parts(slug, meeting)) > 0
 }
+
+// Keep is how long a part is kept after its upload.
+func (s *Store) Keep() time.Duration { return s.keep }

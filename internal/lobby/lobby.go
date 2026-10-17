@@ -5,6 +5,7 @@ package lobby
 
 import (
 	"log/slog"
+	"sort"
 	"time"
 
 	"github.com/ssubbotin/kunveno/internal/meetings"
@@ -34,6 +35,24 @@ type Material struct {
 	// until when the room shows it; only while summaries are on.
 	Summary      notes.SummaryState
 	SummaryUntil time.Time
+	// Meetings is how many meetings the room lists (Kept.History).
+	Meetings int
+}
+
+// Part is one part of a meeting's recording.
+type Part struct {
+	Start, Until time.Time
+	Size         int64
+}
+
+// Meeting is one meeting of a room with what it keeps, of the enabled features: no names.
+type Meeting struct {
+	Start, End   time.Time // End is zero when the index has no entry (material of a migrated meeting)
+	People       int
+	NotesUntil   time.Time // zero: no notes
+	Summary      notes.SummaryState
+	SummaryUntil time.Time
+	Parts        []Part
 }
 
 // Of returns what the room keeps.
@@ -50,7 +69,56 @@ func (k Kept) Of(slug string) Material {
 		m.RecordingUntil, _ = k.Recordings.Until(slug)
 	}
 	m.Meeting = k.lastMeeting(slug)
+	m.Meetings = len(k.History(slug))
 	return m
+}
+
+// History lists the room's meetings, newest first: those of the index and any meeting a store still
+// keeps material of, with that material.
+func (k Kept) History(slug string) []Meeting {
+	byStart := map[int64]*Meeting{}
+	get := func(ms int64) *Meeting {
+		if m, ok := byStart[ms]; ok {
+			return m
+		}
+		m := &Meeting{Start: time.UnixMilli(ms)}
+		byStart[ms] = m
+		return m
+	}
+	for _, s := range k.Meetings.List(slug) {
+		m := get(s.Start.UnixMilli())
+		m.End, m.People = s.End, s.People
+	}
+	if k.NotesEnabled && k.Notes != nil {
+		for _, n := range k.Notes.List(slug) {
+			m := get(n.Meeting)
+			m.NotesUntil = n.Until
+			if m.End.IsZero() {
+				m.End = n.Ended
+			}
+		}
+		if k.SummaryEnabled {
+			for _, ms := range k.Notes.SummaryMeetings(slug) {
+				m := get(ms)
+				m.Summary = k.Notes.SummaryState(slug, ms)
+				m.SummaryUntil, _ = k.Notes.SummaryUntil(slug, ms)
+			}
+		}
+	}
+	if k.RecordingEnabled && k.Recordings != nil {
+		for _, ms := range k.Recordings.Meetings(slug) {
+			m := get(ms)
+			for _, p := range k.Recordings.Parts(slug, ms) {
+				m.Parts = append(m.Parts, Part{Start: p.Part, Until: p.Ended.Add(k.Recordings.Keep()), Size: p.Size})
+			}
+		}
+	}
+	out := make([]Meeting, 0, len(byStart))
+	for _, m := range byStart {
+		out = append(out, *m)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Start.After(out[j].Start) })
+	return out
 }
 
 // lastMeeting finds the summary of the meeting whose recording, notes or meeting summary the room

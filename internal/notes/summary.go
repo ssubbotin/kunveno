@@ -389,3 +389,25 @@ func readMeta(path string) (summaryMeta, error) {
 	}
 	return m, nil
 }
+
+// SummaryMeetings lists the room's meetings that have a summary in any state, newest first.
+func (s *Store) SummaryMeetings(slug string) []int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	seen := map[int64]bool{}
+	var out []int64
+	add := func(k key) {
+		if k.slug == slug && !seen[k.meeting] && s.stateLocked(k) != SummaryNone {
+			seen[k.meeting] = true
+			out = append(out, k.meeting)
+		}
+	}
+	for k := range s.ended {
+		add(k)
+	}
+	for k := range s.summaries {
+		add(k)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] > out[j] })
+	return out
+}

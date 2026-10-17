@@ -111,18 +111,26 @@ func pinAccess(w http.ResponseWriter, r *http.Request, method, suffix, what stri
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 		return "", req, false
 	}
+	req, ok = pinChecked(w, r, slug, what, reg, pins)
+	return slug, req, ok
+}
+
+// pinChecked runs the checks after the path: the per-address PIN limit (429), the body (400), the
+// room (404) and its PIN (403, counted toward the limit).
+func pinChecked(w http.ResponseWriter, r *http.Request, slug, what string, reg *room.Registry, pins *ratelimit.Limiter) (notesRequest, bool) {
+	var req notesRequest
 	ip, ok := pinAllowed(w, r, pins)
 	if !ok {
-		return "", req, false
+		return req, false
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request body"})
-		return "", req, false
+		return req, false
 	}
 	if !pinMatches(w, reg, slug, req.PIN, ip, pins, what) {
-		return "", req, false
+		return req, false
 	}
-	return slug, req, true
+	return req, true
 }
 
 // pinAllowed is the per-address PIN limit (429 with Retry-After while the address is blocked). It

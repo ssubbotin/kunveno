@@ -259,10 +259,11 @@ func routes(s server) *http.ServeMux {
 		}
 	}
 	summaries := cfg.Notes.Enabled && cfg.Notes.Summary
-	rooms := protect(httpapi.Rooms(httpapi.RoomsConfig{Registry: reg, Persist: s.persist, PINs: pins, Deleted: deleted, Kept: lobby.Kept{
+	kept := lobby.Kept{
 		Notes: s.notes, NotesEnabled: cfg.Notes.Enabled, Recordings: s.recordings, RecordingEnabled: cfg.Recording.Enabled, Meetings: s.meetings,
 		SummaryEnabled: summaries,
-	}}))
+	}
+	rooms := protect(httpapi.Rooms(httpapi.RoomsConfig{Registry: reg, Persist: s.persist, PINs: pins, Deleted: deleted, Kept: kept}))
 	mux.Handle("/api/rooms", rooms)
 	mux.Handle("/api/rooms/", rooms)
 	mux.Handle("POST /api/rooms/{slug}/notes", protect(httpapi.NotesDownload(reg, s.notes, cfg.Notes.Enabled, pins, time.Local)))
@@ -284,7 +285,8 @@ func routes(s server) *http.ServeMux {
 		return listed
 	}
 	mux.Handle("PUT /internal/recording/{slug}", httpapi.RecordingUpload(reg, rec, cfg.Recording.MaxBytes, s.conf.RecordingStored, knownMeeting)) // never proxied by nginx
-	bg := backgrounds.New(cfg.BackgroundsDir, s.log).Handler()                                                                                    // public: guests use backgrounds too
+	httpapi.RegisterMeetings(mux, httpapi.MeetingsConfig{Registry: reg, Kept: kept, PINs: pins, Links: links, Loc: time.Local}, protect)
+	bg := backgrounds.New(cfg.BackgroundsDir, s.log).Handler() // public: guests use backgrounds too
 	mux.Handle("/api/backgrounds", bg)
 	mux.Handle("/api/backgrounds/", bg)
 	mux.Handle("/healthz", httpapi.Health())
