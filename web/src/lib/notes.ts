@@ -10,9 +10,9 @@ type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 type Translate = (key: Key, vars?: Record<string, string | number>) => string;
 
 // The notes of one meeting when meeting is given; the room's latest otherwise.
-const notesPath = (slug: string, meeting?: Date) => (meeting ? `${meetingPath(slug, meeting)}/notes` : `/api/rooms/${encodeURIComponent(slug)}/notes`);
+const notesPath = (slug: string, meeting?: number) => (meeting !== undefined ? `${meetingPath(slug, meeting)}/notes` : `/api/rooms/${encodeURIComponent(slug)}/notes`);
 
-export async function fetchNotes(fetchFn: Fetch, slug: string, pin: string, lang: string, meeting?: Date): Promise<NotesResult> {
+export async function fetchNotes(fetchFn: Fetch, slug: string, pin: string, lang: string, meeting?: number): Promise<NotesResult> {
   let res: Response;
   try {
     res = await fetchFn(notesPath(slug, meeting), {
@@ -36,7 +36,7 @@ export async function fetchNotes(fetchFn: Fetch, slug: string, pin: string, lang
 export type DeleteResult = { ok: true } | { ok: false; error: NotesError; retryAfter?: number };
 
 // deleteNotes deletes the room's last meeting notes; 'recording' while they are still being taken.
-export async function deleteNotes(fetchFn: Fetch, slug: string, pin: string, meeting?: Date): Promise<DeleteResult> {
+export async function deleteNotes(fetchFn: Fetch, slug: string, pin: string, meeting?: number): Promise<DeleteResult> {
   let res: Response;
   try {
     res = await fetchFn(notesPath(slug, meeting), {

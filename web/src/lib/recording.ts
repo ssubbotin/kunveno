@@ -12,8 +12,8 @@ type Translate = (key: Key, vars?: Record<string, string | number>) => string;
 const path = (slug: string) => `/api/rooms/${encodeURIComponent(slug)}/recording`;
 
 // One part of one meeting's recording; without it, the room's latest part.
-export type PartRef = { meeting: Date; part: Date };
-const partPath = (slug: string, at?: PartRef) => (at ? `${meetingPath(slug, at.meeting)}/recording/${at.part.getTime()}` : path(slug));
+export type PartRef = { meeting: number; part: number }; // Unix ms
+const partPath = (slug: string, at?: PartRef) => (at ? `${meetingPath(slug, at.meeting)}/recording/${at.part}` : path(slug));
 
 export async function recordingLink(fetchFn: Fetch, slug: string, pin: string, at?: PartRef): Promise<{ ok: true; url: string } | Failure> {
   let res: Response;

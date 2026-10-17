@@ -235,3 +235,37 @@ func TestLastMeetingIsTheNewest(t *testing.T) {
 		t.Fatalf("last_meeting after its video went %+v, want the 11:00 meeting (its notes stay)", got)
 	}
 }
+
+// The list names each meeting and part exactly (Unix ms), so a client builds the item routes from it
+// even for starts that are not on a whole second.
+func TestListNamesMeetingsExactly(t *testing.T) {
+	h := newHistoryRig(t)
+	odd := meetingAt(12, 0).Add(5*time.Second + 123*time.Millisecond)
+	if err := h.notes.Begin("ops", "Операции", odd); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.notes.End("ops", odd.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.cfg.Kept.Recordings.Put("ops", odd, odd.Add(1500*time.Millisecond), strings.NewReader("p"), 1<<20); err != nil {
+		t.Fatal(err)
+	}
+	var rows []struct {
+		Meeting int64
+		Parts   []struct{ Part int64 }
+	}
+	w := h.req("GET", "/api/rooms/ops/meetings", "", "10.0.0.1")
+	if err := json.Unmarshal(w.Body.Bytes(), &rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows[0].Meeting != odd.UnixMilli() || len(rows[0].Parts) != 1 || rows[0].Parts[0].Part != odd.Add(1500*time.Millisecond).UnixMilli() {
+		t.Fatalf("rows %+v", rows[0])
+	}
+	base := fmt.Sprintf("/api/rooms/ops/meetings/%d", rows[0].Meeting)
+	if w := h.req("POST", base+"/notes", `{"pin":"1234"}`, "10.0.0.1"); w.Code != 200 {
+		t.Fatalf("notes by the listed meeting: %d", w.Code)
+	}
+	if w := h.req("POST", fmt.Sprintf("%s/recording/%d", base, rows[0].Parts[0].Part), `{"pin":"1234"}`, "10.0.0.1"); w.Code != 200 {
+		t.Fatalf("part by the listed part: %d", w.Code)
+	}
+}

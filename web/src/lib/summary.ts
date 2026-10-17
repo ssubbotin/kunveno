@@ -14,9 +14,9 @@ export function summaryState(v: unknown): SummaryState | null {
 }
 
 // The summary of one meeting when meeting is given; the room's latest otherwise.
-const summaryPath = (slug: string, meeting?: Date) => (meeting ? `${meetingPath(slug, meeting)}/summary` : `/api/rooms/${encodeURIComponent(slug)}/summary`);
+const summaryPath = (slug: string, meeting?: number) => (meeting !== undefined ? `${meetingPath(slug, meeting)}/summary` : `/api/rooms/${encodeURIComponent(slug)}/summary`);
 
-export async function fetchSummary(fetchFn: Fetch, slug: string, pin: string, lang: string, meeting?: Date): Promise<NotesResult> {
+export async function fetchSummary(fetchFn: Fetch, slug: string, pin: string, lang: string, meeting?: number): Promise<NotesResult> {
   let res: Response;
   try {
     res = await fetchFn(summaryPath(slug, meeting), {
@@ -36,7 +36,7 @@ export async function fetchSummary(fetchFn: Fetch, slug: string, pin: string, la
 }
 
 // deleteSummary deletes the summary and keeps the notes; it is not written again for them.
-export async function deleteSummary(fetchFn: Fetch, slug: string, pin: string, meeting?: Date): Promise<DeleteResult> {
+export async function deleteSummary(fetchFn: Fetch, slug: string, pin: string, meeting?: number): Promise<DeleteResult> {
   let res: Response;
   try {
     res = await fetchFn(summaryPath(slug, meeting), {

@@ -23,13 +23,15 @@ type MeetingsConfig struct {
 }
 
 type partItem struct {
-	Start string `json:"start"` // RFC 3339; with the meeting, it names the part in the routes (Unix ms)
+	Part  int64  `json:"part"`  // the part's start in Unix ms: its name in the routes
+	Start string `json:"start"` // the same, RFC 3339 for display
 	Until string `json:"until"`
 	Size  int64  `json:"size"`
 }
 
 type historyItem struct {
-	Start        string     `json:"start"` // RFC 3339; in Unix ms it names the meeting in the routes
+	Meeting      int64      `json:"meeting"` // the meeting's start in Unix ms: its name in the routes
+	Start        string     `json:"start"`   // the same, RFC 3339 for display
 	End          string     `json:"end,omitempty"`
 	People       int        `json:"people,omitempty"`
 	NotesUntil   string     `json:"notes_until,omitempty"`
@@ -69,7 +71,7 @@ func RegisterMeetings(mux *http.ServeMux, c MeetingsConfig, wrap func(http.Handl
 		}
 		items := []historyItem{}
 		for _, m := range k.History(slug) {
-			it := historyItem{Start: m.Start.In(c.Loc).Format(time.RFC3339), People: m.People, Summary: string(m.Summary), Parts: []partItem{}}
+			it := historyItem{Meeting: m.Start.UnixMilli(), Start: m.Start.In(c.Loc).Format(time.RFC3339), People: m.People, Summary: string(m.Summary), Parts: []partItem{}}
 			if !m.End.IsZero() {
 				it.End = m.End.In(c.Loc).Format(time.RFC3339)
 			}
@@ -80,7 +82,7 @@ func RegisterMeetings(mux *http.ServeMux, c MeetingsConfig, wrap func(http.Handl
 				it.SummaryUntil = m.SummaryUntil.In(c.Loc).Format(time.RFC3339)
 			}
 			for _, p := range m.Parts {
-				it.Parts = append(it.Parts, partItem{Start: p.Start.In(c.Loc).Format(time.RFC3339), Until: p.Until.In(c.Loc).Format(time.RFC3339), Size: p.Size})
+				it.Parts = append(it.Parts, partItem{Part: p.Start.UnixMilli(), Start: p.Start.In(c.Loc).Format(time.RFC3339), Until: p.Until.In(c.Loc).Format(time.RFC3339), Size: p.Size})
 			}
 			items = append(items, it)
 		}

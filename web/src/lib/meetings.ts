@@ -5,8 +5,10 @@ import { summaryState, type SummaryState } from './summary';
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
-export type MeetingPart = { start: Date; until: Date; size: number };
+// part and meeting are the exact starts in Unix ms that name them in the routes.
+export type MeetingPart = { part: number; start: Date; until: Date; size: number };
 export type MeetingRow = {
+  meeting: number;
   start: Date;
   end: Date | null;
   people: number;
@@ -29,7 +31,7 @@ export function parseMeetings(v: unknown): MeetingRow[] {
     if (typeof raw !== 'object' || raw === null) continue;
     const r = raw as Record<string, unknown>;
     const start = date(r.start);
-    if (!start) continue;
+    if (!start || !Number.isSafeInteger(r.meeting)) continue;
     const state = summaryState(r.summary);
     const summaryUntil = date(r.summary_until);
     const parts: MeetingPart[] = [];
@@ -37,10 +39,11 @@ export function parseMeetings(v: unknown): MeetingRow[] {
       const q = (typeof p === 'object' && p !== null ? p : {}) as Record<string, unknown>;
       const ps = date(q.start);
       const pu = date(q.until);
-      if (ps && pu) parts.push({ start: ps, until: pu, size: typeof q.size === 'number' ? q.size : 0 });
+      if (ps && pu && Number.isSafeInteger(q.part)) parts.push({ part: q.part as number, start: ps, until: pu, size: typeof q.size === 'number' ? q.size : 0 });
     }
     parts.sort((a, b) => a.start.getTime() - b.start.getTime());
     out.push({
+      meeting: r.meeting as number,
       start,
       end: date(r.end),
       people: typeof r.people === 'number' && Number.isInteger(r.people) && r.people > 0 ? r.people : 0,

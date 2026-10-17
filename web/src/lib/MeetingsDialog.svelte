@@ -12,7 +12,7 @@
   // onchange: the room's meetings changed, so the room list is stale.
   let { onchange }: { onchange: () => void } = $props();
 
-  type Item = { kind: 'notes' | 'summary' | 'part'; part?: Date };
+  type Item = { kind: 'notes' | 'summary' | 'part'; part?: number };
 
   let dialog: HTMLDialogElement;
   let form: HTMLFormElement;
@@ -28,7 +28,7 @@
   let busy = $state(false);
   let asking = $state(''); // the item whose deletion is being confirmed
 
-  const keyOf = (m: MeetingRow, it: Item) => `${m.start.getTime()}:${it.kind}:${it.part?.getTime() ?? ''}`;
+  const keyOf = (m: MeetingRow, it: Item) => `${m.meeting}:${it.kind}:${it.part ?? ''}`;
   const locale = () => LANG_TAGS[i18n.lang];
   const until = (d: Date) => formatUntil(d, locale());
 
@@ -61,13 +61,13 @@
     busy = true;
     error = '';
     try {
-      if (it.kind === 'part' && it.part) {
-        const r = await recordingLink(fetch, slug, pin, { meeting: m.start, part: it.part });
+      if (it.kind === 'part' && it.part !== undefined) {
+        const r = await recordingLink(fetch, slug, pin, { meeting: m.meeting, part: it.part });
         if (r.ok) return startDownload(r.url);
         error = recordingErrorText(r, t);
         if (r.error === 'gone') await changed();
       } else {
-        const r = it.kind === 'notes' ? await fetchNotes(fetch, slug, pin, i18n.lang, m.start) : await fetchSummary(fetch, slug, pin, i18n.lang, m.start);
+        const r = it.kind === 'notes' ? await fetchNotes(fetch, slug, pin, i18n.lang, m.meeting) : await fetchSummary(fetch, slug, pin, i18n.lang, m.meeting);
         if (r.ok) return saveFile(r.blob, r.filename);
         error = notesErrorText(r, t);
         if (r.error === 'gone') await changed();
@@ -84,9 +84,9 @@
     error = '';
     try {
       const r =
-        it.kind === 'notes' ? await deleteNotes(fetch, slug, pin, m.start)
-        : it.kind === 'summary' ? await deleteSummary(fetch, slug, pin, m.start)
-        : await deleteRecording(fetch, slug, pin, { meeting: m.start, part: it.part! });
+        it.kind === 'notes' ? await deleteNotes(fetch, slug, pin, m.meeting)
+        : it.kind === 'summary' ? await deleteSummary(fetch, slug, pin, m.meeting)
+        : await deleteRecording(fetch, slug, pin, { meeting: m.meeting, part: it.part! });
       if (!r.ok) {
         error = it.kind === 'part' ? recordingErrorText(r, t, 'recording.deleteFailed') : notesErrorText(r, t, it.kind === 'notes' ? 'notes.deleteFailed' : 'summary.deleteFailed');
         if (r.error === 'bad_pin') pinInput.focus();
@@ -149,12 +149,12 @@
       {:else if rows.length === 0}
         <p class="muted">{t('meetings.empty')}</p>
       {:else}
-        {#each rows as m (m.start.getTime())}
+        {#each rows as m (m.meeting)}
           <section class="meeting">
             <h3>{heading(m)}</h3>
             <ul class="items">
-              {#each m.parts as p (p.start.getTime())}
-                {@render item(m, { kind: 'part', part: p.start }, t('meetings.part', { time: formatTime(p.start, locale()) }), t('last.videoUntil', { time: until(p.until) }), true)}
+              {#each m.parts as p (p.part)}
+                {@render item(m, { kind: 'part', part: p.part }, t('meetings.part', { time: formatTime(p.start, locale()) }), t('last.videoUntil', { time: until(p.until) }), true)}
               {/each}
               {#if m.notes}
                 {@render item(m, { kind: 'notes' }, t('last.notesName'), t('last.notesUntil', { time: until(m.notes) }), true)}

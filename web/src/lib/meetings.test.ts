@@ -15,11 +15,11 @@ function fakeFetch(res: Response | Error) {
 }
 
 const row = {
-  start: '2026-10-16T10:55:00+03:00', end: '2026-10-16T11:38:00+03:00', people: 8,
+  meeting: 1792137300123, start: '2026-10-16T10:55:00+03:00', end: '2026-10-16T11:38:00+03:00', people: 8,
   notes_until: '2026-10-17T11:38:00+03:00', summary: 'ready', summary_until: '2026-10-17T11:38:00+03:00',
   parts: [
-    { start: '2026-10-16T11:20:00+03:00', until: '2026-10-17T11:40:00+03:00', size: 20 },
-    { start: '2026-10-16T10:56:00+03:00', until: '2026-10-17T11:20:00+03:00', size: 10 },
+    { part: 1792138800456, start: '2026-10-16T11:20:00+03:00', until: '2026-10-17T11:40:00+03:00', size: 20 },
+    { part: 1792137360789, start: '2026-10-16T10:56:00+03:00', until: '2026-10-17T11:20:00+03:00', size: 10 },
   ],
 };
 
@@ -32,11 +32,14 @@ describe('parseMeetings', () => {
     expect(m.notes).toEqual(new Date(row.notes_until));
     expect(m.summary).toEqual({ state: 'ready', until: new Date(row.summary_until) });
     expect(m.parts.map((p) => p.size)).toEqual([10, 20]);
+    expect(m.meeting).toBe(1792137300123);
+    expect(m.parts.map((p) => p.part)).toEqual([1792137360789, 1792138800456]);
   });
   it('drops malformed rows and fields', () => {
     expect(parseMeetings('x')).toEqual([]);
     expect(parseMeetings([{ start: 'soon', parts: [] }])).toEqual([]);
-    const [m] = parseMeetings([{ start: row.start, parts: [{ start: 'bad' }], summary: 'odd', notes_until: 'never' }]);
+    expect(parseMeetings([{ start: row.start, parts: [] }])).toEqual([]); // no meeting id
+    const [m] = parseMeetings([{ meeting: 1, start: row.start, parts: [{ start: row.start, until: row.end }], summary: 'odd', notes_until: 'never' }]);
     expect(m.end).toBeNull();
     expect(m.people).toBe(0);
     expect(m.notes).toBeNull();
@@ -59,9 +62,9 @@ describe('fetchMeetings', () => {
 });
 
 describe('item requests of one meeting', () => {
-  const meeting = new Date('2026-10-16T10:55:00+03:00');
-  const part = new Date('2026-10-16T11:20:00+03:00');
-  const base = `/api/rooms/ops/meetings/${meeting.getTime()}`;
+  const meeting = 1792137300123;
+  const part = 1792138800456;
+  const base = `/api/rooms/ops/meetings/${meeting}`;
   it('name the meeting, and keep the old paths without one', async () => {
     const ok = () => fakeFetch(new Response('x', { status: 200 }));
     const gone = () => fakeFetch(new Response(null, { status: 204 }));
@@ -79,7 +82,7 @@ describe('item requests of one meeting', () => {
     expect(f.calls[0].url).toBe(`${base}/summary`);
     f = gone();
     await deleteRecording(f.fn, 'ops', '1234', { meeting, part });
-    expect(f.calls[0].url).toBe(`${base}/recording/${part.getTime()}`);
+    expect(f.calls[0].url).toBe(`${base}/recording/${part}`);
     f = ok();
     await fetchNotes(f.fn, 'ops', '1234', 'ru');
     expect(f.calls[0].url).toBe('/api/rooms/ops/notes');
@@ -87,6 +90,6 @@ describe('item requests of one meeting', () => {
   it('accept a part link only to this room', async () => {
     const f = fakeFetch(new Response(JSON.stringify({ url: '/api/rooms/ops/recording/abc' }), { status: 200 }));
     expect(await recordingLink(f.fn, 'ops', '1234', { meeting, part })).toEqual({ ok: true, url: '/api/rooms/ops/recording/abc' });
-    expect(f.calls[0].url).toBe(`${base}/recording/${part.getTime()}`);
+    expect(f.calls[0].url).toBe(`${base}/recording/${part}`);
   });
 });
