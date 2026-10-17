@@ -156,7 +156,8 @@ and run `docker compose restart server`; with `false` (the default) the server i
 switch, refuses the notes bot, lists no rooms at `/internal/notes`, leaves `notes_until` out of
 `/api/rooms`, answers downloads with 404, and the client shows nothing about notes.
 
-- **Storage.** The server writes `notes/<room>.jsonl` in the data volume (mode 0600), one line per phrase plus
+- **Storage.** The server writes `notes/<room>/<meeting>.jsonl` in the data volume (mode 0600; the
+  meeting named by its start in Unix ms), one line per phrase plus
   the meeting's header, pauses and end; a restart loses nothing already written, and a file cut off
   by a restart ends at its last line. Markdown is built on every download, in the server's time
   zone (the stack mounts the host's `/etc/localtime`). Notes expire `notes.keep` after the notes
@@ -240,13 +241,16 @@ together with the add-on (the same text is the package comment of `internal/sign
    the `participants` message says whose camera is on.
 3. When the room no longer wants a recording the server sends `{"type":"stop"}`. The bot finishes
    the file, uploads it with `PUT /internal/recording/<slug>` (loopback only, body `video/mp4`,
-   header `X-Kunveno-Meeting`: the meeting start from `joined`) and sends `{"type":"leave"}`. A bot
-   still there 60 s after the stop is closed; its upload is still accepted.
-4. Upload answers: 204 stored (the room hears `recording_ready`), 400 no meeting header, 404
-   recording off or no such room, 409 a later meeting's recording is stored, 413 larger than
-   `recording.max_size`. An upload for the same meeting replaces the stored one, so a recorder that
-   recorded nothing (no audio and no screen received, for example stopped right after joining) must
-   not upload.
+   headers `X-Kunveno-Meeting`: the meeting start from `joined`, and `X-Kunveno-Part`: when this
+   bot's part began) and sends `{"type":"leave"}`. A bot still there 60 s after the stop is closed;
+   its upload is still accepted.
+4. Upload answers: 204 stored (the room hears `recording_ready`), 400 no or bad meeting or part
+   header, 404 recording off or no such room, 409 a meeting the room neither runs nor lists, 413
+   larger than `recording.max_size`. Every part of a meeting is kept as
+   `recordings/<room>/<meeting>.<part>.mp4`; an upload of the same part replaces that part only, so a
+   recorder that recorded nothing (no audio and no screen received, for example stopped right after
+   joining) must not upload. Without `X-Kunveno-Part` (a recorder of the previous release) the part
+   is the meeting's start.
 
 The Debian packages have no recorder add-on; with them leave `recording.enabled` off.
 
@@ -329,21 +333,33 @@ to the end of the meeting, reconnects included. Deleting a room ends its links.
 **Going back.** Set `enabled: false` (or remove the `auth:` block) and run `docker compose
 restart server`: everything works as before, and `auth.key` and `invites.json` are ignored.
 
-## Meeting summaries
+## Meeting history
 
-When the last person leaves a room, the server saves the meeting's summary: its start, its end and
-the number of people who took part (a person who rejoined under the same name counts once; bots
-never count; no names are kept). The summaries live in `meetings.json` next to `rooms_file`
-(`meetings.json` in the data volume of the Docker stack, `/var/lib/kunveno/meetings.json` with the Debian
-packages), mode 0600, replaced atomically on every change. The file keeps the last 5 meetings of each
-room, drops a meeting 30 days after its end (swept every minute), and loses a room's entries when
-the room is deleted. A file that cannot be read is logged and replaced: the server starts with no
-summaries.
+When the last person leaves a room, the server adds the meeting to `meetings.json` next to
+`rooms_file` (`meetings.json` in the data volume of the Docker stack, `/var/lib/kunveno/meetings.json`
+with the Debian packages; mode 0600, replaced atomically): its start, its end and the number of
+people who took part (a person who rejoined under the same name counts once; bots never count; no
+names are kept). The meeting's material lives under the meeting's start in Unix ms:
+`notes/<room>/<meeting>.jsonl`, `notes/<room>/<meeting>.<end>.summary.md` and
+`recordings/<room>/<meeting>.<part>.mp4` with its `.json`.
 
-`/api/rooms` lists `last_meeting` (`{"start","end","people"}`, RFC 3339) for a room only while it
-keeps notes or a recording of a meeting with a saved summary (the recording's meeting first), and
-the lobby shows it as "10/15, 11:00 AM–11:27 AM · 27 min · 7 participants" above the "Last meeting"
-caption and in its dialog.
+- **Retention.** Notes and summaries expire `notes.keep` after the notes end, each recording part
+  `recording.keep` after its upload; a meeting stays in `meetings.json` while any of that is kept,
+  and for `meetings.keep` (30 days by default) after its end otherwise. Everything is swept every
+  minute. Deleting a room in the lobby deletes all of its meetings; a room removed from
+  `config.yaml` keeps them until they expire.
+- **Disk.** `kunveno_kept_bytes{kind="notes"|"recording"}` and the dashboard's "Хранится на диске"
+  panel show what the material takes. Size `recording.keep` for the meetings you record: a
+  35-minute meeting with a shared screen took about 180 MB.
+- **API.** `/api/rooms` lists `meetings` (the count) and, as before, `last_meeting` and the latest
+  meeting's items. `GET /api/rooms/{slug}/meetings` returns the room's meetings, newest first, with
+  their items (no names, no PIN); the items are downloaded and deleted under
+  `/api/rooms/{slug}/meetings/{meeting}/…` with the room PIN. The routes without a meeting serve the
+  latest one, for one release.
+- **Upgrading from 0.6.** On its first start the server moves each room's last notes, summary and
+  recording into the layout above and logs "moved to the meeting history layout" for each file; a
+  file it cannot read or move is logged and left in place. The move is one-way: a server of an
+  earlier release does not see the moved files. Back up the data volumes before upgrading.
 
 ## Monitoring (Prometheus and Grafana)
 
