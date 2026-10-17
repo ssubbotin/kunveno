@@ -46,7 +46,8 @@ func NotesDownload(reg *room.Registry, store *notes.Store, enabled bool, pins *r
 		if !ok {
 			return
 		}
-		t, err := store.Load(slug)
+		meeting, _ := store.Latest(slug)
+		t, err := store.Load(slug, meeting)
 		switch {
 		case errors.Is(err, notes.ErrNoNotes):
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "no notes"})
@@ -72,7 +73,11 @@ func NotesDelete(reg *room.Registry, store *notes.Store, enabled bool, pins *rat
 		if !ok {
 			return
 		}
-		err := store.DeleteEnded(slug)
+		meeting, ok := store.Latest(slug)
+		if !ok { // nothing ready: an open transcript answers that it is being recorded
+			meeting, _ = store.Current(slug)
+		}
+		err := store.DeleteEnded(slug, meeting)
 		switch {
 		case errors.Is(err, notes.ErrRecording):
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "notes are being recorded"})

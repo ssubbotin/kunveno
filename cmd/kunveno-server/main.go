@@ -352,8 +352,8 @@ func sweepNotes(ctx context.Context, store *notes.Store, log *slog.Logger) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	for {
-		for _, slug := range store.Sweep() {
-			log.Info("notes expired", "room", slug)
+		for _, g := range store.Sweep() {
+			log.Info("notes expired", "room", g.Slug, "meeting", time.UnixMilli(g.Meeting).Format(time.RFC3339))
 		}
 		select {
 		case <-ctx.Done():

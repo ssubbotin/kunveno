@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -65,91 +66,130 @@ type Transcript struct {
 	Events     []Event
 }
 
-// Store keeps the transcript of each room's last meeting in dir/<slug>.jsonl, one JSON object per
-// line, appended as the meeting goes; a restart loses nothing already written. Safe for
-// concurrent use.
+// key names one meeting of a room: its start in Unix milliseconds.
+type key struct {
+	slug    string
+	meeting int64
+}
+
+// Kept describes one meeting's ready notes.
+type Kept struct {
+	Meeting int64     // the meeting's start, Unix ms
+	Ended   time.Time // when its notes ended
+	Until   time.Time // until when they are kept
+}
+
+// Gone names notes the expiry sweep removed.
+type Gone struct {
+	Slug    string
+	Meeting int64
+}
+
+// Store keeps the transcript of every meeting of every room as dir/<slug>/<meeting>.jsonl, one JSON
+// object per line, appended as the meeting goes; a restart loses nothing already written. Each
+// transcript is kept for keep after it ends. Safe for concurrent use.
 type Store struct {
 	dir  string
 	keep time.Duration
 	now  func() time.Time
 
-	mu    sync.Mutex
-	ended map[string]time.Time // slug -> end of its transcript; zero while the transcript is open
-	start map[string]time.Time // slug -> start of the meeting its transcript belongs to
-	// summaries marks rooms whose notes have a summary file; failed holds the end (ms) of notes the
-	// add-on gave up on (summary.go).
-	summaries map[string]summaryRec // stored summaries, kept apart from the notes (summary.go)
-	failed    map[string]int64
-	dismissed map[string]int64 // the notes' end whose summary a person deleted
+	mu      sync.Mutex
+	ended   map[key]time.Time // end of each transcript; zero while it is open
+	current map[string]int64  // the meeting Phrase, Pause, Resume and End act on: the room's last Begin
+	// The summaries kept apart from the notes, the end (ms) of notes the add-on gave up on, and the
+	// end of notes whose summary a person deleted (summary.go).
+	summaries map[key]summaryRec
+	failed    map[key]int64
+	dismissed map[key]int64
 }
 
-// Open reads the transcripts in dir (a missing dir holds none). A file without an end line was cut
-// off by a restart: it gets one at the time of its last line. A file that cannot be read is logged
-// and skipped, left on disk as it is; only a failure to list dir is an error.
+// Open reads the transcripts in dir (a missing dir holds none), after moving the files of the layout
+// that kept only each room's last meeting (migrate.go). A file without an end line was cut off by a
+// restart: it gets one at the time of its last line. A file that cannot be read is logged and
+// skipped, left on disk as it is; only a failure to list dir is an error.
 func Open(dir string, keep time.Duration, now func() time.Time) (*Store, error) {
 	if now == nil {
 		now = time.Now
 	}
-	s := &Store{dir: dir, keep: keep, now: now, ended: map[string]time.Time{}, start: map[string]time.Time{},
-		summaries: map[string]summaryRec{}, failed: map[string]int64{}, dismissed: map[string]int64{}}
-	paths, err := filepath.Glob(filepath.Join(dir, "*.jsonl"))
+	s := &Store{dir: dir, keep: keep, now: now, ended: map[key]time.Time{}, current: map[string]int64{},
+		summaries: map[key]summaryRec{}, failed: map[key]int64{}, dismissed: map[key]int64{}}
+	migrate(dir)
+	rooms, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return s, nil
+	}
 	if err != nil {
 		return nil, err
 	}
-	for _, path := range paths {
-		slug := strings.TrimSuffix(filepath.Base(path), ".jsonl")
-		if !slugRe.MatchString(slug) {
+	for _, r := range rooms {
+		if !r.IsDir() || !slugRe.MatchString(r.Name()) {
 			continue
 		}
-		lines, err := readLines(path)
-		if err != nil {
-			slog.Warn("cannot read a notes file; skipped", "file", path, "err", err)
-			continue
-		}
-		if len(lines) == 0 || lines[0].Type != KindHeader {
-			continue // not a transcript; left alone
-		}
-		last := lines[len(lines)-1]
-		if last.Type != KindEnd {
-			last = line{Type: KindEnd, At: lineTime(last)}
-			if err := appendLine(path, last); err != nil {
-				slog.Warn("cannot end a notes file cut off by a restart; skipped", "file", path, "err", err)
+		slug := r.Name()
+		paths, _ := filepath.Glob(filepath.Join(dir, slug, "*.jsonl"))
+		for _, path := range paths {
+			meeting, err := strconv.ParseInt(strings.TrimSuffix(filepath.Base(path), ".jsonl"), 10, 64)
+			if err != nil {
+				continue // not a transcript of this store; left alone
+			}
+			lines, err := readLines(path)
+			if err != nil {
+				slog.Warn("cannot read a notes file; skipped", "file", path, "err", err)
 				continue
 			}
+			if len(lines) == 0 || lines[0].Type != KindHeader {
+				continue
+			}
+			last := lines[len(lines)-1]
+			if last.Type != KindEnd {
+				last = line{Type: KindEnd, At: lineTime(last)}
+				if err := appendLine(path, last); err != nil {
+					slog.Warn("cannot end a notes file cut off by a restart; skipped", "file", path, "err", err)
+					continue
+				}
+			}
+			s.ended[key{slug, meeting}] = time.UnixMilli(last.At)
+			if meeting > s.current[slug] {
+				s.current[slug] = meeting
+			}
 		}
-		s.ended[slug] = time.UnixMilli(last.At)
-		s.start[slug] = time.UnixMilli(lines[0].At)
 	}
 	s.openSummaries()
 	return s, nil
 }
 
-func (s *Store) path(slug string) string { return filepath.Join(s.dir, slug+".jsonl") }
+func (s *Store) roomDir(slug string) string { return filepath.Join(s.dir, slug) }
 
-// Begin starts the transcript of a new meeting, replacing the room's previous one.
+func (s *Store) path(k key) string {
+	return filepath.Join(s.dir, k.slug, strconv.FormatInt(k.meeting, 10)+".jsonl")
+}
+
+// Begin starts the transcript of a meeting that starts at start. The room's earlier meetings stay;
+// a transcript of the same meeting (gone or expired meanwhile) is started again.
 func (s *Store) Begin(slug, room string, start time.Time) error {
 	if !slugRe.MatchString(slug) {
 		return ErrBadSlug
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := os.MkdirAll(s.dir, 0o700); err != nil {
+	if err := os.MkdirAll(s.roomDir(slug), 0o700); err != nil {
 		return err
 	}
-	data, err := json.Marshal(line{Type: KindHeader, Room: room, At: start.UnixMilli()})
+	k := key{slug, start.UnixMilli()}
+	data, err := json.Marshal(line{Type: KindHeader, Room: room, At: k.meeting})
 	if err != nil {
 		return err
 	}
-	tmp := s.path(slug) + ".tmp"
+	tmp := s.path(k) + ".tmp"
 	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
 		return err
 	}
-	if err := os.Rename(tmp, s.path(slug)); err != nil {
+	if err := os.Rename(tmp, s.path(k)); err != nil {
 		return err
 	}
-	s.dropSummaryLocked(slug)
-	s.ended[slug] = time.Time{}
-	s.start[slug] = time.UnixMilli(start.UnixMilli())
+	s.dropSummaryLocked(k)
+	s.ended[k] = time.Time{}
+	s.current[slug] = k.meeting
 	return nil
 }
 
@@ -163,12 +203,13 @@ func (s *Store) Pause(slug string, at time.Time) error {
 	return s.add(slug, line{Type: KindPaused, At: at.UnixMilli()}, true)
 }
 
-// Resume records that the notes were switched on again; it reopens an ended transcript.
+// Resume records that the notes were switched on again; it reopens the room's last transcript when
+// it has ended.
 func (s *Store) Resume(slug string, at time.Time) error {
 	return s.add(slug, line{Type: KindResumed, At: at.UnixMilli()}, false)
 }
 
-// End closes the transcript: it is ready for download until at plus keep.
+// End closes the room's open transcript: it is ready for download until at plus keep.
 func (s *Store) End(slug string, at time.Time) error {
 	return s.add(slug, line{Type: KindEnd, At: at.UnixMilli()}, true)
 }
@@ -179,33 +220,28 @@ func (s *Store) add(slug string, l line, needOpen bool) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ended, ok := s.ended[slug]
+	k := key{slug, s.current[slug]}
+	ended, ok := s.ended[k]
 	if !ok || (needOpen && !ended.IsZero()) {
 		return ErrNotOpen
 	}
-	if err := appendLine(s.path(slug), l); err != nil {
+	if err := appendLine(s.path(k), l); err != nil {
 		return err
 	}
 	switch l.Type {
 	case KindEnd:
-		s.ended[slug] = time.UnixMilli(l.At)
+		s.ended[k] = time.UnixMilli(l.At)
 	case KindResumed:
-		s.ended[slug] = time.Time{}
-		s.dropSummaryLocked(slug)
+		s.ended[k] = time.Time{}
+		s.dropSummaryLocked(k)
 	}
 	return nil
 }
 
-// Until reports until when the room's notes can be downloaded; false when there are none, they are
+// readyLocked reports until when the meeting's notes are kept; false when there are none, they are
 // still being written, or they have expired.
-func (s *Store) Until(slug string) (time.Time, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.untilLocked(slug)
-}
-
-func (s *Store) untilLocked(slug string) (time.Time, bool) {
-	ended, ok := s.ended[slug]
+func (s *Store) readyLocked(k key) (time.Time, bool) {
+	ended, ok := s.ended[k]
 	if !ok || ended.IsZero() {
 		return time.Time{}, false
 	}
@@ -213,28 +249,57 @@ func (s *Store) untilLocked(slug string) (time.Time, bool) {
 	return until, s.now().Before(until)
 }
 
-// Meeting returns the start of the meeting whose ready notes the room keeps (to the millisecond);
-// false when Until is false.
-func (s *Store) Meeting(slug string) (time.Time, bool) {
+// List returns the room's ready notes, newest meeting first.
+func (s *Store) List(slug string) []Kept {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.untilLocked(slug); !ok {
-		return time.Time{}, false
+	var out []Kept
+	for k, ended := range s.ended {
+		if k.slug != slug {
+			continue
+		}
+		if until, ok := s.readyLocked(k); ok {
+			out = append(out, Kept{Meeting: k.meeting, Ended: ended, Until: until})
+		}
 	}
-	return s.start[slug], true
+	sort.Slice(out, func(i, j int) bool { return out[i].Meeting > out[j].Meeting })
+	return out
 }
 
-// Load reads the room's ready notes; ErrNoNotes when there are none to download.
-func (s *Store) Load(slug string) (Transcript, error) {
+// Latest returns the room's newest meeting with ready notes.
+func (s *Store) Latest(slug string) (int64, bool) {
+	if l := s.List(slug); len(l) > 0 {
+		return l[0].Meeting, true
+	}
+	return 0, false
+}
+
+// Until reports until when the room's newest ready notes are kept; false when it has none.
+func (s *Store) Until(slug string) (time.Time, bool) {
+	if l := s.List(slug); len(l) > 0 {
+		return l[0].Until, true
+	}
+	return time.Time{}, false
+}
+
+// Meeting returns the start of the meeting of the room's newest ready notes.
+func (s *Store) Meeting(slug string) (time.Time, bool) {
+	m, ok := s.Latest(slug)
+	return time.UnixMilli(m), ok
+}
+
+// Load reads the meeting's ready notes; ErrNoNotes when there are none to download.
+func (s *Store) Load(slug string, meeting int64) (Transcript, error) {
 	if !slugRe.MatchString(slug) {
 		return Transcript{}, ErrBadSlug
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.untilLocked(slug); !ok {
+	k := key{slug, meeting}
+	if _, ok := s.readyLocked(k); !ok {
 		return Transcript{}, ErrNoNotes
 	}
-	lines, err := readLines(s.path(slug))
+	lines, err := readLines(s.path(k))
 	if errors.Is(err, fs.ErrNotExist) {
 		return Transcript{}, ErrNoNotes
 	}
@@ -244,7 +309,7 @@ func (s *Store) Load(slug string) (Transcript, error) {
 	if len(lines) == 0 || lines[0].Type != KindHeader {
 		return Transcript{}, ErrNoNotes
 	}
-	t := Transcript{Slug: slug, Room: lines[0].Room, Start: time.UnixMilli(lines[0].At), End: s.ended[slug]}
+	t := Transcript{Slug: slug, Room: lines[0].Room, Start: time.UnixMilli(lines[0].At), End: s.ended[k]}
 	for _, l := range lines[1:] {
 		switch l.Type {
 		case KindPhrase:
@@ -256,75 +321,93 @@ func (s *Store) Load(slug string) (Transcript, error) {
 	return t, nil
 }
 
-// Delete removes the room's notes, for a deleted room. The room is forgotten even when the file
-// cannot be removed (the error is returned), so a room created again under the same slug never
-// inherits the old notes while the server runs. Such a file stays on disk and is ignored, the
-// expiry sweep included, until a restart: then Open reads it again and it expires by its own end
-// time.
+// Delete removes everything the room keeps, for a deleted room. The room is forgotten even when its
+// directory cannot be removed (the error is returned), so a room created again under the same slug
+// never inherits the old notes while the server runs; Open reads what stayed after a restart, and it
+// expires by its own end times.
 func (s *Store) Delete(slug string) error {
 	if !slugRe.MatchString(slug) {
 		return ErrBadSlug
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.ended, slug)
-	delete(s.start, slug)
-	s.dropSummaryLocked(slug)
-	if err := os.Remove(s.path(slug)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
+	for k := range s.ended {
+		if k.slug == slug {
+			delete(s.ended, k)
+		}
 	}
-	return nil
+	for k := range s.summaries {
+		if k.slug == slug {
+			delete(s.summaries, k)
+		}
+	}
+	for _, m := range []map[key]int64{s.failed, s.dismissed} {
+		for k := range m {
+			if k.slug == slug {
+				delete(m, k)
+			}
+		}
+	}
+	delete(s.current, slug)
+	return os.RemoveAll(s.roomDir(slug))
 }
 
-// DeleteEnded removes the room's ready notes at a person's request: ErrRecording while its
-// transcript is open, ErrNoNotes when there are none or they have expired. The check and the
-// removal hold the store's lock, so a meeting cannot reopen the transcript in between. When the
+// DeleteEnded removes one meeting's ready notes at a person's request: ErrRecording while they are
+// open, ErrNoNotes when there are none or they have expired. The meeting's summary stays. When the
 // file cannot be removed the notes stay listed and the error is returned, so the request can be
 // repeated.
-func (s *Store) DeleteEnded(slug string) error {
+func (s *Store) DeleteEnded(slug string, meeting int64) error {
 	if !slugRe.MatchString(slug) {
 		return ErrBadSlug
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ended, ok := s.ended[slug]
+	k := key{slug, meeting}
+	ended, ok := s.ended[k]
 	switch {
 	case ok && ended.IsZero():
 		return ErrRecording
 	case !ok:
 		return ErrNoNotes
 	}
-	if _, ready := s.untilLocked(slug); !ready {
+	if _, ready := s.readyLocked(k); !ready {
 		return ErrNoNotes // expired; the sweep removes it
 	}
-	if err := os.Remove(s.path(slug)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := os.Remove(s.path(k)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	delete(s.ended, slug)
-	delete(s.start, slug)
-	s.dropMarksLocked(slug) // the summary, a file of its own, stays
+	delete(s.ended, k)
+	s.dropMarksLocked(k)
 	return nil
 }
 
-// Sweep deletes expired notes and returns their rooms, sorted; it also deletes expired summaries.
-func (s *Store) Sweep() []string {
+// Sweep deletes expired notes and returns them, sorted; it also deletes expired summaries and the
+// directories of rooms left with nothing.
+func (s *Store) Sweep() []Gone {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var gone []string
-	for slug, ended := range s.ended {
+	var gone []Gone
+	for k, ended := range s.ended {
 		if ended.IsZero() || s.now().Before(ended.Add(s.keep)) {
 			continue
 		}
-		if err := os.Remove(s.path(slug)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := os.Remove(s.path(k)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			continue // tried again on the next sweep
 		}
-		delete(s.ended, slug)
-		delete(s.start, slug)
-		s.dropMarksLocked(slug)
-		gone = append(gone, slug)
+		delete(s.ended, k)
+		s.dropMarksLocked(k)
+		gone = append(gone, Gone{Slug: k.slug, Meeting: k.meeting})
 	}
 	s.sweepSummariesLocked()
-	sort.Strings(gone)
+	for _, g := range gone {
+		_ = os.Remove(s.roomDir(g.Slug)) // only when empty
+	}
+	sort.Slice(gone, func(i, j int) bool {
+		if gone[i].Slug != gone[j].Slug {
+			return gone[i].Slug < gone[j].Slug
+		}
+		return gone[i].Meeting < gone[j].Meeting
+	})
 	return gone
 }
 
@@ -373,4 +456,12 @@ func lineTime(l line) int64 {
 		return l.End
 	}
 	return l.At
+}
+
+// Current returns the meeting the room's notes were last begun for; false when none.
+func (s *Store) Current(slug string) (int64, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m, ok := s.current[slug]
+	return m, ok
 }

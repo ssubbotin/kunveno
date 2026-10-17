@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -69,7 +70,7 @@ func rawPhrase(speaker, text string, start, end time.Time) string {
 func waitPhrases(t *testing.T, e *env, n int) {
 	t.Helper()
 	waitFor(t, func() bool {
-		data, _ := os.ReadFile(filepath.Join(e.notesDir, "ops.jsonl"))
+		data, _ := os.ReadFile(newestNotes(e))
 		return strings.Count(string(data), `"type":"phrase"`) == n
 	})
 }
@@ -77,7 +78,8 @@ func waitPhrases(t *testing.T, e *env, n int) {
 func waitReady(t *testing.T, store *notes.Store) notes.Transcript {
 	t.Helper()
 	waitFor(t, func() bool { _, ok := store.Until("ops"); return ok })
-	tr, err := store.Load("ops")
+	meeting, _ := store.Latest("ops")
+	tr, err := store.Load("ops", meeting)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +335,7 @@ func TestNotesPauseResumeKeepsOneTranscript(t *testing.T) {
 	}
 }
 
-func TestNewMeetingReplacesNotes(t *testing.T) {
+func TestNewMeetingBeginsItsOwnNotes(t *testing.T) {
 	e, store := newNotesEnv(t, false)
 	ca, ida := join(t, e, "Ann")
 	notesOn(t, ca, true)
@@ -348,7 +350,7 @@ func TestNewMeetingReplacesNotes(t *testing.T) {
 	bot2, _ := joinNotesBot(t, e)
 	send(t, bot2, phrase(idb, "Вторая встреча.", 0))
 	waitFor(t, func() bool { // stored before the switch-off, as a bot's phrases are once it has joined
-		data, _ := os.ReadFile(filepath.Join(e.notesDir, "ops.jsonl"))
+		data, _ := os.ReadFile(newestNotes(e))
 		return strings.Contains(string(data), "Вторая встреча.")
 	})
 	notesOn(t, cb, false)
@@ -485,14 +487,14 @@ func TestNotesDeletedFromTheLobbyBeginAgain(t *testing.T) {
 	bot, _ := joinNotesBot(t, e)
 	send(t, bot, phrase(ida, "До удаления.", 5*time.Second))
 	waitPhrases(t, e, 1)
-	if err := store.DeleteEnded("ops"); !errors.Is(err, notes.ErrRecording) {
+	if err := store.DeleteEnded("ops", currentMeeting(store, "ops")); !errors.Is(err, notes.ErrRecording) {
 		t.Fatalf("DeleteEnded while recording = %v", err)
 	}
 	notesOn(t, ca, false)
 	expect(t, bot, "stop")
 	send(t, bot, `{"type":"leave"}`)
 	expect(t, ca, "notes_ready")
-	if err := store.DeleteEnded("ops"); err != nil {
+	if err := store.DeleteEnded("ops", currentMeeting(store, "ops")); err != nil {
 		t.Fatal(err)
 	}
 	notesOn(t, ca, true)
@@ -527,7 +529,7 @@ func TestNewMeetingWhileTheOldBotFlushesBegins(t *testing.T) {
 	bot2, _ := joinNotesBot(t, e)
 	send(t, bot2, phrase(idb, "Вторая встреча.", 0))
 	waitFor(t, func() bool { // the old meeting's file also holds one phrase until this one begins anew
-		data, _ := os.ReadFile(filepath.Join(e.notesDir, "ops.jsonl"))
+		data, _ := os.ReadFile(newestNotes(e))
 		return strings.Contains(string(data), "Вторая встреча.")
 	})
 	notesOn(t, cb, false)
@@ -553,10 +555,10 @@ func TestDepartedKeptOnlyWhileTakingNotes(t *testing.T) {
 	send(t, bot, phrase(idb, "Фраза Боба.", time.Second))
 	send(t, bot, phrase(ida, "Фраза Анны.", 0))
 	waitFor(t, func() bool { // phrases are taken in order: Bob's has been handled once Ann's is stored
-		data, _ := os.ReadFile(filepath.Join(e.notesDir, "ops.jsonl"))
+		data, _ := os.ReadFile(newestNotes(e))
 		return strings.Contains(string(data), "Фраза Анны.")
 	})
-	if data, _ := os.ReadFile(filepath.Join(e.notesDir, "ops.jsonl")); strings.Contains(string(data), "Фраза Боба.") {
+	if data, _ := os.ReadFile(newestNotes(e)); strings.Contains(string(data), "Фраза Боба.") {
 		t.Fatal("a person who left a room without notes was remembered")
 	}
 }
@@ -704,4 +706,21 @@ func TestFirstPhraseAfterTheStopIsKept(t *testing.T) {
 	if tr := waitReady(t, store); len(tr.Phrases) != 1 {
 		t.Fatalf("phrases = %+v", tr.Phrases)
 	}
+}
+
+// currentMeeting is the meeting the room's notes were last begun for.
+func currentMeeting(store *notes.Store, slug string) int64 {
+	m, _ := store.Current(slug)
+	return m
+}
+
+// newestNotes is the file of ops's newest meeting transcript: the names are the meetings' starts, of
+// one length, so they sort by time.
+func newestNotes(e *env) string {
+	files, _ := filepath.Glob(filepath.Join(e.notesDir, "ops", "*.jsonl"))
+	sort.Strings(files)
+	if len(files) == 0 {
+		return filepath.Join(e.notesDir, "ops", "none.jsonl")
+	}
+	return files[len(files)-1]
 }

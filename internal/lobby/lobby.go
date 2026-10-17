@@ -41,10 +41,9 @@ func (k Kept) Of(slug string) Material {
 	var m Material
 	if k.NotesEnabled && k.Notes != nil {
 		m.NotesUntil, _ = k.Notes.Until(slug)
-		if k.SummaryEnabled {
-			if m.Summary = k.Notes.SummaryState(slug); m.Summary != notes.SummaryNone {
-				m.SummaryUntil, _ = k.Notes.SummaryUntil(slug)
-			}
+		if latest, ok := k.Notes.LatestSummary(slug); ok && k.SummaryEnabled {
+			m.Summary = k.Notes.SummaryState(slug, latest)
+			m.SummaryUntil, _ = k.Notes.SummaryUntil(slug, latest)
 		}
 	}
 	if k.RecordingEnabled && k.Recordings != nil {
@@ -70,8 +69,8 @@ func (k Kept) lastMeeting(slug string) *meetings.Summary {
 		if m, ok := k.Notes.Meeting(slug); ok {
 			starts = append(starts, m)
 		}
-		if m, ok := k.Notes.SummaryMeeting(slug); ok && k.SummaryEnabled {
-			starts = append(starts, m)
+		if m, ok := k.Notes.LatestSummary(slug); ok && k.SummaryEnabled {
+			starts = append(starts, time.UnixMilli(m))
 		}
 	}
 	for _, start := range starts {
