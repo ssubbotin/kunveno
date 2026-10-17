@@ -65,3 +65,9 @@ export async function fetchMeetings(fetchFn: Fetch, slug: string): Promise<Meeti
     return null;
   }
 }
+
+// latestRecording is the newest meeting that has recording parts, with its parts; null when none.
+export function latestRecording(rows: MeetingRow[]): { meeting: number; parts: MeetingPart[] } | null {
+  const row = rows.find((r) => r.parts.length > 0);
+  return row ? { meeting: row.meeting, parts: row.parts } : null;
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fetchMeetings, parseMeetings } from './meetings';
+import { fetchMeetings, latestRecording, parseMeetings } from './meetings';
 import { deleteNotes, fetchNotes } from './notes';
 import { deleteRecording, recordingLink } from './recording';
 import { deleteSummary, fetchSummary } from './summary';
@@ -91,5 +91,21 @@ describe('item requests of one meeting', () => {
     const f = fakeFetch(new Response(JSON.stringify({ url: '/api/rooms/ops/recording/abc' }), { status: 200 }));
     expect(await recordingLink(f.fn, 'ops', '1234', { meeting, part })).toEqual({ ok: true, url: '/api/rooms/ops/recording/abc' });
     expect(f.calls[0].url).toBe(`${base}/recording/${part}`);
+  });
+});
+
+describe('latestRecording', () => {
+  it('gives the newest meeting that has parts, with its parts', () => {
+    const rows = parseMeetings([
+      { meeting: 3, start: '2026-10-17T10:00:00Z', parts: [] },
+      { meeting: 2, start: '2026-10-16T10:00:00Z', parts: [
+        { part: 22, start: '2026-10-16T10:30:00Z', until: '2026-10-18T10:00:00Z', size: 1 },
+        { part: 21, start: '2026-10-16T10:01:00Z', until: '2026-10-18T10:00:00Z', size: 1 },
+      ] },
+    ]);
+    const r = latestRecording(rows);
+    expect(r?.meeting).toBe(2);
+    expect(r?.parts.map((p) => p.part)).toEqual([21, 22]);
+    expect(latestRecording([])).toBeNull();
   });
 });

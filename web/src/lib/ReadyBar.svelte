@@ -1,8 +1,12 @@
 <script lang="ts">
-  // What this meeting left once it ended: one bar with a download per ready item and one close.
+  // What this meeting left once it ended: one bar with a download per ready item and one close. A
+  // meeting recorded in several parts offers each part.
   import { i18n, t } from './i18n/i18n.svelte';
+  import { LANG_TAGS } from './i18n/messages';
+  import { formatTime } from './lastMeeting';
+  import { fetchMeetings, latestRecording, type MeetingPart } from './meetings';
   import { fetchNotes, notesErrorText, saveFile } from './notes';
-  import { recordingErrorText, recordingLink, startDownload } from './recording';
+  import { recordingErrorText, recordingLink, startDownload, type PartRef } from './recording';
 
   let { slug, pin, video, notes, ondismiss }: { slug: string; pin: string; video: boolean; notes: boolean; ondismiss: () => void } = $props();
 
@@ -10,13 +14,27 @@
   let videoBusy = $state(false);
   let notesError = $state('');
   let notesBusy = $state(false);
+  // The parts of the meeting's recording; empty until known (one "Video" button for the latest part).
+  let meeting = $state(0);
+  let parts = $state<MeetingPart[]>([]);
 
-  async function downloadVideo() {
+  $effect(() => {
+    if (!video) return;
+    void fetchMeetings(fetch, slug).then((rows) => {
+      const r = rows ? latestRecording(rows) : null;
+      if (r) {
+        meeting = r.meeting;
+        parts = r.parts;
+      }
+    });
+  });
+
+  async function downloadVideo(at?: PartRef) {
     if (videoBusy) return;
     videoBusy = true;
     videoError = '';
     try {
-      const r = await recordingLink(fetch, slug, pin);
+      const r = await recordingLink(fetch, slug, pin, at);
       if (r.ok) startDownload(r.url);
       else videoError = recordingErrorText(r, t);
     } finally {
@@ -39,8 +57,13 @@
 
 <div class="ready" role="status">
   <span>{t('last.ready')}</span>
-  {#if video}
-    <button type="button" class="btn primary" disabled={videoBusy} onclick={downloadVideo}>{t('last.videoName')}</button>
+  {#if video && parts.length > 1}
+    {#each parts as p (p.part)}
+      <button type="button" class="btn primary" disabled={videoBusy} onclick={() => downloadVideo({ meeting, part: p.part })}>
+        {t('meetings.part', { time: formatTime(p.start, LANG_TAGS[i18n.lang]) })}</button>
+    {/each}
+  {:else if video}
+    <button type="button" class="btn primary" disabled={videoBusy} onclick={() => downloadVideo()}>{t('last.videoName')}</button>
   {/if}
   {#if notes}
     <button type="button" class="btn primary" disabled={notesBusy} onclick={downloadNotes}>{t('last.notesName')}</button>
