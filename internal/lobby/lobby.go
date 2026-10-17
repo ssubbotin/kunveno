@@ -168,3 +168,18 @@ func (k Kept) Forget(slug string) {
 		slog.Warn("cannot delete the meetings of a deleted room", "room", slug, "err", err)
 	}
 }
+
+// Knows reports whether a recording of the room's meeting that started at meeting can be stored: the
+// index lists it, a store keeps something of it, or it began within window before now and not
+// after now (a meeting cut by a server restart has no index entry, but its recording must not be
+// lost).
+func (k Kept) Knows(slug string, meeting, now time.Time, window time.Duration) bool {
+	if _, ok := k.Meetings.Find(slug, meeting); ok {
+		return true
+	}
+	ms := meeting.UnixMilli()
+	if (k.Notes != nil && k.Notes.Has(slug, ms)) || (k.Recordings != nil && k.Recordings.Has(slug, ms)) {
+		return true
+	}
+	return !meeting.After(now) && now.Sub(meeting) <= window
+}
