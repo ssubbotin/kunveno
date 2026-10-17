@@ -211,3 +211,27 @@ func TestRoomListCountsMeetings(t *testing.T) {
 		t.Fatalf("meetings = %v", list[0]["meetings"])
 	}
 }
+
+// last_meeting is the newest meeting that keeps something, whichever kind of material it keeps.
+func TestLastMeetingIsTheNewest(t *testing.T) {
+	h := newHistoryRig(t)
+	// The older meeting gets a video too; once the newer one's video goes, the latest video is the
+	// older meeting's, while the newer meeting still keeps its notes.
+	if _, err := h.cfg.Kept.Recordings.Put("ops", h.m1, h.m1, strings.NewReader("old video"), 1<<20); err != nil {
+		t.Fatal(err)
+	}
+	rec := do(t, Rooms(RoomsConfig{Registry: h.reg, Kept: h.cfg.Kept}), "GET", "/api/rooms", "")
+	if got := lastMeetings(t, rec.Body.String())["ops"]; got == nil || got.Start != h.m2.Format(time.RFC3339) {
+		t.Fatalf("last_meeting %+v, want the 11:00 meeting", got)
+	}
+	m2 := fmt.Sprint(h.m2.UnixMilli())
+	for _, p := range []string{fmt.Sprint(h.part1.UnixMilli()), fmt.Sprint(h.part2.UnixMilli())} {
+		if w := h.req("DELETE", "/api/rooms/ops/meetings/"+m2+"/recording/"+p, `{"pin":"1234"}`, "10.0.0.1"); w.Code != http.StatusNoContent {
+			t.Fatalf("delete part: %d", w.Code)
+		}
+	}
+	rec = do(t, Rooms(RoomsConfig{Registry: h.reg, Kept: h.cfg.Kept}), "GET", "/api/rooms", "")
+	if got := lastMeetings(t, rec.Body.String())["ops"]; got == nil || got.Start != h.m2.Format(time.RFC3339) {
+		t.Fatalf("last_meeting after its video went %+v, want the 11:00 meeting (its notes stay)", got)
+	}
+}

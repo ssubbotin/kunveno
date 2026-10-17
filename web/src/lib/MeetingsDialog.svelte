@@ -201,7 +201,7 @@
   .list { display: grid; gap: 1rem; max-height: 55vh; overflow-y: auto; }
   .meeting { padding-bottom: .75rem; border-bottom: 1px solid var(--line); }
   .items { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
-  .items li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; }
+  .items li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: .75rem; }
   .what { display: grid; gap: .1rem; font-weight: 500; }
   .what small { color: var(--muted); font-size: .85rem; font-weight: 400; }
   .buttons, .ask { display: flex; align-items: center; gap: .4rem; }

@@ -202,10 +202,8 @@
       <p class="hint">{t('enter.linkHint')}</p>
       {#if (selected?.meetings ?? 0) > 0 || lastNote}
         <button class="btn" type="button" aria-haspopup="dialog" aria-describedby="last-hint" onclick={openLast}>{t('meetings.button', { n: selected?.meetings ?? 0 })}</button>
-        <p class="hint" id="last-hint">
-          {#if lastLine}<span class="line">{lastLine}</span>{/if}
-          {#if lastNote}<span class="line">{t(lastNote.key, { time: formatUntil(lastNote.until, LANG_TAGS[i18n.lang]) })}</span>{/if}
-        </p>
+        <!-- The newest meeting; what each meeting keeps, and until when, is in the dialog. -->
+        {#if lastLine}<p class="hint" id="last-hint"><span class="line">{lastLine}</span></p>{/if}
       {/if}
       {#if selected?.created}
         <button class="btn danger" type="button" disabled={selected.participants > 0} onclick={deleteRoom}>

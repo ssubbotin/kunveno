@@ -121,8 +121,8 @@ func (k Kept) History(slug string) []Meeting {
 	return out
 }
 
-// lastMeeting finds the summary of the meeting whose recording, notes or meeting summary the room
-// keeps, the recording's meeting first; nil when there is none.
+// lastMeeting finds the summary of the newest meeting whose recording, notes or meeting summary the
+// room keeps; nil when there is none.
 func (k Kept) lastMeeting(slug string) *meetings.Summary {
 	if k.Meetings == nil {
 		return nil
@@ -141,12 +141,13 @@ func (k Kept) lastMeeting(slug string) *meetings.Summary {
 			starts = append(starts, time.UnixMilli(m))
 		}
 	}
+	var newest *meetings.Summary
 	for _, start := range starts {
-		if m, ok := k.Meetings.Find(slug, start); ok {
-			return &m
+		if m, ok := k.Meetings.Find(slug, start); ok && (newest == nil || m.Start.After(newest.Start)) {
+			newest = &m
 		}
 	}
-	return nil
+	return newest
 }
 
 // Forget deletes everything kept for a deleted room. Failures are logged; the room stays deleted.
