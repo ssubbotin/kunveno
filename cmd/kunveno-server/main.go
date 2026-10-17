@@ -269,9 +269,19 @@ func routes(s server) *http.ServeMux {
 	mux.Handle("POST /api/rooms/{slug}/recording", protect(httpapi.RecordingLink(reg, rec, pins, links)))
 	mux.Handle("GET /api/rooms/{slug}/recording/{token}", protect(httpapi.RecordingFile(rec, links, time.Local)))
 	mux.Handle("DELETE /api/rooms/{slug}/recording", protect(httpapi.RecordingDelete(reg, rec, pins)))
-	mux.Handle("/internal/recording", httpapi.RecordingRooms(reg, cfg.Recording.Enabled))                                           // never proxied by nginx
-	mux.Handle("PUT /internal/recording/{slug}", httpapi.RecordingUpload(reg, rec, cfg.Recording.MaxBytes, s.conf.RecordingStored)) // never proxied by nginx
-	bg := backgrounds.New(cfg.BackgroundsDir, s.log).Handler()                                                                      // public: guests use backgrounds too
+	mux.Handle("/internal/recording", httpapi.RecordingRooms(reg, cfg.Recording.Enabled)) // never proxied by nginx
+	// A recording is accepted for the meeting the room runs now or for one it lists.
+	knownMeeting := func(slug string, meeting time.Time) bool {
+		if rm, ok := reg.Get(slug); ok {
+			if current, _ := rm.Meeting(); current.Equal(meeting) {
+				return true
+			}
+		}
+		_, listed := s.meetings.Find(slug, meeting)
+		return listed
+	}
+	mux.Handle("PUT /internal/recording/{slug}", httpapi.RecordingUpload(reg, rec, cfg.Recording.MaxBytes, s.conf.RecordingStored, knownMeeting)) // never proxied by nginx
+	bg := backgrounds.New(cfg.BackgroundsDir, s.log).Handler()                                                                                    // public: guests use backgrounds too
 	mux.Handle("/api/backgrounds", bg)
 	mux.Handle("/api/backgrounds/", bg)
 	mux.Handle("/healthz", httpapi.Health())

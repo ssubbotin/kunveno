@@ -88,7 +88,7 @@ func TestRoomsListUsesTheMeetingOfTheKeptRecording(t *testing.T) {
 	reg := room.NewRegistry()
 	reg.Add(room.New("ops", "Операции", "1234", 15))
 	rec := recordingStore(t, &now)
-	if _, err := rec.Put("ops", meetingAt(9, 37), strings.NewReader("v"), 1<<20); err != nil {
+	if _, err := rec.Put("ops", meetingAt(9, 37), meetingAt(9, 37), strings.NewReader("v"), 1<<20); err != nil {
 		t.Fatal(err)
 	}
 	meets := meetingsStore(t)
@@ -108,7 +108,7 @@ func TestRoomsListPrefersTheRecordingsMeeting(t *testing.T) {
 	reg.Add(room.New("ops", "Операции", "1234", 15))
 	recordMeeting(t, store, "ops") // notes of the 9:37 meeting
 	rec := recordingStore(t, &now)
-	if _, err := rec.Put("ops", meetingAt(8, 0), strings.NewReader("v"), 1<<20); err != nil {
+	if _, err := rec.Put("ops", meetingAt(8, 0), meetingAt(8, 0), strings.NewReader("v"), 1<<20); err != nil {
 		t.Fatal(err)
 	}
 	meets := meetingsStore(t)

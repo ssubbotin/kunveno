@@ -73,13 +73,17 @@
 //     camera switched off stops sending; the participants message says whose camera is on.
 //   - When the room no longer wants a recording the server sends {"type":"stop"}. The bot finishes
 //     the file, uploads it with PUT /internal/recording/<slug> (loopback only, body video/mp4,
-//     header X-Kunveno-Meeting: the meeting start from joined) and sends {"type":"leave"}. A bot
-//     still there 60 s after the stop is closed; its upload is still accepted.
-//   - Upload answers: 204 stored (the room hears recording_ready), 400 no meeting header, 404
-//     recording off or no such room, 409 a later meeting's recording is stored, 413 larger than
-//     recording.max_size. An upload for the same meeting replaces the stored one, so a recorder
-//     that recorded nothing (no audio and no screen received, for example stopped right after
-//     joining) must not upload.
+//     header X-Kunveno-Meeting: the meeting start from joined, header X-Kunveno-Part: when this
+//     bot's part began, RFC 3339) and sends {"type":"leave"}. A bot still there 60 s after the
+//     stop is closed; its upload is still accepted.
+//   - Every part of a meeting is kept: a recording switched off and on again gives the meeting a
+//     second part. An upload of the same part replaces that part only, so a recorder that recorded
+//     nothing (no audio and no screen received, for example stopped right after joining) must not
+//     upload. Without X-Kunveno-Part (a recorder of the previous release) the part is the meeting's
+//     start, so its uploads replace one another.
+//   - Upload answers: 204 stored (the room hears recording_ready), 400 no or bad meeting or part
+//     header, 404 recording off or no such room, 409 a meeting the room neither runs now nor
+//     lists, 413 larger than recording.max_size.
 package signal
 
 import (
