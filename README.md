@@ -201,6 +201,26 @@ the date and time, who spoke, and the phrases in order, with pauses marked.
 - `notes.live: true` shows the phrases in the room as they are recognised, in the tile of the
   "Notes" participant, for checking the recognition.
 
+## Meeting summary
+
+With `notes.summary: true` (and notes on) each meeting whose notes were taken also gets a short
+summary: what happened, the decisions, the action items with who does them and the open questions,
+and a line per person when people take turns reporting. It is written by the summary service of the
+`kunveno-notes` add-on with a language model (LLM) you set up there, usually a local one (any server
+with an OpenAI-compatible API, such as vLLM or ollama).
+
+- The summary appears next to the notes in the lobby's "Last meeting" dialog about a minute after the
+  meeting ends. Until then it reads "being prepared", and "could not be written" when the model
+  failed.
+- It is a file of its own next to the notes, kept for the same `notes.keep` after the meeting and
+  downloaded with the same PIN. The notes and the summary are deleted separately in the dialog:
+  deleting the notes keeps the summary, and deleting the summary keeps the notes (no new summary is
+  written for them). A new meeting with notes in the room, or deleting the room, removes it. Only
+  the last meeting of each room has one.
+- It is written automatically and may contain mistakes, mostly in names and terms the recognition
+  garbled; the file says so, and the notes stay next to it.
+- The meeting's notes leave the server for the model you configured. Off by default.
+
 ## Meeting recording
 
 A participant can switch on recording in a room (More → Recording). The recorder bot then
@@ -371,6 +391,7 @@ through the manual checks in [docs/test-matrix.md](docs/test-matrix.md).
 | `notes.enabled` | `true` offers meeting notes in rooms; needs the `kunveno-notes` add-on (default `false`, which hides every notes control) |
 | `notes.keep` | how long notes stay after they end: a whole number and `m`, `h` or `d` (`90m`, `12h`, `1d`, `2d`; default `1d`) |
 | `notes.live` | `true` shows phrases in the room as they are recognised, for checking the recognition (default `false`) |
+| `notes.summary` | `true` offers a summary of each meeting's notes next to them, written by the add-on's summary service with an LLM; needs `notes.enabled` (default `false`) |
 | `notes.dir` | where the notes are kept (`/var/lib/kunveno/notes`, in the stack's data volume) |
 | `recording.enabled` | `true` offers meeting recording in rooms; needs the `kunveno-recorder` add-on (default `false`, which hides every recording control) |
 | `recording.keep` | how long a recording stays after it ends: a whole number and `m`, `h` or `d` (`90m`, `12h`, `1d`, `2d`; default `1d`) |

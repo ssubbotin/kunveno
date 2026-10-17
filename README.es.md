@@ -206,6 +206,26 @@ las frases en orden, con las pausas marcadas.
 - `notes.live: true` muestra las frases en la sala a medida que se reconocen, en el recuadro del
   participante «Notas», para comprobar el reconocimiento.
 
+## Resumen de la reunión
+
+Con `notes.summary: true` (y las notas activadas) cada reunión con notas recibe también un resumen
+breve: qué pasó, las decisiones, las tareas con quién las hace y las preguntas abiertas, y una línea
+por persona cuando los participantes informan por turnos. Lo redacta el servicio de resúmenes del
+complemento `kunveno-notes` con un modelo de lenguaje (LLM) que se configura allí, normalmente uno
+local (cualquier servidor con una API compatible con OpenAI, como vLLM u ollama).
+
+- El resumen aparece junto a las notas en el diálogo «Última reunión» del vestíbulo
+  aproximadamente un minuto después del final de la reunión. Hasta entonces muestra «en
+  preparación», y «no se pudo redactar» si el modelo falló.
+- Es un archivo propio junto a las notas, se guarda el mismo `notes.keep` después de la reunión y se
+  descarga con el mismo PIN. Las notas y el resumen se borran por separado en el diálogo: borrar las
+  notas deja el resumen, y borrar el resumen deja las notas (no se redacta otro para ellas). Una
+  nueva reunión con notas en la sala, o borrar la sala, lo quita. Solo la última reunión de cada
+  sala tiene uno.
+- Se redacta automáticamente y puede contener errores, sobre todo en nombres y términos que el
+  reconocimiento deformó; el archivo lo indica y las notas siguen a su lado.
+- Las notas de la reunión salen del servidor hacia el modelo configurado. Desactivado por defecto.
+
 ## Grabación de la reunión
 
 Un participante puede activar la grabación en una sala (Más → Grabación). El bot de
@@ -389,6 +409,7 @@ repasa las comprobaciones manuales de [docs/test-matrix.md](docs/test-matrix.md)
 | `notes.enabled` | `true` ofrece notas de la reunión en las salas; necesita el complemento `kunveno-notes` (por defecto `false`, que oculta todo lo relativo a las notas) |
 | `notes.keep` | cuánto se guardan las notas tras terminar: un número entero y `m`, `h` o `d` (`90m`, `12h`, `1d`, `2d`; por defecto `1d`) |
 | `notes.live` | `true` muestra las frases en la sala a medida que se reconocen, para comprobar el reconocimiento (por defecto `false`) |
+| `notes.summary` | `true` ofrece junto a las notas un resumen de cada reunión, redactado por el servicio de resúmenes del complemento con un LLM; requiere `notes.enabled` (por defecto `false`) |
 | `notes.dir` | dónde se guardan las notas (`/var/lib/kunveno/notes`, en el stack, el volumen de datos) |
 | `recording.enabled` | `true` ofrece la grabación de la reunión en las salas; necesita el complemento `kunveno-recorder` (por defecto `false`, que oculta todo lo relativo a la grabación) |
 | `recording.keep` | cuánto se guarda una grabación tras terminar: un número entero y `m`, `h` o `d` (`90m`, `12h`, `1d`, `2d`; por defecto `1d`) |

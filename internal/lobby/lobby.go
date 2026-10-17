@@ -21,6 +21,8 @@ type Kept struct {
 	Recordings       *recording.Store
 	RecordingEnabled bool
 	Meetings         *meetings.Store // summaries of ended meetings
+	// SummaryEnabled shows the state of the meeting summary kept with the notes (notes.summary).
+	SummaryEnabled bool
 }
 
 // Material is what a room keeps, of the enabled features. A zero time means none.
@@ -28,6 +30,10 @@ type Material struct {
 	NotesUntil     time.Time         // until when the notes of its last meeting can be downloaded
 	RecordingUntil time.Time         // until when its stored recording can be downloaded
 	Meeting        *meetings.Summary // the meeting whose recording or notes are kept, if summarised
+	// Summary is the state of the meeting's summary, kept apart from the notes, and SummaryUntil
+	// until when the room shows it; only while summaries are on.
+	Summary      notes.SummaryState
+	SummaryUntil time.Time
 }
 
 // Of returns what the room keeps.
@@ -35,6 +41,11 @@ func (k Kept) Of(slug string) Material {
 	var m Material
 	if k.NotesEnabled && k.Notes != nil {
 		m.NotesUntil, _ = k.Notes.Until(slug)
+		if k.SummaryEnabled {
+			if m.Summary = k.Notes.SummaryState(slug); m.Summary != notes.SummaryNone {
+				m.SummaryUntil, _ = k.Notes.SummaryUntil(slug)
+			}
+		}
 	}
 	if k.RecordingEnabled && k.Recordings != nil {
 		m.RecordingUntil, _ = k.Recordings.Until(slug)
@@ -43,8 +54,8 @@ func (k Kept) Of(slug string) Material {
 	return m
 }
 
-// lastMeeting finds the summary of the meeting whose recording or notes the room keeps, the
-// recording's meeting first; nil when there is none.
+// lastMeeting finds the summary of the meeting whose recording, notes or meeting summary the room
+// keeps, the recording's meeting first; nil when there is none.
 func (k Kept) lastMeeting(slug string) *meetings.Summary {
 	if k.Meetings == nil {
 		return nil
@@ -57,6 +68,9 @@ func (k Kept) lastMeeting(slug string) *meetings.Summary {
 	}
 	if k.NotesEnabled && k.Notes != nil {
 		if m, ok := k.Notes.Meeting(slug); ok {
+			starts = append(starts, m)
+		}
+		if m, ok := k.Notes.SummaryMeeting(slug); ok && k.SummaryEnabled {
 			starts = append(starts, m)
 		}
 	}

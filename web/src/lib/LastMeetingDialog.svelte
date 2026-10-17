@@ -1,12 +1,14 @@
 <script lang="ts">
-  // What is left of a room's last meeting, behind its PIN: download the video and the notes, or
-  // delete either or both after a confirmation inside the dialog.
+  // What is left of a room's last meeting, behind its PIN: download the video, the notes and the
+  // meeting's summary, or delete any of them after a confirmation inside the dialog; each is kept and
+  // deleted on its own.
   import { tick } from 'svelte';
   import { i18n, t } from './i18n/i18n.svelte';
   import { LANG_TAGS } from './i18n/messages';
-  import { formatSummary, formatUntil, type LastItem, type LastKind, type MeetingSummary } from './lastMeeting';
+  import { deleteRequests, formatSummary, formatUntil, withoutKinds, type LastItem, type LastKind, type MeetingSummary } from './lastMeeting';
   import { deleteNotes, fetchNotes, notesErrorText, saveFile } from './notes';
   import { deleteRecording, recordingErrorText, recordingLink, startDownload } from './recording';
+  import { deleteSummary, fetchSummary } from './summary';
 
   // onchange: the room's last meeting changed or turned out gone, so the room list is stale.
   let { onchange }: { onchange: () => void } = $props();
@@ -28,7 +30,7 @@
   let confirming = $state(false);
   let choice = $state<LastKind | 'all'>('all');
   // One guard per action, against double clicks.
-  let busy = $state({ video: false, notes: false, remove: false });
+  let busy = $state({ video: false, notes: false, summary: false, remove: false });
 
   // summary: the meeting's times and number of people, null when unknown.
   export function open(roomSlug: string, name: string, kept: LastItem[], knownPin: string, summary: MeetingSummary | null = null) {
@@ -47,14 +49,18 @@
   }
 
   const has = (kind: LastKind) => items.some((i) => i.kind === kind);
+  // The summary is downloaded once ready.
+  const downloadable = $derived(items.filter((i) => i.kind !== 'summary' || i.state === 'ready'));
+  const deletable = $derived(items);
   const until = (d: Date) => formatUntil(d, LANG_TAGS[i18n.lang]);
 
   function setErrors(list: string[]) {
     errors = [...new Set(list)]; // one wrong PIN reads once
   }
-  // drop removes an item that is gone (deleted here or elsewhere); with nothing left the dialog closes.
+  // drop removes an item that is gone (deleted here or elsewhere), the summary with the notes; with
+  // nothing left the dialog closes.
   function drop(kinds: LastKind[]) {
-    items = items.filter((i) => !kinds.includes(i.kind));
+    items = withoutKinds(items, kinds);
     if (items.length === 0 && errors.length === 0) dialog.close();
   }
 
@@ -102,17 +108,39 @@
       busy.notes = false;
     }
   }
+  async function downloadSummary() {
+    if (busy.summary || !form.reportValidity()) return;
+    busy.summary = true;
+    errors = [];
+    try {
+      const r = await fetchSummary(fetch, slug, pin, i18n.lang);
+      if (r.ok) {
+        saveFile(r.blob, r.filename);
+        dialog.close();
+        return;
+      }
+      setErrors([notesErrorText(r, t)]);
+      if (r.error === 'gone') {
+        onchange();
+        drop(['summary']);
+      }
+      if (r.error === 'bad_pin' || r.error === 'gone') pinInput.focus();
+    } finally {
+      busy.summary = false;
+    }
+  }
   // Enter in the PIN field downloads when there is one thing to download.
   function submit(ev: Event) {
     ev.preventDefault();
-    if (confirming || items.length !== 1) return;
-    void (items[0].kind === 'video' ? downloadVideo() : downloadNotes());
+    if (confirming || downloadable.length !== 1) return;
+    const kind = downloadable[0].kind;
+    void (kind === 'video' ? downloadVideo() : kind === 'notes' ? downloadNotes() : downloadSummary());
   }
 
   async function askDelete() {
     if (!form.reportValidity()) return;
     errors = [];
-    choice = items.length > 1 ? 'all' : items[0].kind;
+    choice = deletable.length > 1 ? 'all' : deletable[0].kind;
     confirming = true;
     await tick();
     cancelButton?.focus(); // the safe choice
@@ -126,20 +154,20 @@
     if (busy.remove) return;
     busy.remove = true;
     errors = [];
-    const kinds: LastKind[] = choice === 'all' ? items.map((i) => i.kind) : [choice];
+    const kinds = deleteRequests(choice, deletable);
     const failed: string[] = [];
     const removed: LastKind[] = [];
     let badPin = false;
     let changed = false;
     try {
       for (const kind of kinds) {
-        const r = kind === 'video' ? await deleteRecording(fetch, slug, pin) : await deleteNotes(fetch, slug, pin);
+        const r = kind === 'video' ? await deleteRecording(fetch, slug, pin) : kind === 'notes' ? await deleteNotes(fetch, slug, pin) : await deleteSummary(fetch, slug, pin);
         if (r.ok) {
           removed.push(kind);
           changed = true;
           continue;
         }
-        failed.push(kind === 'video' ? recordingErrorText(r, t, 'recording.deleteFailed') : notesErrorText(r, t, 'notes.deleteFailed'));
+        failed.push(kind === 'video' ? recordingErrorText(r, t, 'recording.deleteFailed') : notesErrorText(r, t, kind === 'notes' ? 'notes.deleteFailed' : 'summary.deleteFailed'));
         if (r.error === 'gone') {
           removed.push(kind);
           changed = true;
@@ -190,7 +218,8 @@
       <fieldset class="choice" aria-labelledby="last-question">
         {#if has('video')}<label><input type="radio" name="last-delete" value="video" bind:group={choice} />{t('last.videoName')}</label>{/if}
         {#if has('notes')}<label><input type="radio" name="last-delete" value="notes" bind:group={choice} />{t('last.notesName')}</label>{/if}
-        {#if items.length > 1}<label><input type="radio" name="last-delete" value="all" bind:group={choice} />{t('last.all')}</label>{/if}
+        {#if has('summary')}<label><input type="radio" name="last-delete" value="summary" bind:group={choice} />{t('last.summaryName')}</label>{/if}
+        {#if deletable.length > 1}<label><input type="radio" name="last-delete" value="all" bind:group={choice} />{t('last.all')}</label>{/if}
       </fieldset>
       <div class="actions">
         <button class="btn quiet" type="button" disabled={busy.remove} bind:this={cancelButton} onclick={cancelDelete}>{t('last.cancel')}</button>
@@ -205,6 +234,15 @@
               <span class="what">{t('last.videoName')}<small>{t('last.videoUntil', { time: until(item.until) })}</small></span>
               <button class="btn" type="button" disabled={busy.video} onclick={downloadVideo}
                 aria-label="{t('last.download')}: {t('last.videoName')}">{t('last.download')}</button>
+            {:else if item.kind === 'summary'}
+              <svg class="icon sheet" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6zM9 9h6M9 13h3M14 16l2 2 3-4" /></svg>
+              <span class="what">{t('last.summaryName')}<small>{item.state === 'ready' ? t('last.summaryReady', { time: until(item.until) }) : t(item.state === 'pending' ? 'last.summaryPending' : 'last.summaryFailed')}</small></span>
+              {#if item.state === 'ready'}
+                <button class="btn" type="button" disabled={busy.summary} onclick={downloadSummary}
+                  aria-label="{t('last.download')}: {t('last.summaryName')}">{t('last.download')}</button>
+              {:else}
+                <span></span>
+              {/if}
             {:else}
               <svg class="icon sheet" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6zM9 9h6M9 13h6M9 17h4" /></svg>
               <span class="what">{t('last.notesName')}<small>{t('last.notesUntil', { time: until(item.until) })}</small></span>
@@ -216,7 +254,7 @@
       </ul>
       <!-- The irreversible delete keeps to the far edge, away from the downloads. -->
       <div class="actions">
-        <button class="btn quiet remove" type="button" disabled={busy.remove || items.length === 0} bind:this={deleteButton} onclick={askDelete}>{t('last.delete')}</button>
+        <button class="btn quiet remove" type="button" disabled={busy.remove || deletable.length === 0} bind:this={deleteButton} onclick={askDelete}>{t('last.delete')}</button>
         <button class="btn quiet" type="button" onclick={() => dialog.close()}>{t('last.close')}</button>
       </div>
     {/if}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { translate } from './i18n/i18n.svelte';
 import type { Lang } from './i18n/messages';
-import { formatDuration, formatSummary, formatUntil, lastCaption, lastItems, lastSummary } from './lastMeeting';
+import { formatDuration, formatSummary, formatUntil, lastCaption, lastItems, lastSummary, withoutKinds, deleteRequests } from './lastMeeting';
 
 const now = Date.parse('2026-10-15T08:00:00Z');
 const both = { notesEnabled: true, recordingEnabled: true };
@@ -26,6 +26,29 @@ describe('lastItems', () => {
     expect(lastItems(room, { notesEnabled: false, recordingEnabled: true }, now).map((i) => i.kind)).toEqual(['video']);
     expect(lastItems(room, { notesEnabled: true, recordingEnabled: false }, now).map((i) => i.kind)).toEqual(['notes']);
     expect(lastItems(room, { notesEnabled: false, recordingEnabled: false }, now)).toEqual([]);
+  });
+});
+
+describe('lastItems with a summary', () => {
+  const summary = '2026-10-16T10:00:00Z';
+  it('lists the summary after the notes, with its state and its own expiry', () => {
+    expect(lastItems({ notes_until: notes, summary: 'pending', summary_until: notes }, both, now)).toEqual([
+      { kind: 'notes', until: new Date(notes) },
+      { kind: 'summary', until: new Date(notes), state: 'pending' },
+    ]);
+  });
+  it('lists a summary that outlived its notes', () => {
+    expect(lastItems({ summary: 'ready', summary_until: summary }, both, now)).toEqual([{ kind: 'summary', until: new Date(summary), state: 'ready' }]);
+  });
+  it('has no summary with an unknown state, a bad or past expiry, or notes off', () => {
+    expect(lastItems({ summary: 'done', summary_until: summary }, both, now)).toEqual([]);
+    expect(lastItems({ summary: 'ready', summary_until: 'soon' }, both, now)).toEqual([]);
+    expect(lastItems({ summary: 'ready', summary_until: '2026-10-14T08:00:00Z' }, both, now)).toEqual([]);
+    expect(lastItems({ summary: 'ready', summary_until: summary }, { notesEnabled: false, recordingEnabled: true }, now)).toEqual([]);
+  });
+  it('names a summary left alone in the caption', () => {
+    expect(lastCaption(lastItems({ summary: 'ready', summary_until: summary }, both, now))).toEqual({ key: 'last.summary', until: new Date(summary) });
+    expect(lastCaption(lastItems({ notes_until: notes, summary: 'ready', summary_until: notes }, both, now))).toEqual({ key: 'last.notes', until: new Date(notes) });
   });
 });
 
@@ -125,5 +148,23 @@ describe('formatSummary', () => {
   it('shows the year of a meeting in another year', () => {
     const m = { start: new Date(2025, 11, 31, 10, 0), end: new Date(2025, 11, 31, 10, 30), people: 2 };
     expect(formatSummary(m, 'ru-RU', tr('ru'), now)).toBe('31.12.2025, 10:00–10:30 · 30 мин · 2 участника');
+  });
+});
+
+describe('withoutKinds', () => {
+  const items = lastItems({ recording_until: video, notes_until: notes, summary: 'ready', summary_until: notes }, both, now);
+  it('removes only what is named: notes and summary live apart', () => {
+    expect(withoutKinds(items, ['notes']).map((i) => i.kind)).toEqual(['video', 'summary']);
+    expect(withoutKinds(items, ['summary']).map((i) => i.kind)).toEqual(['video', 'notes']);
+    expect(withoutKinds(items, ['video', 'notes', 'summary'])).toEqual([]);
+  });
+});
+
+describe('deleteRequests', () => {
+  const items = lastItems({ recording_until: video, notes_until: notes, summary: 'ready', summary_until: notes }, both, now);
+  it('asks for each chosen item on its own', () => {
+    expect(deleteRequests('all', items)).toEqual(['video', 'notes', 'summary']);
+    expect(deleteRequests('notes', items)).toEqual(['notes']);
+    expect(deleteRequests('summary', items)).toEqual(['summary']);
   });
 });

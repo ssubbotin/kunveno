@@ -324,6 +324,22 @@ func TestNotes(t *testing.T) {
 	}
 }
 
+// notes.summary: off by default, on only together with notes.
+func TestNotesSummary(t *testing.T) {
+	base := "media: {advertise_ip: 10.8.0.1}\nrooms: [{slug: a, name: A, pin: \"1234\"}]\n"
+	cfg, err := Parse([]byte(base))
+	if err != nil || cfg.Notes.Summary {
+		t.Fatalf("default: summary=%v err=%v", cfg.Notes.Summary, err)
+	}
+	cfg, err = Parse([]byte("notes: {enabled: true, summary: true}\n" + base))
+	if err != nil || !cfg.Notes.Summary {
+		t.Fatalf("on: summary=%v err=%v", cfg.Notes.Summary, err)
+	}
+	if _, err := Parse([]byte("notes: {summary: true}\n" + base)); err == nil || !strings.Contains(err.Error(), "notes.summary") {
+		t.Fatalf("without notes: err = %v, want a notes.summary error", err)
+	}
+}
+
 func TestRecordingDefaults(t *testing.T) {
 	cfg, err := Parse([]byte("media:\n  advertise_ip: 10.0.0.1\n"))
 	if err != nil {

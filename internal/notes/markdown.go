@@ -11,13 +11,16 @@ import (
 // MergeGap: consecutive phrases of one speaker no further apart than this share a paragraph.
 const MergeGap = 30 * time.Second
 
-type labelSet struct{ title, paused, resumed string }
+type labelSet struct{ title, paused, resumed, summary, auto string }
 
 // labels are the fixed words of the file, in the language of the person who downloads it.
 var labels = map[string]labelSet{
-	"ru": {"Заметки встречи «%s»", "запись приостановлена", "запись возобновлена"},
-	"en": {"Meeting notes “%s”", "recording paused", "recording resumed"},
-	"es": {"Notas de la reunión «%s»", "grabación en pausa", "grabación reanudada"},
+	"ru": {"Заметки встречи «%s»", "запись приостановлена", "запись возобновлена", "Итоги встречи «%s»",
+		"Составлено автоматически по заметкам встречи, возможны ошибки."},
+	"en": {"Meeting notes “%s”", "recording paused", "recording resumed", "Meeting summary “%s”",
+		"Written automatically from the meeting notes; it may contain mistakes."},
+	"es": {"Notas de la reunión «%s»", "grabación en pausa", "grabación reanudada", "Resumen de la reunión «%s»",
+		"Redactado automáticamente a partir de las notas; puede contener errores."},
 }
 
 // Lang returns a language Markdown has labels for: ru, en or es; anything else is ru.
@@ -138,4 +141,21 @@ func paragraphs(t Transcript) []paragraph {
 		out = out[:len(out)-1]
 	}
 	return out
+}
+
+// SummaryMarkdown is the summary file: a title with the room, the meeting's date and time span, a
+// note that it was written automatically, then the add-on's Markdown as it came.
+func SummaryMarkdown(sm Summary, lang string, loc *time.Location) []byte {
+	l := labels[Lang(lang)]
+	var b strings.Builder
+	fmt.Fprintf(&b, "# "+l.summary+"\n\n", literal(sm.Room))
+	b.WriteString(sm.Start.In(loc).Format("02.01.2006, 15:04") + "–" + sm.End.In(loc).Format("15:04") + "\n\n")
+	b.WriteString("*" + l.auto + "*\n\n")
+	b.Write(sm.Body)
+	return []byte(b.String())
+}
+
+// SummaryFileName is the summary download's name: the room, the meeting's start and "summary".
+func SummaryFileName(slug string, start time.Time, loc *time.Location) string {
+	return slug + "-" + start.In(loc).Format("2006-01-02-1504") + "-summary.md"
 }

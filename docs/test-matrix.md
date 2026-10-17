@@ -177,3 +177,20 @@ Meeting recording (with the `kunveno-recorder` add-on installed and `recording.e
     and a download interrupted and resumed continues).
 58. With `auth.enabled: false` (or no `auth:` block) nothing changes: no sign-in screen, no "Invite
     a guest" in the menu, the lobby and the rooms open as before, `/api/info` reports no sign-in.
+
+Meeting summary (with the `kunveno-notes` add-on's summary overlay installed, its model reachable,
+and `notes.enabled: true`, `notes.summary: true`; check 59 also without them):
+
+59. With `notes.summary: false` the "Last meeting" dialog has no summary row and
+    `curl -s 127.0.0.1:8080/internal/notes/summaries` on the host prints `[]`.
+60. Take notes in a meeting, then everyone leaves: the dialog shows "Summary · being prepared"
+    under the notes; within about two minutes (reopen the dialog) it reads "written automatically",
+    and "Download" saves `<room>-<date>-<time>-summary.md` with the title, the meeting's times and the
+    note that it was written automatically.
+61. Switch notes on again in the same room before the summary is ready, then leave: the old summary
+    never appears; a new one is prepared for the longer notes.
+62. Delete the summary alone in the dialog: the notes stay, the summary row is gone and does not come
+    back after a server restart. Delete the notes alone: the summary stays, downloads, and the lobby
+    still offers "Last meeting" ("Summary, kept until …") when nothing else is left.
+63. Stop the model: the next meeting's summary reads "could not be written" after the add-on's three
+    attempts.

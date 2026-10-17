@@ -76,6 +76,11 @@ type Store struct {
 	mu    sync.Mutex
 	ended map[string]time.Time // slug -> end of its transcript; zero while the transcript is open
 	start map[string]time.Time // slug -> start of the meeting its transcript belongs to
+	// summaries marks rooms whose notes have a summary file; failed holds the end (ms) of notes the
+	// add-on gave up on (summary.go).
+	summaries map[string]summaryRec // stored summaries, kept apart from the notes (summary.go)
+	failed    map[string]int64
+	dismissed map[string]int64 // the notes' end whose summary a person deleted
 }
 
 // Open reads the transcripts in dir (a missing dir holds none). A file without an end line was cut
@@ -85,7 +90,8 @@ func Open(dir string, keep time.Duration, now func() time.Time) (*Store, error) 
 	if now == nil {
 		now = time.Now
 	}
-	s := &Store{dir: dir, keep: keep, now: now, ended: map[string]time.Time{}, start: map[string]time.Time{}}
+	s := &Store{dir: dir, keep: keep, now: now, ended: map[string]time.Time{}, start: map[string]time.Time{},
+		summaries: map[string]summaryRec{}, failed: map[string]int64{}, dismissed: map[string]int64{}}
 	paths, err := filepath.Glob(filepath.Join(dir, "*.jsonl"))
 	if err != nil {
 		return nil, err
@@ -114,6 +120,7 @@ func Open(dir string, keep time.Duration, now func() time.Time) (*Store, error) 
 		s.ended[slug] = time.UnixMilli(last.At)
 		s.start[slug] = time.UnixMilli(lines[0].At)
 	}
+	s.openSummaries()
 	return s, nil
 }
 
@@ -140,6 +147,7 @@ func (s *Store) Begin(slug, room string, start time.Time) error {
 	if err := os.Rename(tmp, s.path(slug)); err != nil {
 		return err
 	}
+	s.dropSummaryLocked(slug)
 	s.ended[slug] = time.Time{}
 	s.start[slug] = time.UnixMilli(start.UnixMilli())
 	return nil
@@ -183,6 +191,7 @@ func (s *Store) add(slug string, l line, needOpen bool) error {
 		s.ended[slug] = time.UnixMilli(l.At)
 	case KindResumed:
 		s.ended[slug] = time.Time{}
+		s.dropSummaryLocked(slug)
 	}
 	return nil
 }
@@ -260,6 +269,7 @@ func (s *Store) Delete(slug string) error {
 	defer s.mu.Unlock()
 	delete(s.ended, slug)
 	delete(s.start, slug)
+	s.dropSummaryLocked(slug)
 	if err := os.Remove(s.path(slug)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
@@ -292,10 +302,11 @@ func (s *Store) DeleteEnded(slug string) error {
 	}
 	delete(s.ended, slug)
 	delete(s.start, slug)
+	s.dropMarksLocked(slug) // the summary, a file of its own, stays
 	return nil
 }
 
-// Sweep deletes expired notes and returns their rooms, sorted.
+// Sweep deletes expired notes and returns their rooms, sorted; it also deletes expired summaries.
 func (s *Store) Sweep() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -309,8 +320,10 @@ func (s *Store) Sweep() []string {
 		}
 		delete(s.ended, slug)
 		delete(s.start, slug)
+		s.dropMarksLocked(slug)
 		gone = append(gone, slug)
 	}
+	s.sweepSummariesLocked()
 	sort.Strings(gone)
 	return gone
 }
