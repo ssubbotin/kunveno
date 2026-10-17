@@ -124,6 +124,19 @@ func RegisterAuth(r *prometheus.Registry, active func() int) {
 	}, func() float64 { return float64(active()) }))
 }
 
+// RegisterKept adds the bytes the kept meeting material holds on disk, read at scrape time.
+func RegisterKept(r *prometheus.Registry, notesBytes, recordingBytes func() int64) {
+	for kind, f := range map[string]func() int64{"notes": notesBytes, "recording": recordingBytes} {
+		if f == nil {
+			continue
+		}
+		r.MustRegister(prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Name: "kunveno_kept_bytes", Help: "Bytes of meeting material kept on disk, by kind.",
+			ConstLabels: prometheus.Labels{"kind": kind},
+		}, func() float64 { return float64(f()) }))
+	}
+}
+
 // NewRegistry gathers every kunveno metric, the room state, and Go runtime and process metrics.
 func NewRegistry(rooms *room.Registry, version string) *prometheus.Registry {
 	r := prometheus.NewRegistry()

@@ -34,7 +34,7 @@ Licencia GNU Affero General Public License v3.0 only; hay disponible una licenci
 - Una prueba de eco por sala, salas que reproducen un archivo de vídeo en bucle y salas que
   muestran una cámara RTSP en directo.
 - Notas de la reunión con el complemento comercial `kunveno-notes`: el habla de cada participante se
-  reconoce en el servidor y el texto de la última reunión de la sala se descarga en Markdown (véase
+  reconoce en el servidor y el texto de cada reunión se descarga en Markdown (véase
   [Notas de la reunión](#notas-de-la-reunión)).
 - Grabación de la reunión con el complemento comercial `kunveno-recorder`: la pantalla compartida y
   el audio de todos en un único vídeo MP4, que se descarga desde la sala o desde la página de inicio
@@ -187,8 +187,8 @@ entonces en la sala como un participante llamado «Notas», escucha el micrófon
 separado y envía las frases reconocidas al servidor, que guarda el texto: quién dijo qué y cuándo.
 Todos ven «Notas» con un icono de hoja en la cabecera de la sala. Cuando se desactivan las notas o
 sale la última persona, quienes siguen en la sala reciben la barra «Listo tras la reunión:» con un
-botón «Notas» que las descarga; en la página de inicio el mismo archivo está disponible en «Última
-reunión», con el PIN de la sala. El archivo es Markdown: la sala, la fecha y la hora, quién habló y
+botón «Notas» que las descarga; en la página de inicio están disponibles en «Reuniones», con el PIN
+de la sala. El archivo es Markdown: la sala, la fecha y la hora, quién habló y
 las frases en orden, con las pausas marcadas.
 
 - El bot es el complemento comercial `kunveno-notes` (reconocimiento de voz en el procesador del
@@ -196,13 +196,13 @@ las frases en orden, con las pausas marcadas.
   una licencia escribe a ssubbotin@gmail.com. La guía de instalación acompaña a la licencia.
 - Sin el complemento deja `notes.enabled: false` (por defecto): las salas y la página de inicio no
   muestran nada de las notas.
-- Solo se guardan las notas de la última reunión de cada sala, durante `notes.keep` desde que las
-  notas terminan (una desactivación o el final de la reunión; un día por defecto); la primera frase
-  de la reunión siguiente las sustituye. Eliminar una sala elimina sus notas. Descargarlas exige el
-  PIN de la sala, y los PIN erróneos cuentan para el mismo bloqueo que al entrar.
-- Las notas se pueden eliminar antes desde la página de inicio: «Última reunión» → «Eliminar…» con
-  el PIN de la sala, y luego «Notas» (o «Todo») en la confirmación. Mientras se toman notas no se pueden
-  eliminar: primero hay que desactivarlas.
+- Las notas de cada reunión se guardan durante `notes.keep` desde que terminan (una desactivación o
+  el final de la reunión; un día por defecto); la reunión siguiente tiene sus propias notas.
+  Eliminar una sala elimina sus notas. Descargarlas exige el PIN de la sala, y los PIN erróneos
+  cuentan para el mismo bloqueo que al entrar.
+- Las notas se pueden eliminar antes desde la página de inicio: «Reuniones», y luego «Eliminar» junto
+  a las notas de la reunión, con el PIN de la sala. Mientras se toman notas no se pueden eliminar:
+  primero hay que desactivarlas.
 - `notes.live: true` muestra las frases en la sala a medida que se reconocen, en el recuadro del
   participante «Notas», para comprobar el reconocimiento.
 
@@ -214,14 +214,13 @@ por persona cuando los participantes informan por turnos. Lo redacta el servicio
 complemento `kunveno-notes` con un modelo de lenguaje (LLM) que se configura allí, normalmente uno
 local (cualquier servidor con una API compatible con OpenAI, como vLLM u ollama).
 
-- El resumen aparece junto a las notas en el diálogo «Última reunión» del vestíbulo
+- El resumen aparece junto a las notas en el diálogo «Reuniones» del vestíbulo
   aproximadamente un minuto después del final de la reunión. Hasta entonces muestra «en
   preparación», y «no se pudo redactar» si el modelo falló.
 - Es un archivo propio junto a las notas, se guarda el mismo `notes.keep` después de la reunión y se
   descarga con el mismo PIN. Las notas y el resumen se borran por separado en el diálogo: borrar las
-  notas deja el resumen, y borrar el resumen deja las notas (no se redacta otro para ellas). Una
-  nueva reunión con notas en la sala, o borrar la sala, lo quita. Solo la última reunión de cada
-  sala tiene uno.
+  notas deja el resumen, y borrar el resumen deja las notas (no se redacta otro para ellas). Volver a
+  activar las notas en la misma reunión, o borrar la sala, lo quita.
 - Se redacta automáticamente y puede contener errores, sobre todo en nombres y términos que el
   reconocimiento deformó; el archivo lo indica y las notas siguen a su lado.
 - Las notas de la reunión salen del servidor hacia el modelo configurado. Desactivado por defecto.
@@ -237,32 +236,48 @@ cámaras no se graban. Todos ven «● Grabando» en la
 cabecera de la sala; el punto rojo siempre se refiere a este vídeo. Cuando se desactiva la grabación
 o sale la última persona, el bot sube el archivo al servidor y quienes siguen en la sala reciben un
 botón «Vídeo» en la barra «Listo tras la reunión:» (junto a «Notas» si la reunión también tuvo
-notas, con un solo botón de cierre para ambos); en la página de inicio el mismo archivo está
-disponible en «Última reunión», con el PIN de la sala.
+notas, con un solo botón de cierre para ambos); en la página de inicio está disponible en
+«Reuniones», con el PIN de la sala.
 
-La página de inicio muestra «Última reunión» bajo una sala que guarda un vídeo, notas o ambos, con
-lo que hay y el vencimiento más próximo («Vídeo y notas, se guardan hasta 16/10, 14:43»). Su
-ventana pide el PIN de la sala una vez y muestra cada elemento con su propio plazo y un botón
-«Descargar». Encima del texto y en la ventana se indica cuándo fue esa reunión, cuánto duró y
-cuántas personas participaron («15/10, 11:00–11:27 · 27 min · 7 participantes»; sin nombres),
-mientras se guardan sus notas o su grabación.
+La página de inicio muestra «Reuniones (N)» bajo una sala que guarda reuniones, con cuándo fue la
+última, cuánto duró y cuántas personas participaron («15/10, 11:00–11:27 · 27 min · 7
+participantes»; sin nombres) y el vencimiento más próximo. Véase [Historial de
+reuniones](#historial-de-reuniones).
 
 - El bot es el complemento comercial `kunveno-recorder`. No forma parte de este repositorio; para
   una licencia escribe a ssubbotin@gmail.com. La guía de instalación acompaña a la licencia.
 - Sin el complemento deja `recording.enabled: false` (por defecto): las salas y la página de inicio
   no muestran nada de la grabación.
-- Solo se guarda la grabación de la última reunión de cada sala, durante `recording.keep` desde que
-  termina (un día por defecto); la grabación siguiente la sustituye. Volver a activar la grabación en la misma reunión también
-  sustituye lo grabado antes: una reunión tiene una sola grabación y gana la posterior. Eliminar una
-  sala elimina su grabación. Descargarla exige el PIN de la sala, y los PIN erróneos cuentan para el
-  mismo bloqueo que al entrar. Una descarga interrumpida se puede reanudar mientras el enlace sea
-  válido (5 minutos); después hay que empezar la descarga de nuevo desde la sala o la página de inicio.
-- La grabación se puede eliminar antes desde la página de inicio: «Última reunión» → «Eliminar…»
-  con el PIN de la sala, y luego «Vídeo» (o «Todo») en la confirmación. Una grabación en curso no se puede eliminar:
-  primero hay que desactivarla.
+- Se guarda la grabación de cada reunión, cada parte durante `recording.keep` desde que se subió (un
+  día por defecto). Desactivar y volver a activar la grabación en una reunión le da una segunda
+  parte; se guardan y se muestran ambas («Vídeo desde 10:55»). Eliminar una sala elimina sus
+  grabaciones. Descargarlas exige el PIN de la sala, y los PIN erróneos cuentan para el mismo bloqueo
+  que al entrar. Una descarga interrumpida se puede reanudar mientras el enlace sea válido (5
+  minutos); después hay que empezar la descarga de nuevo desde la sala o la página de inicio.
+- Una parte se puede eliminar antes desde la página de inicio: «Reuniones», y luego «Eliminar» junto
+  a la parte, con el PIN de la sala. La parte que se está grabando aparece en la lista cuando se sube.
 - Un archivo mayor que `recording.max_size` (8 GB por defecto) lo rechaza el servidor y el archivo se queda
   en el volumen del complemento;
   conviene fijar el límite según la reunión más larga y dejar espacio libre en el disco.
+
+## Historial de reuniones
+
+Cada sala guarda la lista de sus reuniones: cuándo fue cada una, cuánto duró, cuántas personas
+participaron (sin nombres) y lo que dejó: partes de vídeo, notas, un resumen. «Reuniones (N)» en la
+página de inicio abre la lista, las más recientes primero; con el PIN de la sala, introducido una
+vez, cada elemento se descarga o se elimina por separado y nada más de la reunión cambia.
+
+- Cuánto se guarda cada cosa: `notes.keep` para las notas y el resumen de cada reunión,
+  `recording.keep` para cada parte de vídeo y `meetings.keep` (30 días por defecto) para una reunión
+  de la que no queda nada, para que la lista siga mostrando cuándo fue. Por defecto se guarda un día
+  de notas y vídeo; auméntalo a propósito (`90d` guarda un trimestre) y dimensiona el disco: el panel
+  de Grafana muestra los bytes guardados de cada tipo (`kunveno_kept_bytes`).
+- Una sala quitada de `config.yaml` conserva sus reuniones hasta que vencen; mientras tanto ocupan
+  disco. Eliminar una sala desde la página de inicio elimina todas sus reuniones a la vez.
+- Al actualizar desde 0.6, el servidor mueve en su primer arranque las últimas notas, el resumen y
+  la grabación de cada sala a la nueva organización. El cambio es de una sola vía: un servidor de
+  una versión anterior no ve los archivos movidos. Haz una copia de seguridad de los volúmenes de
+  datos antes de actualizar.
 
 ## Inicio de sesión e invitados
 
@@ -409,6 +424,7 @@ repasa las comprobaciones manuales de [docs/test-matrix.md](docs/test-matrix.md)
 | `notes.enabled` | `true` ofrece notas de la reunión en las salas; necesita el complemento `kunveno-notes` (por defecto `false`, que oculta todo lo relativo a las notas) |
 | `notes.keep` | cuánto se guardan las notas tras terminar: un número entero y `m`, `h` o `d` (`90m`, `12h`, `1d`, `2d`; por defecto `1d`) |
 | `notes.live` | `true` muestra las frases en la sala a medida que se reconocen, para comprobar el reconocimiento (por defecto `false`) |
+| `meetings.keep` | cuánto tiempo sigue en la lista una reunión de la que no queda nada, desde que termina: `90m`, `12h`, `30d` (por defecto `30d`) |
 | `notes.summary` | `true` ofrece junto a las notas un resumen de cada reunión, redactado por el servicio de resúmenes del complemento con un LLM; requiere `notes.enabled` (por defecto `false`) |
 | `notes.dir` | dónde se guardan las notas (`/var/lib/kunveno/notes`, en el stack, el volumen de datos) |
 | `recording.enabled` | `true` ofrece la grabación de la reunión en las salas; necesita el complemento `kunveno-recorder` (por defecto `false`, que oculta todo lo relativo a la grabación) |

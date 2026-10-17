@@ -32,7 +32,7 @@ Licensed under the GNU Affero General Public License v3.0 only; a commercial lic
 - An echo sound check per room, rooms that play a video file in a loop, and rooms that show a
   live RTSP camera.
 - Meeting notes with the commercial `kunveno-notes` add-on: each participant's speech is recognised
-  on the server, and the text of a room's last meeting is downloaded as Markdown (see
+  on the server, and each meeting's text is downloaded as Markdown (see
   [Meeting notes](#meeting-notes)).
 - Meeting recording with the commercial `kunveno-recorder` add-on: the shared screen and everyone's
   audio as one MP4 video, downloaded from the room or the lobby (see
@@ -183,7 +183,7 @@ as a participant named "Notes", listens to each person's microphone separately a
 recognised phrases to the server, which keeps the text: who said what, and when. Everyone in the
 room sees "Notes" with a sheet icon in the header. When the notes are switched off, or the last
 person leaves, everyone still in the room gets the bar "Ready after the meeting:" with a "Notes"
-button that downloads them; the lobby offers the same file under "Last meeting", with the room PIN. The file is Markdown: the room,
+button that downloads them; the lobby offers them under "Meetings", with the room PIN. The file is Markdown: the room,
 the date and time, who spoke, and the phrases in order, with pauses marked.
 
 - The bot is the commercial add-on `kunveno-notes` (speech recognition on the server's processor,
@@ -191,13 +191,11 @@ the date and time, who spoke, and the phrases in order, with pauses marked.
   ssubbotin@gmail.com. Its installation guide comes with the licence.
 - Without the add-on keep `notes.enabled: false` (the default): rooms and the lobby show nothing
   about notes.
-- Only the last meeting of each room is kept, for `notes.keep` (one day by default) after its notes
-  end (a switch-off or the end of the meeting); the first phrase of the next meeting replaces it.
-  Deleting a room deletes its notes. Downloading needs the room PIN, and wrong PINs count toward
-  the same block as joins.
-- The notes can be deleted earlier from the lobby: "Last meeting" → "Delete…" with the room PIN,
-  then "Notes" (or "Everything") in the confirmation. Notes still being taken cannot be deleted: switch them
-  off first.
+- Each meeting's notes are kept for `notes.keep` (one day by default) after they end (a switch-off
+  or the end of the meeting); the next meeting starts notes of its own. Deleting a room deletes its
+  notes. Downloading needs the room PIN, and wrong PINs count toward the same block as joins.
+- The notes can be deleted earlier from the lobby: "Meetings", then "Delete" next to the meeting's
+  notes, with the room PIN. Notes still being taken cannot be deleted: switch them off first.
 - `notes.live: true` shows the phrases in the room as they are recognised, in the tile of the
   "Notes" participant, for checking the recognition.
 
@@ -209,14 +207,14 @@ and a line per person when people take turns reporting. It is written by the sum
 `kunveno-notes` add-on with a language model (LLM) you set up there, usually a local one (any server
 with an OpenAI-compatible API, such as vLLM or ollama).
 
-- The summary appears next to the notes in the lobby's "Last meeting" dialog about a minute after the
+- The summary appears next to the notes in the lobby's "Meetings" dialog about a minute after the
   meeting ends. Until then it reads "being prepared", and "could not be written" when the model
   failed.
 - It is a file of its own next to the notes, kept for the same `notes.keep` after the meeting and
   downloaded with the same PIN. The notes and the summary are deleted separately in the dialog:
   deleting the notes keeps the summary, and deleting the summary keeps the notes (no new summary is
-  written for them). A new meeting with notes in the room, or deleting the room, removes it. Only
-  the last meeting of each room has one.
+  written for them). Switching notes on again in the same meeting, or deleting the room, removes
+  it.
 - It is written automatically and may contain mistakes, mostly in names and terms the recognition
   garbled; the file says so, and the notes stay next to it.
 - The meeting's notes leave the server for the model you configured. Off by default.
@@ -231,30 +229,45 @@ the date and the speaker's name. Other cameras are not recorded.
 Everyone in the room sees "● Recording" in the header; the red dot always means this video. When
 recording is switched off, or the last person leaves, the bot uploads the file to the server, and
 everyone still in the room gets a "Video" button in the bar "Ready after the meeting:" (next to
-"Notes" when the meeting had notes too, with one close button for both); the lobby offers the same
-file under "Last meeting", with the room PIN.
+"Notes" when the meeting had notes too, with one close button for both); the lobby offers it under
+"Meetings", with the room PIN.
 
-The lobby shows "Last meeting" under a room that keeps a video, notes or both, with what is there
-and the nearest expiry ("Video and notes, kept until 10/16, 2:43 PM"). Its dialog asks for the room
-PIN once and lists each item with its own expiry and a "Download" button. Above the caption and in
-the dialog the lobby also shows when that meeting took place, how long it lasted and how many people
-took part ("10/15, 11:00 AM–11:27 AM · 27 min · 7 participants"; no names), while its notes or recording
-are kept.
+The lobby shows "Meetings (N)" under a room that keeps meetings, with when the latest one took
+place, how long it lasted and how many people took part ("10/15, 11:00 AM–11:27 AM · 27 min · 7
+participants"; no names) and the nearest expiry. See [Meeting history](#meeting-history).
 
 - The recorder is the commercial add-on `kunveno-recorder`. It is not part of this repository; for a
   licence write to ssubbotin@gmail.com. Its installation guide comes with the licence.
 - Without the add-on keep `recording.enabled: false` (the default): rooms and the lobby show nothing
   about recording.
-- Only the last meeting of each room is kept, for `recording.keep` (one day by default) after it
-  ends; the next recording replaces it. Switching recording on again in the same meeting also replaces what
-  was recorded before: a meeting has one recording, and the later one wins. Deleting a room deletes
-  its recording. Downloading needs the room PIN, and wrong PINs count toward the same block as
-  joins. An interrupted download can be resumed while its link is valid (5 minutes); afterwards start
-  the download again from the room or the lobby.
-- The recording can be deleted earlier from the lobby: "Last meeting" → "Delete…" with the room
-  PIN, then "Video" (or "Everything") in the confirmation. A recording in progress cannot be deleted: switch it off first.
+- Every meeting's recording is kept, each part for `recording.keep` (one day by default) after it
+  was uploaded. Switching recording off and on again in a meeting gives it a second part; both are
+  kept and listed ("Video from 10:55"). Deleting a room deletes its recordings. Downloading needs the
+  room PIN, and wrong PINs count toward the same block as joins. An interrupted download can be
+  resumed while its link is valid (5 minutes); afterwards start the download again from the room or
+  the lobby.
+- A part can be deleted earlier from the lobby: "Meetings", then "Delete" next to the part, with the
+  room PIN. The part being recorded is not listed until its upload.
 - A file larger than `recording.max_size` (8 GB by default) is refused by the server and stays in the
   add-on's volume, so size the limit for the longest meeting and keep free disk space for it.
+
+## Meeting history
+
+Each room keeps a list of its meetings: when each took place, how long it lasted, how many people
+took part (no names), and what it left: video parts, notes, a summary. "Meetings (N)" in the lobby
+opens the list, newest first; with the room PIN, entered once, every item downloads or deletes on
+its own, and nothing else of the meeting changes.
+
+- How long things stay: `notes.keep` for each meeting's notes and summary, `recording.keep` for each
+  video part, and `meetings.keep` (30 days by default) for a meeting that has nothing left, so the
+  list still shows when it took place. The defaults keep one day of notes and video; raise them
+  deliberately (`90d` keeps a quarter) and size the disk for it: the Grafana dashboard shows the
+  bytes kept per kind (`kunveno_kept_bytes`).
+- A room removed from `config.yaml` keeps its meetings until they expire; they count on disk
+  meanwhile. Deleting a room in the lobby deletes all of its meetings at once.
+- Upgrading from 0.6 moves each room's last notes, summary and recording into the new layout on the
+  server's first start. The move is one-way: a server of an earlier release does not see the moved
+  files. Back up the data volumes before upgrading.
 
 ## Sign-in and guests
 
@@ -391,6 +404,7 @@ through the manual checks in [docs/test-matrix.md](docs/test-matrix.md).
 | `notes.enabled` | `true` offers meeting notes in rooms; needs the `kunveno-notes` add-on (default `false`, which hides every notes control) |
 | `notes.keep` | how long notes stay after they end: a whole number and `m`, `h` or `d` (`90m`, `12h`, `1d`, `2d`; default `1d`) |
 | `notes.live` | `true` shows phrases in the room as they are recognised, for checking the recognition (default `false`) |
+| `meetings.keep` | how long a meeting with nothing left stays listed after it ends: `90m`, `12h`, `30d` (default `30d`) |
 | `notes.summary` | `true` offers a summary of each meeting's notes next to them, written by the add-on's summary service with an LLM; needs `notes.enabled` (default `false`) |
 | `notes.dir` | where the notes are kept (`/var/lib/kunveno/notes`, in the stack's data volume) |
 | `recording.enabled` | `true` offers meeting recording in rooms; needs the `kunveno-recorder` add-on (default `false`, which hides every recording control) |

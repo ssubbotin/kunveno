@@ -1,6 +1,6 @@
-// Package meetings keeps short summaries of each room's recent meetings (start, end, number of
-// people; never names) in one JSON file, so the lobby can describe the meeting whose notes or
-// recording are kept, across restarts.
+// Package meetings keeps the index of each room's meetings (start, end, number of people; never
+// names) in one JSON file: the list the lobby shows, across restarts. A meeting stays while any of
+// its material (notes, summary, recording) is kept, and otherwise for keep after its end.
 package meetings
 
 import (
@@ -15,11 +15,8 @@ import (
 	"time"
 )
 
-// Keep is how many meetings are kept per room, newest first.
-const Keep = 5
-
-// MaxAge is how long after its end a meeting is kept.
-const MaxAge = 30 * 24 * time.Hour
+// DefaultKeep is how long a meeting with nothing left stays listed after its end (meetings.keep).
+const DefaultKeep = 30 * 24 * time.Hour
 
 // Summary describes one ended meeting.
 type Summary struct {
@@ -32,6 +29,7 @@ type Summary struct {
 type Store struct {
 	path string
 	now  func() time.Time
+	keep time.Duration
 
 	mu    sync.Mutex
 	rooms map[string][]Summary // slug -> summaries, newest first
@@ -44,7 +42,7 @@ func Open(path string, now func() time.Time) *Store {
 	if now == nil {
 		now = time.Now
 	}
-	s := &Store{path: path, now: now, rooms: map[string][]Summary{}}
+	s := &Store{path: path, now: now, keep: DefaultKeep, rooms: map[string][]Summary{}}
 	data, err := os.ReadFile(path)
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -58,9 +56,6 @@ func Open(path string, now func() time.Time) *Store {
 		}
 		for slug, list := range rooms {
 			sort.SliceStable(list, func(i, j int) bool { return list[i].Start.After(list[j].Start) })
-			if len(list) > Keep {
-				list = list[:Keep]
-			}
 			if len(list) > 0 {
 				s.rooms[slug] = list
 			}
@@ -83,9 +78,6 @@ func (s *Store) Add(slug string, m Summary) error {
 		}
 	}
 	sort.SliceStable(list, func(i, j int) bool { return list[i].Start.After(list[j].Start) })
-	if len(list) > Keep {
-		list = list[:Keep]
-	}
 	s.rooms[slug] = list
 	return s.saveLocked()
 }
@@ -130,19 +122,40 @@ func (s *Store) Delete(slug string) error {
 	return s.saveLocked()
 }
 
-// Sweep drops meetings that ended more than MaxAge ago and saves the file when anything went.
-func (s *Store) Sweep() error {
+// SetKeep sets how long a meeting with nothing left stays listed after its end.
+func (s *Store) SetKeep(d time.Duration) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.keep = d
+}
+
+// Count returns how many meetings the room lists.
+func (s *Store) Count(slug string) int {
+	if s == nil {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.rooms[slug])
+}
+
+// Sweep drops the meetings that keep nothing (has reports false; nil means nothing anywhere) and
+// ended more than keep ago. A room missing from the configuration is no reason to drop anything.
+func (s *Store) Sweep(has func(slug string, start int64) bool) error {
 	if s == nil {
 		return nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	cut := s.now().Add(-MaxAge)
+	cut := s.now().Add(-s.keep)
 	changed := false
 	for slug, list := range s.rooms {
 		kept := list[:0:0]
 		for _, m := range list {
-			if m.End.After(cut) {
+			if m.End.After(cut) || (has != nil && has(slug, m.Start.UnixMilli())) {
 				kept = append(kept, m)
 			}
 		}

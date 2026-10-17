@@ -93,6 +93,14 @@ type Config struct {
 		// KeepFor is Keep parsed; set by Parse and Load.
 		KeepFor time.Duration `yaml:"-"`
 	} `yaml:"notes"`
+	// Meetings configures the list of each room's meetings.
+	Meetings struct {
+		// Keep is how long a meeting with nothing left (no notes, summary or recording) stays
+		// listed after it ends (notes.ParseKeep format); DefaultMeetingsKeep when unset.
+		Keep *string `yaml:"keep"`
+		// KeepFor is Keep parsed; set by Parse and Load.
+		KeepFor time.Duration `yaml:"-"`
+	} `yaml:"meetings"`
 	// Recording configures meeting recording. It needs the recording bot of the commercial
 	// kunveno-recorder add-on; switch it on together with installing it.
 	Recording struct {
@@ -174,6 +182,7 @@ const (
 	DefaultNotesKeep        = "1d"
 	DefaultNotesDir         = "/var/lib/kunveno/notes"
 	DefaultRecordingKeep    = "1d"
+	DefaultMeetingsKeep     = "30d"
 	DefaultRecordingDir     = "/var/lib/kunveno/recordings"
 	DefaultRecordingMaxSize = "8GB"
 	DefaultUDPPort          = 7000
@@ -258,6 +267,7 @@ func parse(data []byte, getenv func(string) string, detect func() (string, error
 	}
 	cfg.Notes.KeepFor, _ = notes.ParseKeep(*cfg.Notes.Keep)           // checked by Validate
 	cfg.Recording.KeepFor, _ = notes.ParseKeep(*cfg.Recording.Keep)   // checked by Validate
+	cfg.Meetings.KeepFor, _ = notes.ParseKeep(*cfg.Meetings.Keep)     // checked by Validate
 	cfg.Recording.MaxBytes, _ = ParseSize(cfg.Recording.MaxSize)      // checked by Validate
 	cfg.Auth.SessionTTL, _ = time.ParseDuration(cfg.Auth.Session)     // checked by Validate
 	cfg.Auth.InviteMaxTTL, _ = time.ParseDuration(cfg.Auth.InviteMax) // checked by Validate
@@ -300,6 +310,10 @@ func (c *Config) applyDefaults() {
 	if c.Recording.Keep == nil {
 		keep := DefaultRecordingKeep
 		c.Recording.Keep = &keep
+	}
+	if c.Meetings.Keep == nil {
+		keep := DefaultMeetingsKeep
+		c.Meetings.Keep = &keep
 	}
 	if c.Recording.Dir == "" {
 		c.Recording.Dir = DefaultRecordingDir
@@ -374,6 +388,11 @@ func (c *Config) Validate() error {
 	if c.Recording.Keep != nil {
 		if _, err := notes.ParseKeep(*c.Recording.Keep); err != nil {
 			errs = append(errs, fmt.Errorf("recording.keep: %w", err))
+		}
+	}
+	if c.Meetings.Keep != nil {
+		if _, err := notes.ParseKeep(*c.Meetings.Keep); err != nil {
+			errs = append(errs, fmt.Errorf("meetings.keep: %w", err))
 		}
 	}
 	if _, err := ParseSize(c.Recording.MaxSize); err != nil {

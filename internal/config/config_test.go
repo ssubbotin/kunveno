@@ -340,6 +340,22 @@ func TestNotesSummary(t *testing.T) {
 	}
 }
 
+// meetings.keep: how long a meeting with nothing left stays listed; 30 days unless set.
+func TestMeetingsKeep(t *testing.T) {
+	base := "media: {advertise_ip: 10.8.0.1}\nrooms: [{slug: a, name: A, pin: \"1234\"}]\n"
+	cfg, err := Parse([]byte(base))
+	if err != nil || cfg.Meetings.KeepFor != 30*24*time.Hour {
+		t.Fatalf("default %v %v", cfg.Meetings.KeepFor, err)
+	}
+	cfg, err = Parse([]byte("meetings: {keep: 90d}\n" + base))
+	if err != nil || cfg.Meetings.KeepFor != 90*24*time.Hour {
+		t.Fatalf("set %v %v", cfg.Meetings.KeepFor, err)
+	}
+	if _, err := Parse([]byte("meetings: {keep: 1w}\n" + base)); err == nil || !strings.Contains(err.Error(), "meetings.keep") {
+		t.Fatalf("bad value: %v", err)
+	}
+}
+
 func TestRecordingDefaults(t *testing.T) {
 	cfg, err := Parse([]byte("media:\n  advertise_ip: 10.0.0.1\n"))
 	if err != nil {

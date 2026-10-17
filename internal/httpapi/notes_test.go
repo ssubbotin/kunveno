@@ -347,7 +347,7 @@ func TestNotesDelete(t *testing.T) {
 	if _, ok := store.Until("ops"); ok {
 		t.Fatal("notes still ready after delete")
 	}
-	if _, err := store.Load("ops"); err != notes.ErrNoNotes {
+	if _, err := store.Load("ops", meetingAt(9, 37).UnixMilli()); err != notes.ErrNoNotes {
 		t.Fatalf("Load after delete: %v", err)
 	}
 	if rec := do(t, Rooms(RoomsConfig{Registry: reg, Kept: lobby.Kept{Notes: store, NotesEnabled: true}}), "GET", "/api/rooms", ""); strings.Contains(rec.Body.String(), "notes_until") {

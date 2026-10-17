@@ -78,35 +78,27 @@ without it):
     on within one meeting adds "recording paused" and "recording resumed" lines to the same file.
 34. Download with the interface in English and in Spanish: the fixed labels follow the language,
     the phrases stay as spoken.
-35. Lobby: the room shows the notes mark, the "Last meeting" button and "Notes, kept until
+35. Lobby: the room shows the notes mark, the "Meetings" button and "Notes, kept until
     16.10, 14:46" under it (day, month and time; the year only when it is not the current one).
-    The dialog "Last meeting" has the PIN filled in when this browser knows it, a show/hide eye,
+    The dialog "Meetings" has the PIN filled in when this browser knows it, a show/hide eye,
     and a row "Notes" with "kept until …" and "Download"; a wrong PIN shows "Wrong PIN" and puts
-    the focus in the PIN field; after `notes.keep` passes (try `keep: 2m`) the button disappears,
-    and "Download" in a dialog still open reports "The notes have already been deleted".
-36. The last person leaving ends the recording and the file holds the last phrase said before
-    leaving; the first phrase of a new meeting in the room replaces the old notes.
-37. Lobby → "Last meeting" → "Delete…": the dialog asks "What to delete?" with a choice for each
-    item kept ("Video", "Notes", and "Everything", preselected, when both are there), then "Cancel"
-    and "Delete" (no browser prompt); "Cancel" returns to the dialog with everything intact.
-    Keyboard focus: opening the confirmation puts it on "Cancel", "Cancel" returns it to
-    "Delete…", an error returns it to "Delete…" (to the PIN field after a wrong PIN). With a wrong
-    PIN "Delete" shows "Wrong PIN" once, also for "Everything"; with the right one the dialog
-    closes, the marks and the button update in the room list, and downloading in a second tab with
-    the dialog still open reports "The notes have already been deleted". Notes in progress: with
-    notes switched off in a running meeting, open the lobby dialog and press "Delete…"; then in the
-    room switch notes on again and speak one phrase (the notes reopen the same file); now deleting
-    "Notes" shows "The notes are still being taken or finished: stop them, or try again in a
-    minute", returns to the dialog, and the file stays (the same answer comes right after a
-    switch-off while the Notes participant is still leaving). Deleting the notes of a meeting still
-    in progress (notes switched off) and switching notes on again starts a fresh file holding only
-    the new phrases.
+    the focus in the PIN field; after `notes.keep` passes (try `keep: 2m`) the notes row disappears
+    (the meeting stays listed for `meetings.keep`), and "Download" in a dialog still open reports
+    "The notes have already been deleted".
+36. The last person leaving ends the notes and the file holds the last phrase said before leaving;
+    a new meeting in the room starts notes of its own, and the earlier meeting's notes stay listed.
+37. Lobby → "Meetings (N)": every item of every meeting has "Delete"; pressing it asks "Delete?"
+    in place with "Cancel" and "Delete" (no browser prompt); "Cancel" restores the row. With a wrong
+    PIN the dialog shows "Wrong PIN" and puts the focus in the PIN field; with the right one only
+    that item goes, the list and the room list update, and downloading it in a second tab with the
+    dialog still open reports that it is gone. Notes still being taken (a meeting in progress with
+    notes on) answer "The notes are still being taken or finished" and stay.
 
 Meeting recording (with the `kunveno-recorder` add-on installed and `recording.enabled: true`; check
 38 also without it):
 
 38. With `recording.enabled: false` the More menu has no recording item, the lobby never mentions
-    video (the "Last meeting" caption and dialog list the notes only), and
+    video (the "Meetings" caption and dialog list the notes only), and
     `curl -s 127.0.0.1:8080/internal/recording` on the host prints `[]`.
 39. More → "Recording": within 10 s the "Recording" participant (bot) appears, the header shows
     "● Recording" for everyone, a screen reader announces the change, and the switch is on for
@@ -120,17 +112,13 @@ Meeting recording (with the `kunveno-recorder` add-on installed and `recording.e
     the audio of all. With notes on as well, the bar holds both buttons ("Video" and "Notes", each
     appearing when it is ready) and one ✕ ("Close") that dismisses both; at 360 px wide it wraps
     inside the screen, and a failed download shows its error inside the bar.
-42. Lobby: the room shows the recording mark and "Last meeting" with "Video, kept until …" (or
-    "Video and notes, kept until …" with the nearer of the two times). The dialog lists "● Video"
-    and "Notes", each with its own time and "Download": a wrong PIN shows "Wrong PIN"; the right one
-    downloads the file. A large file (a meeting of an hour or more) downloads with progress, and a
+42. Lobby: the room shows "Meetings (N)". The dialog lists each meeting's video parts ("Video from
+    10:55", each with its own time and "Download"): a wrong PIN shows "Wrong PIN"; the right one
+    downloads the part. A large file (a meeting of an hour or more) downloads with progress, and a
     download interrupted in devtools (go offline, then online) resumes with a `Range` request
     instead of starting over.
-43. Lobby → "Last meeting" → "Delete…" → "Video" with the right PIN removes the file and the
-    recording mark; "Everything" removes both and the button. While the room is being recorded,
-    deleting "Video" shows "The meeting is still being recorded: switch the recording off or try
-    again in a minute" (409) and the file stays; with "Everything" the notes are still deleted and
-    the video's failure is listed.
+43. Deleting a video part with the right PIN removes that part only; the meeting's other parts, notes
+    and summary stay. A part being recorded is not listed until its upload.
 44. The last person leaving ends the recording; the file appears in the lobby within a minute.
 45. Restarting the server during a recording leaves no broken file: after the restart the lobby
     offers no half-written recording, and the data directory has no `*.tmp` files.
@@ -138,7 +126,7 @@ Meeting recording (with the `kunveno-recorder` add-on installed and `recording.e
     leaves one file, the later recording.
 47. Meeting summary: with notes or recording on, Ann and Bob join, an echo or notes bot is in the
     room, Bob reloads the page (rejoins under the same name), then everyone leaves. The lobby shows
-    above the "Last meeting" caption a line like "10/15, 11:00 AM–11:27 AM · 27 min · 2 participants":
+    above the "Meetings" caption a line like "10/15, 11:00 AM–11:27 AM · 27 min · 2 participants":
     the date, the start and end times, the duration and 2 people (the bot and the rejoin do not
     count); the dialog shows the same line under the room name, in each language (Russian
     "2 участника", Spanish "2 participantes"). After `docker compose restart server` the line is
@@ -173,7 +161,7 @@ Meeting recording (with the `kunveno-recorder` add-on installed and `recording.e
 56. "Sign out" in the lobby returns to the sign-in screen; a reload stays signed out. After
     `docker compose exec server rm /var/lib/kunveno/auth.key && docker compose restart server`
     an open session is refused (401) and the employee must sign in again.
-57. With a signed-in employee, "Last meeting" → "Download" of a recording works (the file plays
+57. With a signed-in employee, "Meetings" → "Download" of a recording works (the file plays
     and a download interrupted and resumed continues).
 58. With `auth.enabled: false` (or no `auth:` block) nothing changes: no sign-in screen, no "Invite
     a guest" in the menu, the lobby and the rooms open as before, `/api/info` reports no sign-in.
@@ -181,7 +169,7 @@ Meeting recording (with the `kunveno-recorder` add-on installed and `recording.e
 Meeting summary (with the `kunveno-notes` add-on's summary overlay installed, its model reachable,
 and `notes.enabled: true`, `notes.summary: true`; check 59 also without them):
 
-59. With `notes.summary: false` the "Last meeting" dialog has no summary row and
+59. With `notes.summary: false` the "Meetings" dialog has no summary row and
     `curl -s 127.0.0.1:8080/internal/notes/summaries` on the host prints `[]`.
 60. Take notes in a meeting, then everyone leaves: the dialog shows "Summary · being prepared"
     under the notes; within about two minutes (reopen the dialog) it reads "written automatically",
@@ -191,6 +179,20 @@ and `notes.enabled: true`, `notes.summary: true`; check 59 also without them):
     never appears; a new one is prepared for the longer notes.
 62. Delete the summary alone in the dialog: the notes stay, the summary row is gone and does not come
     back after a server restart. Delete the notes alone: the summary stays, downloads, and the lobby
-    still offers "Last meeting" ("Summary, kept until …") when nothing else is left.
+    still offers "Meetings" ("Summary, kept until …") when nothing else is left.
 63. Stop the model: the next meeting's summary reads "could not be written" after the add-on's three
     attempts.
+
+Meeting history (with notes and recording on, `notes.keep: 2d`, `recording.keep: 2d`):
+
+64. Two meetings in a room, each with notes: "Meetings (2)" lists both, newest first, each with its
+    own notes; the earlier meeting's notes and summary did not change when the second began.
+65. Recording switched off and on again within one meeting: the meeting lists two parts ("Video from
+    …"), each downloads its own file.
+66. Upgrade from 0.6 on a copy of a real stack (volumes backed up first): after the first start the
+    room's last notes, summary and recording are listed under their meeting in "Meetings", the
+    server log has "moved to the meeting history layout" lines, and a second restart moves nothing.
+67. Grafana "Kept on disk" ("Хранится на диске") shows notes and recording bytes; deleting a part
+    lowers the recording line within a minute.
+68. A room removed from `config.yaml` (server restarted) keeps its files until they expire; adding
+    the room back lists its meetings again.

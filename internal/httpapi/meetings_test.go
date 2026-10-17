@@ -88,7 +88,7 @@ func TestRoomsListUsesTheMeetingOfTheKeptRecording(t *testing.T) {
 	reg := room.NewRegistry()
 	reg.Add(room.New("ops", "Операции", "1234", 15))
 	rec := recordingStore(t, &now)
-	if _, err := rec.Put("ops", meetingAt(9, 37), strings.NewReader("v"), 1<<20); err != nil {
+	if _, err := rec.Put("ops", meetingAt(9, 37), meetingAt(9, 37), strings.NewReader("v"), 1<<20); err != nil {
 		t.Fatal(err)
 	}
 	meets := meetingsStore(t)
@@ -101,22 +101,23 @@ func TestRoomsListUsesTheMeetingOfTheKeptRecording(t *testing.T) {
 	}
 }
 
-func TestRoomsListPrefersTheRecordingsMeeting(t *testing.T) {
+// last_meeting is the newest meeting that keeps something (meeting history: no longer the recording's).
+func TestRoomsListShowsTheNewestKeptMeeting(t *testing.T) {
 	now := meetingAt(10, 5)
 	store := notesStore(t, &now)
 	reg := room.NewRegistry()
 	reg.Add(room.New("ops", "Операции", "1234", 15))
 	recordMeeting(t, store, "ops") // notes of the 9:37 meeting
 	rec := recordingStore(t, &now)
-	if _, err := rec.Put("ops", meetingAt(8, 0), strings.NewReader("v"), 1<<20); err != nil {
+	if _, err := rec.Put("ops", meetingAt(8, 0), meetingAt(8, 0), strings.NewReader("v"), 1<<20); err != nil {
 		t.Fatal(err)
 	}
 	meets := meetingsStore(t)
 	_ = meets.Add("ops", meetings.Summary{Start: meetingAt(8, 0), End: meetingAt(8, 30), People: 5})
 	_ = meets.Add("ops", meetings.Summary{Start: meetingAt(9, 37), End: meetingAt(10, 2), People: 7})
 	m := lastMeetings(t, do(t, Rooms(RoomsConfig{Registry: reg, Kept: lobby.Kept{Notes: store, NotesEnabled: true, Recordings: rec, RecordingEnabled: true, Meetings: meets}}), "GET", "/api/rooms", "").Body.String())["ops"]
-	if m == nil || m.People != 5 {
-		t.Fatalf("last_meeting = %+v; want the recording's meeting", m)
+	if m == nil || m.People != 7 {
+		t.Fatalf("last_meeting = %+v; want the newer notes' meeting", m)
 	}
 	// Without a summary of the recording's meeting the notes' meeting is used.
 	_ = meets.Delete("ops")

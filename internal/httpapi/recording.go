@@ -29,11 +29,13 @@ func RecordingRooms(reg *room.Registry, enabled bool) http.Handler {
 	})
 }
 
-// RecordingUpload takes the finished recording from the bot: PUT /internal/recording/{slug},
-// loopback only, body video/mp4, X-Kunveno-Meeting the meeting start (RFC 3339). 204 stored (then
-// stored(slug) tells the room), 400 no or bad meeting, 404 recording off or no such room, 409 a
-// later meeting's recording is stored, 413 larger than max.
-func RecordingUpload(reg *room.Registry, store *recording.Store, max int64, stored func(slug string)) http.Handler {
+// RecordingUpload takes a finished part of a recording from the bot: PUT /internal/recording/{slug},
+// loopback only, body video/mp4, X-Kunveno-Meeting the meeting start and X-Kunveno-Part the part's
+// start (RFC 3339; without it the part is the meeting's start, as a recorder of the previous release
+// sends). 204 stored (then stored(slug) tells the room), 400 no or bad meeting or part, 404 recording
+// off or no such room, 409 a meeting the room neither runs nor lists (known false), 413 larger than
+// max. A stored part is replaced by an upload of the same part only.
+func RecordingUpload(reg *room.Registry, store *recording.Store, max int64, stored func(slug string), known func(slug string, meeting time.Time) bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !local(r) {
 			w.WriteHeader(http.StatusForbidden)
@@ -53,10 +55,19 @@ func RecordingUpload(reg *room.Registry, store *recording.Store, max int64, stor
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "X-Kunveno-Meeting must be RFC 3339"})
 			return
 		}
-		_, err = store.Put(slug, meeting, r.Body, max)
+		part := meeting
+		if h := r.Header.Get("X-Kunveno-Part"); h != "" {
+			if part, err = time.Parse(time.RFC3339Nano, h); err != nil {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "X-Kunveno-Part must be RFC 3339"})
+				return
+			}
+		}
+		if known != nil && !known(slug, meeting) {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "no such meeting in this room"})
+			return
+		}
+		_, err = store.Put(slug, meeting, part, r.Body, max)
 		switch {
-		case errors.Is(err, recording.ErrStale):
-			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		case errors.Is(err, recording.ErrTooLarge):
 			writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": err.Error()})
 		case err != nil:
@@ -70,8 +81,8 @@ func RecordingUpload(reg *room.Registry, store *recording.Store, max int64, stor
 	})
 }
 
-// Links are short-lived download links: a token bound to one room's recording as it was when the
-// link was made, so a link never serves a later or replaced file.
+// Links are short-lived download links: a token bound to one part of one meeting's recording as it
+// was when the link was made, so a link never serves a later or replaced file.
 type Links struct {
 	ttl time.Duration
 	now func() time.Time
@@ -81,16 +92,17 @@ type Links struct {
 }
 
 type link struct {
-	slug    string
-	ended   time.Time // the recording's Meta.Ended at link time
-	expires time.Time
+	slug          string
+	meeting, part int64     // Unix ms
+	ended         time.Time // the part's Meta.Ended at link time
+	expires       time.Time
 }
 
 func NewLinks(ttl time.Duration) *Links {
 	return &Links{ttl: ttl, now: time.Now, m: map[string]link{}}
 }
 
-func (l *Links) add(slug string, ended time.Time) (string, time.Time) {
+func (l *Links) add(slug string, m recording.Meta) (string, time.Time) {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
 	token := hex.EncodeToString(b)
@@ -103,7 +115,7 @@ func (l *Links) add(slug string, ended time.Time) (string, time.Time) {
 		}
 	}
 	exp := now.Add(l.ttl)
-	l.m[token] = link{slug: slug, ended: ended, expires: exp}
+	l.m[token] = link{slug: slug, meeting: m.Meeting.UnixMilli(), part: m.Part.UnixMilli(), ended: m.Ended, expires: exp}
 	return token, exp
 }
 
@@ -132,7 +144,7 @@ func RecordingLink(reg *room.Registry, store *recording.Store, pins *ratelimit.L
 			return
 		}
 		_ = f.Close()
-		token, exp := links.add(slug, m.Ended)
+		token, exp := links.add(slug, m)
 		writeJSON(w, http.StatusOK, map[string]string{"url": "/api/rooms/" + slug + "/recording/" + token, "expires": exp.Format(time.RFC3339)})
 	})
 }
@@ -147,7 +159,7 @@ func RecordingFile(store *recording.Store, links *Links, loc *time.Location) htt
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "no recording"})
 			return
 		}
-		f, m, err := store.Open(slug)
+		f, m, err := store.OpenPart(slug, l.meeting, l.part)
 		if err != nil {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "no recording"})
 			return
@@ -158,7 +170,7 @@ func RecordingFile(store *recording.Store, links *Links, loc *time.Location) htt
 			return
 		}
 		w.Header().Set("Content-Type", "video/mp4")
-		w.Header().Set("Content-Disposition", `attachment; filename="`+recording.FileName(slug, m.Meeting, loc)+`"`)
+		w.Header().Set("Content-Disposition", `attachment; filename="`+recording.FileName(slug, m.Part, loc)+`"`)
 		w.Header().Set("Cache-Control", "no-store")
 		http.ServeContent(w, r, "", m.Ended, f)
 	})

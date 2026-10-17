@@ -23,6 +23,8 @@ type recEnv struct {
 	links  *Links
 	stored []string
 	mux    *http.ServeMux
+	// unknown makes the upload's meeting check refuse every meeting.
+	unknown bool
 }
 
 func newRecEnv(t *testing.T) *recEnv {
@@ -36,7 +38,8 @@ func newRecEnv(t *testing.T) *recEnv {
 	e := &recEnv{reg: reg, store: store, links: NewLinks(5 * time.Minute), mux: http.NewServeMux()}
 	pins := ratelimit.New(5, 10*time.Minute, time.Minute)
 	e.mux.Handle("/internal/recording", RecordingRooms(reg, true))
-	e.mux.Handle("PUT /internal/recording/{slug}", RecordingUpload(reg, store, 1<<20, func(s string) { e.stored = append(e.stored, s) }))
+	known := func(string, time.Time) bool { return !e.unknown }
+	e.mux.Handle("PUT /internal/recording/{slug}", RecordingUpload(reg, store, 1<<20, func(s string) { e.stored = append(e.stored, s) }, known))
 	e.mux.Handle("POST /api/rooms/{slug}/recording", RecordingLink(reg, store, pins, e.links))
 	e.mux.Handle("GET /api/rooms/{slug}/recording/{token}", RecordingFile(store, e.links, time.UTC))
 	e.mux.Handle("DELETE /api/rooms/{slug}/recording", RecordingDelete(reg, store, pins))
@@ -103,13 +106,50 @@ func TestUploadStoresAndAnnounces(t *testing.T) {
 	}
 }
 
-func TestUploadStale(t *testing.T) {
+// The recorder of this release names the part it uploads; each part is kept.
+func TestUploadPartHeader(t *testing.T) {
+	e := newRecEnv(t)
+	p2 := meeting.Add(20 * time.Minute)
+	for _, part := range []time.Time{meeting, p2} {
+		code := e.do(http.MethodPut, "/internal/recording/ops", "part", map[string]string{
+			"X-Kunveno-Meeting": meeting.Format(time.RFC3339Nano), "X-Kunveno-Part": part.Format(time.RFC3339Nano)}).Code
+		if code != http.StatusNoContent {
+			t.Fatalf("upload %v: %d", part, code)
+		}
+	}
+	if parts := e.store.Parts("ops", meeting.UnixMilli()); len(parts) != 2 || !parts[1].Part.Equal(p2) {
+		t.Fatalf("parts %+v", parts)
+	}
+	bad := e.do(http.MethodPut, "/internal/recording/ops", "x", map[string]string{
+		"X-Kunveno-Meeting": meeting.Format(time.RFC3339Nano), "X-Kunveno-Part": "soon"}).Code
+	if bad != http.StatusBadRequest {
+		t.Fatalf("bad part: %d", bad)
+	}
+}
+
+// A recording of an earlier meeting the room lists is stored next to the later one's.
+func TestUploadEarlierListedMeeting(t *testing.T) {
 	e := newRecEnv(t)
 	if code := e.upload(t, "new", meeting.Add(time.Hour)); code != http.StatusNoContent {
-		t.Fatal(code)
+		t.Fatalf("new: %d", code)
 	}
-	if code := e.upload(t, "old", meeting); code != http.StatusConflict {
-		t.Fatalf("stale upload: %d", code)
+	if code := e.upload(t, "old", meeting); code != http.StatusNoContent {
+		t.Fatalf("earlier: %d", code)
+	}
+	if got := e.store.Meetings("ops"); len(got) != 2 {
+		t.Fatalf("meetings %v", got)
+	}
+}
+
+// A meeting the room neither runs nor lists is refused.
+func TestUploadUnknownMeeting(t *testing.T) {
+	e := newRecEnv(t)
+	e.unknown = true
+	if code := e.upload(t, "v", meeting); code != http.StatusConflict {
+		t.Fatalf("unknown meeting: %d", code)
+	}
+	if got := e.store.Meetings("ops"); len(got) != 0 {
+		t.Fatalf("stored %v", got)
 	}
 }
 
@@ -158,9 +198,13 @@ func TestLinkAfterDeleteAndReplace(t *testing.T) {
 	}
 	e.upload(t, "first", meeting)
 	_, url = e.link(t, "1234")
-	e.upload(t, "second", meeting.Add(time.Hour))
+	e.upload(t, "second", meeting.Add(time.Hour)) // another meeting: the linked part stays
+	if code := e.do(http.MethodGet, url, "", nil).Code; code != http.StatusOK {
+		t.Fatalf("link after another meeting's upload: %d", code)
+	}
+	e.upload(t, "again", meeting) // the same part replaced
 	if code := e.do(http.MethodGet, url, "", nil).Code; code != http.StatusNotFound {
-		t.Fatalf("link to a replaced recording: %d", code)
+		t.Fatalf("link to a replaced part: %d", code)
 	}
 }
 
@@ -208,7 +252,7 @@ func TestRecordingDisabledAnswers404(t *testing.T) {
 	reg.Add(room.New("ops", "Ops", "1234", 15))
 	mux := http.NewServeMux()
 	mux.Handle("POST /api/rooms/{slug}/recording", RecordingLink(reg, nil, nil, NewLinks(time.Minute)))
-	mux.Handle("PUT /internal/recording/{slug}", RecordingUpload(reg, nil, 1<<20, nil))
+	mux.Handle("PUT /internal/recording/{slug}", RecordingUpload(reg, nil, 1<<20, nil, nil))
 	for _, m := range []string{http.MethodPost + " /api/rooms/ops/recording", http.MethodPut + " /internal/recording/ops"} {
 		method, path, _ := strings.Cut(m, " ")
 		r := httptest.NewRequest(method, path, strings.NewReader(`{"pin":"1234"}`))
@@ -262,7 +306,7 @@ func TestDeletingARoomDeletesItsRecording(t *testing.T) {
 		t.Fatal(err)
 	}
 	slug := rm.Slug()
-	if _, err := e.store.Put(slug, meeting, strings.NewReader("v"), 1<<20); err != nil {
+	if _, err := e.store.Put(slug, meeting, meeting, strings.NewReader("v"), 1<<20); err != nil {
 		t.Fatal(err)
 	}
 	w := httptest.NewRecorder()
@@ -282,7 +326,7 @@ func TestDeletingARoomDeletesItsRecordingWhileRecordingIsOff(t *testing.T) {
 		t.Fatal(err)
 	}
 	slug := rm.Slug()
-	if _, err := e.store.Put(slug, meeting, strings.NewReader("v"), 1<<20); err != nil {
+	if _, err := e.store.Put(slug, meeting, meeting, strings.NewReader("v"), 1<<20); err != nil {
 		t.Fatal(err)
 	}
 	h := Rooms(RoomsConfig{Registry: e.reg, Kept: lobby.Kept{Recordings: e.store}})

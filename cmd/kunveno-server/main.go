@@ -130,7 +130,10 @@ func run(cfgPath string, log *slog.Logger) error {
 	// Summaries of ended meetings, next to the rooms file: shown in the lobby while notes or a
 	// recording of the meeting are kept.
 	meets := meetings.Open(filepath.Join(filepath.Dir(cfg.RoomsFile), "meetings.json"), nil)
-	go sweepMeetings(ctx, meets, log)
+	meets.SetKeep(cfg.Meetings.KeepFor)
+	// A meeting stays listed while its notes, summary or a recording part is kept.
+	has := func(slug string, meeting int64) bool { return store.Has(slug, meeting) || recStore.Has(slug, meeting) }
+	go sweepMeetings(ctx, meets, has, log)
 
 	conf := conference.New(reg, engineMedia{engine}, log)
 	conf.SetReactions(cfg.UI.Reactions)
@@ -256,10 +259,11 @@ func routes(s server) *http.ServeMux {
 		}
 	}
 	summaries := cfg.Notes.Enabled && cfg.Notes.Summary
-	rooms := protect(httpapi.Rooms(httpapi.RoomsConfig{Registry: reg, Persist: s.persist, PINs: pins, Deleted: deleted, Kept: lobby.Kept{
+	kept := lobby.Kept{
 		Notes: s.notes, NotesEnabled: cfg.Notes.Enabled, Recordings: s.recordings, RecordingEnabled: cfg.Recording.Enabled, Meetings: s.meetings,
 		SummaryEnabled: summaries,
-	}}))
+	}
+	rooms := protect(httpapi.Rooms(httpapi.RoomsConfig{Registry: reg, Persist: s.persist, PINs: pins, Deleted: deleted, Kept: kept}))
 	mux.Handle("/api/rooms", rooms)
 	mux.Handle("/api/rooms/", rooms)
 	mux.Handle("POST /api/rooms/{slug}/notes", protect(httpapi.NotesDownload(reg, s.notes, cfg.Notes.Enabled, pins, time.Local)))
@@ -269,9 +273,20 @@ func routes(s server) *http.ServeMux {
 	mux.Handle("POST /api/rooms/{slug}/recording", protect(httpapi.RecordingLink(reg, rec, pins, links)))
 	mux.Handle("GET /api/rooms/{slug}/recording/{token}", protect(httpapi.RecordingFile(rec, links, time.Local)))
 	mux.Handle("DELETE /api/rooms/{slug}/recording", protect(httpapi.RecordingDelete(reg, rec, pins)))
-	mux.Handle("/internal/recording", httpapi.RecordingRooms(reg, cfg.Recording.Enabled))                                           // never proxied by nginx
-	mux.Handle("PUT /internal/recording/{slug}", httpapi.RecordingUpload(reg, rec, cfg.Recording.MaxBytes, s.conf.RecordingStored)) // never proxied by nginx
-	bg := backgrounds.New(cfg.BackgroundsDir, s.log).Handler()                                                                      // public: guests use backgrounds too
+	mux.Handle("/internal/recording", httpapi.RecordingRooms(reg, cfg.Recording.Enabled)) // never proxied by nginx
+	// A recording is accepted for the meeting the room runs now, or one the room still knows of
+	// (lobby.Kept.Knows: listed, with material, or begun within recording.keep).
+	knownMeeting := func(slug string, meeting time.Time) bool {
+		if rm, ok := reg.Get(slug); ok {
+			if current, _ := rm.Meeting(); current.Equal(meeting) {
+				return true
+			}
+		}
+		return kept.Knows(slug, meeting, time.Now(), cfg.Recording.KeepFor)
+	}
+	mux.Handle("PUT /internal/recording/{slug}", httpapi.RecordingUpload(reg, rec, cfg.Recording.MaxBytes, s.conf.RecordingStored, knownMeeting)) // never proxied by nginx
+	httpapi.RegisterMeetings(mux, httpapi.MeetingsConfig{Registry: reg, Kept: kept, PINs: pins, Links: links, Loc: time.Local}, protect)
+	bg := backgrounds.New(cfg.BackgroundsDir, s.log).Handler() // public: guests use backgrounds too
 	mux.Handle("/api/backgrounds", bg)
 	mux.Handle("/api/backgrounds/", bg)
 	mux.Handle("/healthz", httpapi.Health())
@@ -292,6 +307,7 @@ func routes(s server) *http.ServeMux {
 	mux.Handle("/internal/notes/summaries", summary)
 	mux.Handle("/internal/notes/summaries/", summary)
 	promReg := metrics.NewRegistry(reg, version)
+	metrics.RegisterKept(promReg, s.notes.Bytes, s.recordings.Bytes)
 	if gate != nil {
 		metrics.RegisterAuth(promReg, gate.Invites.Active)
 	}
@@ -331,12 +347,13 @@ func sweepRecordings(ctx context.Context, store *recording.Store, log *slog.Logg
 	}
 }
 
-// sweepMeetings drops meeting summaries older than meetings.MaxAge every minute.
-func sweepMeetings(ctx context.Context, store *meetings.Store, log *slog.Logger) {
+// sweepMeetings drops, every minute, the meetings that keep nothing and ended more than
+// meetings.keep ago.
+func sweepMeetings(ctx context.Context, store *meetings.Store, has func(string, int64) bool, log *slog.Logger) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	for {
-		if err := store.Sweep(); err != nil {
+		if err := store.Sweep(has); err != nil {
 			log.Warn("cannot save the meetings file", "err", err)
 		}
 		select {
@@ -352,8 +369,8 @@ func sweepNotes(ctx context.Context, store *notes.Store, log *slog.Logger) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	for {
-		for _, slug := range store.Sweep() {
-			log.Info("notes expired", "room", slug)
+		for _, g := range store.Sweep() {
+			log.Info("notes expired", "room", g.Slug, "meeting", time.UnixMilli(g.Meeting).Format(time.RFC3339))
 		}
 		select {
 		case <-ctx.Done():

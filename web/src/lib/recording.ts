@@ -2,6 +2,7 @@
 // room PIN; the file itself is a plain GET the browser downloads and can resume) and deletion
 // (DELETE on the same path with the PIN).
 import type { Key } from './i18n/messages';
+import { meetingPath } from './meetingPath';
 
 export type RecordingError = 'bad_pin' | 'gone' | 'recording' | 'too_many' | 'failed';
 type Failure = { ok: false; error: RecordingError; retryAfter?: number };
@@ -10,10 +11,14 @@ type Translate = (key: Key, vars?: Record<string, string | number>) => string;
 
 const path = (slug: string) => `/api/rooms/${encodeURIComponent(slug)}/recording`;
 
-export async function recordingLink(fetchFn: Fetch, slug: string, pin: string): Promise<{ ok: true; url: string } | Failure> {
+// One part of one meeting's recording; without it, the room's latest part.
+export type PartRef = { meeting: number; part: number }; // Unix ms
+const partPath = (slug: string, at?: PartRef) => (at ? `${meetingPath(slug, at.meeting)}/recording/${at.part}` : path(slug));
+
+export async function recordingLink(fetchFn: Fetch, slug: string, pin: string, at?: PartRef): Promise<{ ok: true; url: string } | Failure> {
   let res: Response;
   try {
-    res = await fetchFn(path(slug), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }) });
+    res = await fetchFn(partPath(slug, at), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }) });
   } catch {
     return { ok: false, error: 'failed' };
   }
@@ -28,10 +33,10 @@ export async function recordingLink(fetchFn: Fetch, slug: string, pin: string): 
   return { ok: false, error: 'failed' };
 }
 
-export async function deleteRecording(fetchFn: Fetch, slug: string, pin: string): Promise<{ ok: true } | Failure> {
+export async function deleteRecording(fetchFn: Fetch, slug: string, pin: string, at?: PartRef): Promise<{ ok: true } | Failure> {
   let res: Response;
   try {
-    res = await fetchFn(path(slug), { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }) });
+    res = await fetchFn(partPath(slug, at), { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }) });
   } catch {
     return { ok: false, error: 'failed' };
   }

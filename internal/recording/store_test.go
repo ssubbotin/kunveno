@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -38,7 +39,7 @@ func read(t *testing.T, s *Store, slug string) (string, Meta) {
 func TestPutAndOpen(t *testing.T) {
 	s, now, dir := newStore(t)
 	*now = t0.Add(30 * time.Minute)
-	m, err := s.Put("ops", t0, strings.NewReader("video"), 100)
+	m, err := s.Put("ops", t0, t0, strings.NewReader("video"), 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,44 +52,49 @@ func TestPutAndOpen(t *testing.T) {
 	if until, ok := s.Until("ops"); !ok || !until.Equal(now.Add(24*time.Hour)) {
 		t.Fatalf("until %v %v", until, ok)
 	}
-	if fi, err := os.Stat(filepath.Join(dir, "ops.mp4")); err != nil || fi.Mode().Perm() != 0o600 {
+	stamp := strconv.FormatInt(t0.UnixMilli(), 10)
+	if fi, err := os.Stat(filepath.Join(dir, "ops", stamp+"."+stamp+".mp4")); err != nil || fi.Mode().Perm() != 0o600 {
 		t.Fatalf("file mode %v %v", fi, err)
 	}
 }
 
 func TestPutTooLargeKeepsTheOldFile(t *testing.T) {
 	s, _, dir := newStore(t)
-	if _, err := s.Put("ops", t0, strings.NewReader("old"), 100); err != nil {
+	if _, err := s.Put("ops", t0, t0, strings.NewReader("old"), 100); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Put("ops", t0.Add(time.Hour), strings.NewReader("0123456789"), 5); !errors.Is(err, ErrTooLarge) {
+	if _, err := s.Put("ops", t0.Add(time.Hour), t0.Add(time.Hour), strings.NewReader("0123456789"), 5); !errors.Is(err, ErrTooLarge) {
 		t.Fatalf("err %v", err)
 	}
 	if body, _ := read(t, s, "ops"); body != "old" {
 		t.Fatalf("body %q", body)
 	}
-	if matches, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(matches) != 0 {
+	if matches, _ := filepath.Glob(filepath.Join(dir, "ops", "*.tmp")); len(matches) != 0 {
 		t.Fatalf("left %v", matches)
 	}
 }
 
-func TestPutStaleMeeting(t *testing.T) {
+// A recording of an earlier meeting is kept apart from the later one's.
+func TestPutEarlierMeetingKeptApart(t *testing.T) {
 	s, _, _ := newStore(t)
-	if _, err := s.Put("ops", t0.Add(time.Hour), strings.NewReader("new"), 100); err != nil {
+	if _, err := s.Put("ops", t0.Add(time.Hour), t0.Add(time.Hour), strings.NewReader("new"), 100); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Put("ops", t0, strings.NewReader("old"), 100); !errors.Is(err, ErrStale) {
+	if _, err := s.Put("ops", t0, t0, strings.NewReader("old"), 100); err != nil {
 		t.Fatalf("err %v", err)
 	}
 	if body, _ := read(t, s, "ops"); body != "new" {
-		t.Fatalf("body %q", body)
+		t.Fatalf("latest %q", body)
+	}
+	if got := readPart(t, s, "ops", ms(t0), ms(t0)); got != "old" {
+		t.Fatalf("earlier %q", got)
 	}
 }
 
 func TestPutSameMeetingReplaces(t *testing.T) {
 	s, _, _ := newStore(t)
 	for _, body := range []string{"first part", "second part"} {
-		if _, err := s.Put("ops", t0, strings.NewReader(body), 100); err != nil {
+		if _, err := s.Put("ops", t0, t0, strings.NewReader(body), 100); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -102,7 +108,7 @@ func TestDeleteWhileActiveAndRemove(t *testing.T) {
 	if err := s.Delete("ops"); !errors.Is(err, ErrNoRecording) {
 		t.Fatalf("empty delete %v", err)
 	}
-	if _, err := s.Put("ops", t0, strings.NewReader("v"), 100); err != nil {
+	if _, err := s.Put("ops", t0, t0, strings.NewReader("v"), 100); err != nil {
 		t.Fatal(err)
 	}
 	s.SetActive("ops", true)
@@ -116,7 +122,7 @@ func TestDeleteWhileActiveAndRemove(t *testing.T) {
 	if _, _, err := s.Open("ops"); !errors.Is(err, ErrNoRecording) {
 		t.Fatalf("open after delete %v", err)
 	}
-	if _, err := s.Put("ops", t0, strings.NewReader("v"), 100); err != nil {
+	if _, err := s.Put("ops", t0, t0, strings.NewReader("v"), 100); err != nil {
 		t.Fatal(err)
 	}
 	s.SetActive("ops", true)
@@ -130,7 +136,7 @@ func TestDeleteWhileActiveAndRemove(t *testing.T) {
 
 func TestSweepAndExpiry(t *testing.T) {
 	s, now, _ := newStore(t)
-	if _, err := s.Put("ops", t0, strings.NewReader("v"), 100); err != nil {
+	if _, err := s.Put("ops", t0, t0, strings.NewReader("v"), 100); err != nil {
 		t.Fatal(err)
 	}
 	*now = t0.Add(24*time.Hour - time.Second)
@@ -144,7 +150,7 @@ func TestSweepAndExpiry(t *testing.T) {
 	if _, _, err := s.Open("ops"); !errors.Is(err, ErrNoRecording) {
 		t.Fatalf("expired recording opened: %v", err)
 	}
-	if got := s.Sweep(); len(got) != 1 || got[0] != "ops" {
+	if got := s.Sweep(); len(got) != 1 || got[0].Slug != "ops" {
 		t.Fatalf("swept %v", got)
 	}
 }
@@ -168,7 +174,7 @@ func TestOpenRemovesPartialUploads(t *testing.T) {
 
 func TestRestartKeepsRecordings(t *testing.T) {
 	s, now, dir := newStore(t)
-	if _, err := s.Put("ops", t0, strings.NewReader("v"), 100); err != nil {
+	if _, err := s.Put("ops", t0, t0, strings.NewReader("v"), 100); err != nil {
 		t.Fatal(err)
 	}
 	s2, err := Open(dir, 24*time.Hour, func() time.Time { return *now })
@@ -197,7 +203,7 @@ func TestConcurrentPutSameSlug(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			_, errs[i] = s.Put("ops", t0, strings.NewReader(bodies[i]), 1<<20)
+			_, errs[i] = s.Put("ops", t0, t0, strings.NewReader(bodies[i]), 1<<20)
 		}(i)
 	}
 	wg.Wait()
@@ -219,17 +225,18 @@ func TestConcurrentPutSameSlug(t *testing.T) {
 	if m.Size != int64(len(body)) {
 		t.Fatalf("meta size %d, file %d", m.Size, len(body))
 	}
-	if matches, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(matches) != 0 {
+	if matches, _ := filepath.Glob(filepath.Join(dir, "ops", "*.tmp")); len(matches) != 0 {
 		t.Fatalf("left %v", matches)
 	}
 }
 
 func TestPutFailureLeavesNoRecording(t *testing.T) {
 	s, _, dir := newStore(t)
-	if err := os.Mkdir(filepath.Join(dir, "ops.json"), 0o700); err != nil {
+	stamp := strconv.FormatInt(t0.UnixMilli(), 10)
+	if err := os.MkdirAll(filepath.Join(dir, "ops", stamp+"."+stamp+".json"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Put("ops", t0, strings.NewReader("v"), 100); err == nil {
+	if _, err := s.Put("ops", t0, t0, strings.NewReader("v"), 100); err == nil {
 		t.Fatal("put over a directory succeeded")
 	}
 	if _, _, err := s.Open("ops"); !errors.Is(err, ErrNoRecording) {
@@ -238,7 +245,7 @@ func TestPutFailureLeavesNoRecording(t *testing.T) {
 	if _, ok := s.Until("ops"); ok {
 		t.Fatal("failed put listed")
 	}
-	if matches, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(matches) != 0 {
+	if matches, _ := filepath.Glob(filepath.Join(dir, "ops", "*.tmp")); len(matches) != 0 {
 		t.Fatalf("left %v", matches)
 	}
 }
@@ -249,7 +256,7 @@ func TestOpenRemovesOrphans(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Put("ops", t0, strings.NewReader("v"), 100); err != nil {
+	if _, err := s.Put("ops", t0, t0, strings.NewReader("v"), 100); err != nil {
 		t.Fatal(err)
 	}
 	write := func(name, body string) {
@@ -277,11 +284,11 @@ func TestOpenRemovesOrphans(t *testing.T) {
 
 func TestPutOlderMeetingAfterExpiry(t *testing.T) {
 	s, now, _ := newStore(t)
-	if _, err := s.Put("ops", t0.Add(time.Hour), strings.NewReader("new"), 100); err != nil {
+	if _, err := s.Put("ops", t0.Add(time.Hour), t0.Add(time.Hour), strings.NewReader("new"), 100); err != nil {
 		t.Fatal(err)
 	}
 	*now = t0.Add(time.Hour + 24*time.Hour)
-	if _, err := s.Put("ops", t0, strings.NewReader("old"), 100); err != nil {
+	if _, err := s.Put("ops", t0, t0, strings.NewReader("old"), 100); err != nil {
 		t.Fatalf("older meeting after expiry: %v", err)
 	}
 	if body, m := read(t, s, "ops"); body != "old" || !m.Meeting.Equal(t0) {
@@ -295,7 +302,7 @@ func TestMeetingOfTheStoredRecording(t *testing.T) {
 		t.Fatal("a meeting without a recording")
 	}
 	meeting := t0.Add(123 * time.Millisecond)
-	if _, err := s.Put("ops", meeting, strings.NewReader("v"), 1<<20); err != nil {
+	if _, err := s.Put("ops", meeting, meeting, strings.NewReader("v"), 1<<20); err != nil {
 		t.Fatal(err)
 	}
 	if m, ok := s.Meeting("ops"); !ok || !m.Equal(meeting) {

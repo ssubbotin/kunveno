@@ -29,7 +29,7 @@ func TestStoreKeepsAMeeting(t *testing.T) {
 	if _, ok := s.Until("ops"); ok {
 		t.Fatal("an open transcript reported ready")
 	}
-	if _, err := s.Load("ops"); !errors.Is(err, ErrNoNotes) {
+	if _, err := s.Load("ops", latest(s, "ops")); !errors.Is(err, ErrNoNotes) {
 		t.Fatalf("Load of an open transcript: %v", err)
 	}
 	must(t, s.Resume("ops", at(55, 0)))
@@ -40,7 +40,7 @@ func TestStoreKeepsAMeeting(t *testing.T) {
 	if !ok || !until.Equal(at(59, 0).Add(24*time.Hour)) {
 		t.Fatalf("Until = %v, %v", until, ok)
 	}
-	tr, err := s.Load("ops")
+	tr, err := s.Load("ops", latest(s, "ops"))
 	must(t, err)
 	if tr.Slug != "ops" || tr.Room != "Планёрка" || !tr.Start.Equal(at(37, 0)) || !tr.End.Equal(at(59, 0)) {
 		t.Fatalf("transcript = %+v", tr)
@@ -54,7 +54,7 @@ func TestStoreKeepsAMeeting(t *testing.T) {
 	if err := s.Phrase("ops", Phrase{Name: "Анна", Start: at(59, 10), End: at(59, 11), Text: "Ещё."}); !errors.Is(err, ErrNotOpen) {
 		t.Fatalf("phrase after the end: %v", err)
 	}
-	fi, err := os.Stat(filepath.Join(dir, "ops.jsonl"))
+	fi, err := os.Stat(onlyFile(dir, "ops"))
 	must(t, err)
 	if fi.Mode().Perm() != 0o600 {
 		t.Fatalf("file mode %v, want 0600", fi.Mode().Perm())
@@ -70,7 +70,7 @@ func TestStoreRecoversAfterRestart(t *testing.T) {
 	must(t, err)
 	must(t, s.Begin("ops", "Планёрка", at(37, 0)))
 	must(t, s.Phrase("ops", Phrase{Name: "Сергей", Start: at(37, 5), End: at(37, 12), Text: "Начнём."}))
-	f, err := os.OpenFile(filepath.Join(dir, "ops.jsonl"), os.O_WRONLY|os.O_APPEND, 0)
+	f, err := os.OpenFile(onlyFile(dir, "ops"), os.O_WRONLY|os.O_APPEND, 0)
 	must(t, err)
 	_, err = f.WriteString(`{"type":"phrase","at":17604`)
 	must(t, err)
@@ -82,12 +82,12 @@ func TestStoreRecoversAfterRestart(t *testing.T) {
 	if !ok || !until.Equal(at(37, 12).Add(time.Hour)) {
 		t.Fatalf("Until after restart = %v, %v", until, ok)
 	}
-	tr, err := s2.Load("ops")
+	tr, err := s2.Load("ops", latest(s2, "ops"))
 	must(t, err)
 	if len(tr.Phrases) != 1 || !tr.End.Equal(at(37, 12)) {
 		t.Fatalf("transcript after restart = %+v", tr)
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "ops.jsonl"))
+	data, err := os.ReadFile(onlyFile(dir, "ops"))
 	must(t, err)
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
 	if last := lines[len(lines)-1]; !strings.Contains(last, `"type":"end"`) || strings.Contains(last, "17604") {
@@ -99,25 +99,25 @@ func TestStoreRecoversAfterRestart(t *testing.T) {
 	if _, ok := s3.Until("ops"); !ok {
 		t.Fatal("not ready after a second restart")
 	}
-	again, _ := os.ReadFile(filepath.Join(dir, "ops.jsonl"))
+	again, _ := os.ReadFile(onlyFile(dir, "ops"))
 	if string(again) != string(data) {
 		t.Fatal("a clean restart changed the file")
 	}
 }
 
-func TestStoreNextMeetingReplacesTheLast(t *testing.T) {
+func TestStoreNextMeetingKeepsTheLast(t *testing.T) {
 	s, err := Open(t.TempDir(), time.Hour, func() time.Time { return at(59, 0) })
 	must(t, err)
 	must(t, s.Begin("ops", "Планёрка", at(0, 0)))
 	must(t, s.Phrase("ops", Phrase{Name: "Сергей", Start: at(1, 0), End: at(1, 2), Text: "Первая встреча."}))
 	must(t, s.End("ops", at(10, 0)))
 	must(t, s.Begin("ops", "Планёрка", at(30, 0)))
-	if _, ok := s.Until("ops"); ok {
-		t.Fatal("the old meeting's notes survive a new meeting's first phrase")
+	if _, ok := s.Until("ops"); !ok {
+		t.Fatal("the old meeting's notes went with a new meeting's first phrase")
 	}
 	must(t, s.Phrase("ops", Phrase{Name: "Анна", Start: at(31, 0), End: at(31, 2), Text: "Вторая встреча."}))
 	must(t, s.End("ops", at(40, 0)))
-	tr, err := s.Load("ops")
+	tr, err := s.Load("ops", latest(s, "ops"))
 	must(t, err)
 	if len(tr.Phrases) != 1 || tr.Phrases[0].Text != "Вторая встреча." || !tr.Start.Equal(at(30, 0)) {
 		t.Fatalf("transcript = %+v", tr)
@@ -142,16 +142,16 @@ func TestStoreExpiryAndSweep(t *testing.T) {
 	if _, ok := s.Until("ops"); ok {
 		t.Fatal("still ready after keep")
 	}
-	if _, err := s.Load("ops"); !errors.Is(err, ErrNoNotes) {
+	if _, err := s.Load("ops", latest(s, "ops")); !errors.Is(err, ErrNoNotes) {
 		t.Fatalf("Load after expiry: %v", err)
 	}
-	if gone := s.Sweep(); len(gone) != 1 || gone[0] != "ops" {
+	if gone := s.Sweep(); len(gone) != 1 || gone[0].Slug != "ops" {
 		t.Fatalf("Sweep = %v (an open transcript must stay)", gone)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "ops.jsonl")); !os.IsNotExist(err) {
+	if _, err := os.Stat(onlyFile(dir, "ops")); !os.IsNotExist(err) {
 		t.Fatalf("expired file still there: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "dev.jsonl")); err != nil {
+	if _, err := os.Stat(onlyFile(dir, "dev")); err != nil {
 		t.Fatalf("open transcript swept: %v", err)
 	}
 }
@@ -167,7 +167,7 @@ func TestStoreDeleteAndBadSlugs(t *testing.T) {
 	if _, ok := s.Until("retro"); ok {
 		t.Fatal("deleted notes still ready")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "retro.jsonl")); !os.IsNotExist(err) {
+	if _, err := os.Stat(onlyFile(dir, "retro")); !os.IsNotExist(err) {
 		t.Fatalf("file not removed: %v", err)
 	}
 	must(t, s.Delete("retro")) // deleting nothing is fine
@@ -175,7 +175,7 @@ func TestStoreDeleteAndBadSlugs(t *testing.T) {
 		if err := s.Begin(bad, "x", at(0, 0)); !errors.Is(err, ErrBadSlug) {
 			t.Errorf("Begin(%q) = %v", bad, err)
 		}
-		if _, err := s.Load(bad); !errors.Is(err, ErrBadSlug) {
+		if _, err := s.Load(bad, 1); !errors.Is(err, ErrBadSlug) {
 			t.Errorf("Load(%q) = %v", bad, err)
 		}
 	}
@@ -213,7 +213,7 @@ func TestStoreDeleteForgetsNotesWhenRemoveFails(t *testing.T) {
 	if _, ok := s.Until("retro"); ok {
 		t.Fatal("notes still listed after a failed removal")
 	}
-	if _, err := s.Load("retro"); !errors.Is(err, ErrNoNotes) {
+	if _, err := s.Load("retro", latest(s, "retro")); !errors.Is(err, ErrNoNotes) {
 		t.Fatalf("Load after a failed removal = %v", err)
 	}
 }
@@ -232,8 +232,11 @@ func TestOpenSkipsAFileItCannotRead(t *testing.T) {
 
 	header := `{"type":"header","room":"Big","at":1760424000000}` + "\n"
 	big := header + `{"type":"phrase","at":1760424001000,"text":"` + strings.Repeat("a", 2<<20) + `"}` + "\n"
-	must(t, os.WriteFile(filepath.Join(dir, "big.jsonl"), []byte(big), 0o600))
-	locked := filepath.Join(dir, "locked.jsonl")
+	bigPath := filepath.Join(dir, "big", "1760424000000.jsonl")
+	locked := filepath.Join(dir, "locked", "1760424000000.jsonl")
+	must(t, os.MkdirAll(filepath.Dir(bigPath), 0o700))
+	must(t, os.MkdirAll(filepath.Dir(locked), 0o700))
+	must(t, os.WriteFile(bigPath, []byte(big), 0o600))
 	asRoot := os.Getuid() == 0 // root reads a 0000 file; that half of the test needs another user
 	if !asRoot {
 		must(t, os.WriteFile(locked, []byte(header), 0o600))
@@ -244,7 +247,7 @@ func TestOpenSkipsAFileItCannotRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open with a damaged file: %v", err)
 	}
-	tr, err := s2.Load("ops")
+	tr, err := s2.Load("ops", latest(s2, "ops"))
 	must(t, err)
 	if len(tr.Phrases) != 1 || tr.Phrases[0].Text != "Начнём." {
 		t.Fatalf("good transcript = %+v", tr)
@@ -255,7 +258,7 @@ func TestOpenSkipsAFileItCannotRead(t *testing.T) {
 	if _, ok := s2.Until("locked"); ok && !asRoot {
 		t.Fatal("the unreadable file was adopted")
 	}
-	data, err := os.ReadFile(filepath.Join(dir, "big.jsonl"))
+	data, err := os.ReadFile(bigPath)
 	must(t, err)
 	if string(data) != big {
 		t.Fatal("the oversized file was changed")
@@ -277,43 +280,43 @@ func TestStoreDeleteEnded(t *testing.T) {
 	now := at(30, 0)
 	s, err := Open(dir, time.Hour, func() time.Time { return now })
 	must(t, err)
-	if err := s.DeleteEnded("ops"); !errors.Is(err, ErrNoNotes) {
+	if err := s.DeleteEnded("ops", cur(s, "ops")); !errors.Is(err, ErrNoNotes) {
 		t.Fatalf("DeleteEnded of nothing = %v", err)
 	}
-	if err := s.DeleteEnded("../etc"); !errors.Is(err, ErrBadSlug) {
+	if err := s.DeleteEnded("../etc", 1); !errors.Is(err, ErrBadSlug) {
 		t.Fatalf("DeleteEnded of a bad slug = %v", err)
 	}
 	must(t, s.Begin("ops", "Ops", at(0, 0)))
 	must(t, s.Phrase("ops", Phrase{Name: "Анна", Start: at(1, 0), End: at(1, 2), Text: "Текст."}))
-	if err := s.DeleteEnded("ops"); !errors.Is(err, ErrRecording) {
+	if err := s.DeleteEnded("ops", cur(s, "ops")); !errors.Is(err, ErrRecording) {
 		t.Fatalf("DeleteEnded of an open transcript = %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "ops.jsonl")); err != nil {
+	if _, err := os.Stat(onlyFile(dir, "ops")); err != nil {
 		t.Fatalf("open transcript removed: %v", err)
 	}
 	must(t, s.Phrase("ops", Phrase{Name: "Анна", Start: at(2, 0), End: at(2, 2), Text: "Ещё."})) // still open
 	must(t, s.End("ops", at(3, 0)))
-	must(t, s.DeleteEnded("ops"))
+	must(t, s.DeleteEnded("ops", cur(s, "ops")))
 	if _, ok := s.Until("ops"); ok {
 		t.Fatal("deleted notes still ready")
 	}
-	if _, err := s.Load("ops"); !errors.Is(err, ErrNoNotes) {
+	if _, err := s.Load("ops", latest(s, "ops")); !errors.Is(err, ErrNoNotes) {
 		t.Fatalf("Load after DeleteEnded = %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "ops.jsonl")); !os.IsNotExist(err) {
+	if _, err := os.Stat(onlyFile(dir, "ops")); !os.IsNotExist(err) {
 		t.Fatalf("file not removed: %v", err)
 	}
 	if err := s.Resume("ops", at(4, 0)); !errors.Is(err, ErrNotOpen) {
 		t.Fatalf("Resume after DeleteEnded = %v", err) // the signal handler then begins anew
 	}
-	if err := s.DeleteEnded("ops"); !errors.Is(err, ErrNoNotes) {
+	if err := s.DeleteEnded("ops", cur(s, "ops")); !errors.Is(err, ErrNoNotes) {
 		t.Fatalf("second DeleteEnded = %v", err)
 	}
 
 	must(t, s.Begin("dev", "Dev", at(0, 0)))
 	must(t, s.End("dev", at(5, 0)))
 	now = at(5, 0).Add(61 * time.Minute)
-	if err := s.DeleteEnded("dev"); !errors.Is(err, ErrNoNotes) {
+	if err := s.DeleteEnded("dev", cur(s, "dev")); !errors.Is(err, ErrNoNotes) {
 		t.Fatalf("DeleteEnded of expired notes = %v", err)
 	}
 }
@@ -328,9 +331,9 @@ func TestStoreDeleteEndedKeepsNotesWhenRemoveFails(t *testing.T) {
 	must(t, err)
 	must(t, s.Begin("ops", "Ops", at(0, 0)))
 	must(t, s.End("ops", at(2, 0)))
-	must(t, os.Chmod(dir, 0o500))
-	defer os.Chmod(dir, 0o700)
-	if err := s.DeleteEnded("ops"); err == nil || errors.Is(err, ErrNoNotes) || errors.Is(err, ErrRecording) {
+	must(t, os.Chmod(filepath.Join(dir, "ops"), 0o500))
+	defer os.Chmod(filepath.Join(dir, "ops"), 0o700)
+	if err := s.DeleteEnded("ops", cur(s, "ops")); err == nil || errors.Is(err, ErrNoNotes) || errors.Is(err, ErrRecording) {
 		t.Fatalf("DeleteEnded with an unremovable file = %v", err)
 	}
 	if _, ok := s.Until("ops"); !ok {
@@ -368,4 +371,25 @@ func TestStoreMeetingIsTheReadyTranscriptsStart(t *testing.T) {
 	if _, ok := s.Meeting("ops"); ok {
 		t.Fatal("a meeting of deleted notes")
 	}
+}
+
+// latest is the room's newest ready meeting, 0 when none.
+func latest(s *Store, slug string) int64 {
+	m, _ := s.Latest(slug)
+	return m
+}
+
+// cur is the room's open or last begun meeting, 0 when none.
+func cur(s *Store, slug string) int64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.current[slug]
+}
+
+// onlyFile is the room's transcript file when it has one, or a path that does not exist.
+func onlyFile(dir, slug string) string {
+	if f, _ := filepath.Glob(filepath.Join(dir, slug, "*.jsonl")); len(f) > 0 {
+		return f[0]
+	}
+	return filepath.Join(dir, slug, "none.jsonl")
 }

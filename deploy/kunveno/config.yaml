@@ -25,6 +25,10 @@ ui:
 #   live: false               # debug: show phrases in the room as they are recognised
 #   summary: false            # true: a summary of each meeting's notes, written by an LLM (the add-on's summary overlay)
 #   dir: /var/lib/kunveno/notes
+# The list of each room's meetings: a meeting with nothing left (notes, summary, recording)
+# stays listed this long after it ends. notes.keep and recording.keep set how long each item stays.
+#meetings:
+#  keep: 30d
 # Meeting recording: the screen and everyone's audio as one video per meeting. Needs the
 # kunveno-recorder add-on (its compose overlay); set enabled: true together with installing it,
 # then: docker compose restart server

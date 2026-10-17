@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { translate } from './i18n/i18n.svelte';
 import type { Lang } from './i18n/messages';
-import { formatDuration, formatSummary, formatUntil, lastCaption, lastItems, lastSummary, withoutKinds, deleteRequests } from './lastMeeting';
+import { formatDuration, formatSummary, formatUntil, lastCaption, lastItems, lastSummary } from './lastMeeting';
 
 const now = Date.parse('2026-10-15T08:00:00Z');
 const both = { notesEnabled: true, recordingEnabled: true };
@@ -151,20 +151,3 @@ describe('formatSummary', () => {
   });
 });
 
-describe('withoutKinds', () => {
-  const items = lastItems({ recording_until: video, notes_until: notes, summary: 'ready', summary_until: notes }, both, now);
-  it('removes only what is named: notes and summary live apart', () => {
-    expect(withoutKinds(items, ['notes']).map((i) => i.kind)).toEqual(['video', 'summary']);
-    expect(withoutKinds(items, ['summary']).map((i) => i.kind)).toEqual(['video', 'notes']);
-    expect(withoutKinds(items, ['video', 'notes', 'summary'])).toEqual([]);
-  });
-});
-
-describe('deleteRequests', () => {
-  const items = lastItems({ recording_until: video, notes_until: notes, summary: 'ready', summary_until: notes }, both, now);
-  it('asks for each chosen item on its own', () => {
-    expect(deleteRequests('all', items)).toEqual(['video', 'notes', 'summary']);
-    expect(deleteRequests('notes', items)).toEqual(['notes']);
-    expect(deleteRequests('summary', items)).toEqual(['summary']);
-  });
-});

@@ -43,7 +43,7 @@ func TestSummaryQueueAndUpload(t *testing.T) {
 	h := SummaryInternal(store, true, msk)
 
 	rec := internal(h, "GET", "/internal/notes/summaries", nil)
-	if want := fmt.Sprintf(`[{"slug":"ops","end":%d}]`, end); rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != want {
+	if want := fmt.Sprintf(`[{"slug":"ops","meeting":%d,"end":%d}]`, meetingAt(9, 37).UnixMilli(), end); rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != want {
 		t.Fatalf("queue: %d %s, want %s", rec.Code, rec.Body, want)
 	}
 	rec = internal(h, "GET", fmt.Sprintf("/internal/notes/summaries/ops?end=%d", end), nil)
@@ -127,7 +127,7 @@ func TestSummaryBadBody(t *testing.T) {
 			t.Errorf("%s: %d", name, rec.Code)
 		}
 	}
-	if store.SummaryState("ops") != notes.SummaryPending {
+	if store.SummaryState("ops", meetingAt(9, 37).UnixMilli()) != notes.SummaryPending {
 		t.Fatal("a bad body was stored")
 	}
 }
@@ -156,7 +156,7 @@ func TestSummaryOutsideRefused(t *testing.T) {
 			}
 		}
 	}
-	if store.SummaryState("ops") != notes.SummaryPending {
+	if store.SummaryState("ops", meetingAt(9, 37).UnixMilli()) != notes.SummaryPending {
 		t.Fatal("an outside request changed the state")
 	}
 }
@@ -167,7 +167,7 @@ func TestSummaryFailed(t *testing.T) {
 	if rec := internal(h, "POST", fmt.Sprintf("/internal/notes/summaries/ops/failed?end=%d", end), nil); rec.Code != http.StatusNoContent {
 		t.Fatalf("failed: %d %s", rec.Code, rec.Body)
 	}
-	if store.SummaryState("ops") != notes.SummaryFailed {
+	if store.SummaryState("ops", meetingAt(9, 37).UnixMilli()) != notes.SummaryFailed {
 		t.Fatal("not marked failed")
 	}
 }
@@ -226,13 +226,13 @@ func TestRoomListSummaryState(t *testing.T) {
 	if ops, dev := state(on); ops != "pending" || dev != nil {
 		t.Fatalf("pending: ops=%v dev=%v", ops, dev)
 	}
-	if err := store.FailSummary("ops", end); err != nil {
+	if err := store.FailSummary("ops", meetingAt(9, 37).UnixMilli(), end); err != nil {
 		t.Fatal(err)
 	}
 	if ops, _ := state(on); ops != "failed" {
 		t.Fatalf("failed: %v", ops)
 	}
-	if err := store.PutSummary("ops", end, []byte("x")); err != nil {
+	if err := store.PutSummary("ops", meetingAt(9, 37).UnixMilli(), end, []byte("x")); err != nil {
 		t.Fatal(err)
 	}
 	if ops, _ := state(on); ops != "ready" {
@@ -249,7 +249,7 @@ func TestRoomListSummaryState(t *testing.T) {
 
 func TestSummaryDelete(t *testing.T) {
 	reg, store, _, end := summaryRig(t)
-	if err := store.PutSummary("ops", end, []byte("x")); err != nil {
+	if err := store.PutSummary("ops", meetingAt(9, 37).UnixMilli(), end, []byte("x")); err != nil {
 		t.Fatal(err)
 	}
 	h := SummaryDelete(reg, store, true, ratelimit.New(5, 10*time.Minute, time.Minute))
@@ -259,7 +259,7 @@ func TestSummaryDelete(t *testing.T) {
 	if rec := del(h, "/api/rooms/ops/summary", `{"pin":"1234"}`, "10.0.0.2"); rec.Code != http.StatusNoContent {
 		t.Fatalf("delete: %d %s", rec.Code, rec.Body)
 	}
-	if store.SummaryState("ops") != notes.SummaryNone {
+	if store.SummaryState("ops", meetingAt(9, 37).UnixMilli()) != notes.SummaryNone {
 		t.Fatal("still there")
 	}
 	if _, ok := store.Until("ops"); !ok {
@@ -283,10 +283,10 @@ func TestRoomListSummaryWithoutNotes(t *testing.T) {
 	if err := meets.Add("ops", meetings.Summary{Start: meetingAt(9, 37), End: meetingAt(10, 2), People: 3}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.PutSummary("ops", end, []byte("x")); err != nil {
+	if err := store.PutSummary("ops", meetingAt(9, 37).UnixMilli(), end, []byte("x")); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.DeleteEnded("ops"); err != nil {
+	if err := store.DeleteEnded("ops", meetingAt(9, 37).UnixMilli()); err != nil {
 		t.Fatal(err)
 	}
 	var list []map[string]any
@@ -308,5 +308,40 @@ func TestRoomListSummaryWithoutNotes(t *testing.T) {
 	dl := SummaryDownload(reg, store, true, nil, msk)
 	if rec := post(dl, "/api/rooms/ops/summary", `{"pin":"1234"}`, "10.0.0.1"); rec.Code != 200 || !strings.HasPrefix(rec.Body.String(), "# Итоги встречи «Операции»") {
 		t.Fatalf("download without notes: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// The summary service of this release names the meeting in the path.
+func TestSummaryRoutesWithMeeting(t *testing.T) {
+	_, store, _, end := summaryRig(t)
+	h := SummaryInternal(store, true, msk)
+	m := meetingAt(9, 37).UnixMilli()
+	base := fmt.Sprintf("/internal/notes/summaries/ops/%d", m)
+	if rec := internal(h, "GET", fmt.Sprintf("%s?end=%d", base, end), nil); rec.Code != 200 || !strings.Contains(rec.Body.String(), "Начнём.") {
+		t.Fatalf("notes: %d %s", rec.Code, rec.Body)
+	}
+	if rec := internal(h, "PUT", fmt.Sprintf("%s?end=%d", base, end), strings.NewReader("## Кратко\nok")); rec.Code != http.StatusNoContent {
+		t.Fatalf("upload: %d %s", rec.Code, rec.Body)
+	}
+	if store.SummaryState("ops", m) != notes.SummaryReady {
+		t.Fatal("not stored for the meeting")
+	}
+	if rec := internal(h, "PUT", fmt.Sprintf("/internal/notes/summaries/ops/%d?end=%d", m+1, end), strings.NewReader("x")); rec.Code != http.StatusConflict {
+		t.Fatalf("other meeting: %d", rec.Code)
+	}
+	if rec := internal(h, "POST", fmt.Sprintf("%s/failed?end=%d", base, end), nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("failed: %d", rec.Code)
+	}
+}
+
+// A summary service of the previous release sends no meeting: the notes that ended at end are meant.
+func TestSummaryOldRoutes(t *testing.T) {
+	_, store, _, end := summaryRig(t)
+	h := SummaryInternal(store, true, msk)
+	if rec := internal(h, "PUT", fmt.Sprintf("/internal/notes/summaries/ops?end=%d", end), strings.NewReader("old service")); rec.Code != http.StatusNoContent {
+		t.Fatalf("old upload: %d %s", rec.Code, rec.Body)
+	}
+	if store.SummaryState("ops", meetingAt(9, 37).UnixMilli()) != notes.SummaryReady {
+		t.Fatal("old upload not stored")
 	}
 }

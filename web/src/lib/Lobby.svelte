@@ -9,12 +9,12 @@
   import { notesUntil } from './notes';
   import { recordingUntil } from './recording';
   import { formatSummary, formatUntil, lastCaption, lastItems, lastSummary } from './lastMeeting';
-  import LastMeetingDialog from './LastMeetingDialog.svelte';
+  import MeetingsDialog from './MeetingsDialog.svelte';
   import { loadInfo, site } from './site.svelte';
   import MicCheck from './MicCheck.svelte';
   import { fixedName, signOut, type Me } from './auth';
 
-  type RoomItem = { slug: string; name: string; participants: number; capacity: number; created: boolean; notes_until?: string; recording_until?: string; summary?: string; summary_until?: string; last_meeting?: unknown };
+  type RoomItem = { slug: string; name: string; participants: number; capacity: number; created: boolean; notes_until?: string; recording_until?: string; summary?: string; summary_until?: string; meetings?: number; last_meeting?: unknown };
   // me: the signed-in person (sign-in on), whose name is fixed by the account; onAuthRequired: the
   // server asked for a sign-in (the session ended), so the sign-in screen comes back.
   let { onJoin, error = '', me = null, onAuthRequired = () => {} }: {
@@ -50,10 +50,10 @@
   // When, how long and how many people (no names); absent for meetings saved before summaries.
   const lastMeet = $derived(lastSummary(selected?.last_meeting));
   const lastLine = $derived(lastMeet ? formatSummary(lastMeet, LANG_TAGS[i18n.lang], t) : '');
-  let lastDialog: LastMeetingDialog;
+  let meetingsDialog: MeetingsDialog;
   function openLast() {
     if (!selected) return;
-    lastDialog.open(selected.slug, selected.name, lastKept, pinFor(localStorage, selected.slug) || pin, lastMeet);
+    void meetingsDialog.open(selected.slug, selected.name, pinFor(localStorage, selected.slug) || pin);
   }
 
   async function loadRooms(prefer?: string) {
@@ -200,12 +200,10 @@
     <div class="room-actions">
       <CopyLink link={roomLink(location.origin, room, pin)} label={t('enter.copyLink')} disabled={!selected || pin === ''} />
       <p class="hint">{t('enter.linkHint')}</p>
-      {#if lastNote}
-        <button class="btn" type="button" aria-haspopup="dialog" aria-describedby="last-hint" onclick={openLast}>{t('last.title')}</button>
-        <p class="hint" id="last-hint">
-          {#if lastLine}<span class="line">{lastLine}</span>{/if}
-          <span class="line">{t(lastNote.key, { time: formatUntil(lastNote.until, LANG_TAGS[i18n.lang]) })}</span>
-        </p>
+      {#if (selected?.meetings ?? 0) > 0 || lastNote}
+        <button class="btn" type="button" aria-haspopup="dialog" aria-describedby="last-hint" onclick={openLast}>{t('meetings.button', { n: selected?.meetings ?? 0 })}</button>
+        <!-- The newest meeting; what each meeting keeps, and until when, is in the dialog. -->
+        {#if lastLine}<p class="hint" id="last-hint"><span class="line">{lastLine}</span></p>{/if}
       {/if}
       {#if selected?.created}
         <button class="btn danger" type="button" disabled={selected.participants > 0} onclick={deleteRoom}>
@@ -242,7 +240,7 @@
   </form>
   </section>
 
-  <LastMeetingDialog bind:this={lastDialog} onchange={() => void loadRooms(room)} />
+  <MeetingsDialog bind:this={meetingsDialog} onchange={() => void loadRooms(room)} />
 </div>
 
 <footer class="about">
