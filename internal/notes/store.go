@@ -465,3 +465,15 @@ func (s *Store) Current(slug string) (int64, bool) {
 	m, ok := s.current[slug]
 	return m, ok
 }
+
+// Has reports whether the meeting still keeps notes (open or ready) or a summary.
+func (s *Store) Has(slug string, meeting int64) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	k := key{slug, meeting}
+	if ended, ok := s.ended[k]; ok && (ended.IsZero() || s.now().Before(ended.Add(s.keep))) {
+		return true
+	}
+	_, ok := s.summaryLocked(k)
+	return ok
+}

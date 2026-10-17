@@ -128,3 +128,20 @@ func TestMigrateNotes(t *testing.T) {
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+// Has: a meeting keeps something while its transcript or its summary is kept.
+func TestHas(t *testing.T) {
+	s, _, _, m1, _ := meetingStore(t)
+	if !s.Has("ops", m1) || s.Has("ops", 1) || s.Has("dev", m1) {
+		t.Fatal("Has of the transcripts")
+	}
+	must(t, s.PutSummary("ops", m1, at(10, 0).UnixMilli(), []byte("x")))
+	must(t, s.DeleteEnded("ops", m1))
+	if !s.Has("ops", m1) {
+		t.Fatal("a meeting with only its summary keeps nothing")
+	}
+	must(t, s.DeleteSummary("ops", m1))
+	if s.Has("ops", m1) {
+		t.Fatal("a meeting with nothing left keeps something")
+	}
+}

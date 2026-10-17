@@ -14,23 +14,24 @@ func meeting(i int) Summary {
 	return Summary{Start: start, End: start.Add(27 * time.Minute), People: i + 1}
 }
 
-func TestAddKeepsTheLastFiveNewestFirstAndSurvivesARestart(t *testing.T) {
+// Every meeting is listed, newest first; the list survives a restart.
+func TestIndexHasNoCountLimit(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "meetings.json")
 	clock := t0
 	s := Open(path, func() time.Time { return clock })
-	for i := 0; i < 7; i++ {
+	for i := 0; i < 12; i++ {
 		if err := s.Add("ops", meeting(i)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	_ = s.Add("ops", meeting(6)) // the same meeting saved twice stays one entry
+	_ = s.Add("ops", meeting(11)) // the same meeting saved twice stays one entry
 	_ = s.Add("dev", meeting(0))
 	got := s.List("ops")
-	if len(got) != Keep {
-		t.Fatalf("kept %d, want %d", len(got), Keep)
+	if len(got) != 12 || s.Count("ops") != 12 {
+		t.Fatalf("kept %d (count %d), want 12", len(got), s.Count("ops"))
 	}
 	for i, m := range got {
-		if want := meeting(6 - i); !m.Start.Equal(want.Start) || m.People != want.People {
+		if want := meeting(11 - i); !m.Start.Equal(want.Start) || m.People != want.People {
 			t.Fatalf("entry %d = %+v, want %+v", i, m, want)
 		}
 	}
@@ -39,11 +40,8 @@ func TestAddKeepsTheLastFiveNewestFirstAndSurvivesARestart(t *testing.T) {
 		t.Fatalf("file: %v, %v", st, err)
 	}
 	again := Open(path, func() time.Time { return clock })
-	if got := again.List("ops"); len(got) != Keep || !got[0].End.Equal(meeting(6).End) {
+	if got := again.List("ops"); len(got) != 12 || !got[0].End.Equal(meeting(11).End) {
 		t.Fatalf("after a restart: %+v", got)
-	}
-	if got := again.List("dev"); len(got) != 1 {
-		t.Fatalf("dev after a restart: %+v", got)
 	}
 }
 
@@ -65,25 +63,49 @@ func TestFindMatchesTheStartToTheMillisecond(t *testing.T) {
 	}
 }
 
-func TestSweepDropsEntriesOlderThanThirtyDays(t *testing.T) {
+// An entry with material (notes, a summary, a recording part) stays however old; one with nothing
+// left goes once its end is older than keep.
+func TestIndexKeepsMeetingsWithMaterial(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "meetings.json")
 	clock := t0
 	s := Open(path, func() time.Time { return clock })
+	s.SetKeep(30 * 24 * time.Hour)
 	_ = s.Add("ops", meeting(0))
-	_ = s.Add("ops", meeting(24*20)) // twenty days later
-	_ = s.Add("dev", meeting(1))
-	clock = meeting(1).End.Add(MaxAge + time.Minute)
-	if err := s.Sweep(); err != nil {
+	_ = s.Add("ops", meeting(1))
+	_ = s.Add("gone", meeting(2)) // a room no longer in the configuration
+	clock = meeting(2).End.Add(31 * 24 * time.Hour)
+	has := func(slug string, start int64) bool {
+		return (slug == "ops" && start == meeting(1).Start.UnixMilli()) || slug == "gone"
+	}
+	if err := s.Sweep(has); err != nil {
 		t.Fatal(err)
 	}
-	if got := s.List("ops"); len(got) != 1 || !got[0].Start.Equal(meeting(24*20).Start) {
+	if got := s.List("ops"); len(got) != 1 || !got[0].Start.Equal(meeting(1).Start) {
 		t.Fatalf("ops after the sweep: %+v", got)
 	}
-	if got := s.List("dev"); len(got) != 0 {
-		t.Fatalf("dev after the sweep: %+v", got)
+	if got := s.List("gone"); len(got) != 1 {
+		t.Fatalf("a removed room's meeting with material was dropped: %+v", got)
 	}
-	if got := Open(path, nil).List("dev"); len(got) != 0 {
+	if got := Open(path, nil).List("ops"); len(got) != 1 {
 		t.Fatal("the sweep was not saved")
+	}
+}
+
+func TestIndexDropsEmptyAfterKeep(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "meetings.json")
+	clock := t0
+	s := Open(path, func() time.Time { return clock })
+	s.SetKeep(48 * time.Hour)
+	_ = s.Add("ops", meeting(0))
+	clock = meeting(0).End.Add(47 * time.Hour)
+	_ = s.Sweep(nil)
+	if s.Count("ops") != 1 {
+		t.Fatal("dropped before keep")
+	}
+	clock = meeting(0).End.Add(49 * time.Hour)
+	_ = s.Sweep(nil)
+	if s.Count("ops") != 0 {
+		t.Fatal("kept after keep with nothing left")
 	}
 }
 

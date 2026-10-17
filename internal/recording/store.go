@@ -469,3 +469,8 @@ func (s *Store) Sweep() []Gone {
 func FileName(slug string, part time.Time, loc *time.Location) string {
 	return fmt.Sprintf("%s-%s.mp4", slug, part.In(loc).Format("2006-01-02-1504"))
 }
+
+// Has reports whether the meeting still keeps a part.
+func (s *Store) Has(slug string, meeting int64) bool {
+	return len(s.Parts(slug, meeting)) > 0
+}

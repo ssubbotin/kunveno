@@ -130,7 +130,10 @@ func run(cfgPath string, log *slog.Logger) error {
 	// Summaries of ended meetings, next to the rooms file: shown in the lobby while notes or a
 	// recording of the meeting are kept.
 	meets := meetings.Open(filepath.Join(filepath.Dir(cfg.RoomsFile), "meetings.json"), nil)
-	go sweepMeetings(ctx, meets, log)
+	meets.SetKeep(cfg.Meetings.KeepFor)
+	// A meeting stays listed while its notes, summary or a recording part is kept.
+	has := func(slug string, meeting int64) bool { return store.Has(slug, meeting) || recStore.Has(slug, meeting) }
+	go sweepMeetings(ctx, meets, has, log)
 
 	conf := conference.New(reg, engineMedia{engine}, log)
 	conf.SetReactions(cfg.UI.Reactions)
@@ -341,12 +344,13 @@ func sweepRecordings(ctx context.Context, store *recording.Store, log *slog.Logg
 	}
 }
 
-// sweepMeetings drops meeting summaries older than meetings.MaxAge every minute.
-func sweepMeetings(ctx context.Context, store *meetings.Store, log *slog.Logger) {
+// sweepMeetings drops, every minute, the meetings that keep nothing and ended more than
+// meetings.keep ago.
+func sweepMeetings(ctx context.Context, store *meetings.Store, has func(string, int64) bool, log *slog.Logger) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	for {
-		if err := store.Sweep(); err != nil {
+		if err := store.Sweep(has); err != nil {
 			log.Warn("cannot save the meetings file", "err", err)
 		}
 		select {

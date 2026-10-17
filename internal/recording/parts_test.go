@@ -154,3 +154,17 @@ func TestMigrateRecording(t *testing.T) {
 		t.Fatalf("top-level files left %v", left)
 	}
 }
+
+func TestHas(t *testing.T) {
+	s, _, _ := newStore(t)
+	put(t, s, t0, t0, "a")
+	if !s.Has("ops", ms(t0)) || s.Has("ops", 1) {
+		t.Fatal("Has")
+	}
+	if err := s.DeletePart("ops", ms(t0), ms(t0)); err != nil {
+		t.Fatal(err)
+	}
+	if s.Has("ops", ms(t0)) {
+		t.Fatal("Has after the last part went")
+	}
+}
