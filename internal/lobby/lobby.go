@@ -69,7 +69,7 @@ func (k Kept) Of(slug string) Material {
 		m.RecordingUntil, _ = k.Recordings.Until(slug)
 	}
 	m.Meeting = k.lastMeeting(slug)
-	m.Meetings = len(k.History(slug))
+	m.Meetings = k.Count(slug)
 	return m
 }
 
@@ -182,4 +182,29 @@ func (k Kept) Knows(slug string, meeting, now time.Time, window time.Duration) b
 		return true
 	}
 	return !meeting.After(now) && now.Sub(meeting) <= window
+}
+
+// Count is how many meetings History lists, from the sets of meeting starts alone: the room list
+// asks for it on every poll, so it builds no rows and reads no item states.
+func (k Kept) Count(slug string) int {
+	seen := map[int64]bool{}
+	for _, s := range k.Meetings.List(slug) {
+		seen[s.Start.UnixMilli()] = true
+	}
+	if k.NotesEnabled && k.Notes != nil {
+		for _, n := range k.Notes.List(slug) {
+			seen[n.Meeting] = true
+		}
+		if k.SummaryEnabled {
+			for _, ms := range k.Notes.SummaryMeetings(slug) {
+				seen[ms] = true
+			}
+		}
+	}
+	if k.RecordingEnabled && k.Recordings != nil {
+		for _, ms := range k.Recordings.Meetings(slug) {
+			seen[ms] = true
+		}
+	}
+	return len(seen)
 }

@@ -40,3 +40,26 @@ func TestKnows(t *testing.T) {
 		}
 	}
 }
+
+// Count gives the number of meetings History lists, without building them.
+func TestCountMatchesHistory(t *testing.T) {
+	now := time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC)
+	ns, err := notes.Open(t.TempDir(), 24*time.Hour, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx := meetings.Open(filepath.Join(t.TempDir(), "meetings.json"), nil)
+	a, b := now.Add(-5*time.Hour), now.Add(-2*time.Hour)
+	_ = idx.Add("ops", meetings.Summary{Start: a, End: a.Add(time.Hour), People: 2}) // listed only
+	if err := ns.Begin("ops", "Ops", b); err != nil {                                // notes, not listed
+		t.Fatal(err)
+	}
+	if err := ns.End("ops", b.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	_ = idx.Add("dev", meetings.Summary{Start: a, End: a.Add(time.Hour), People: 2})
+	k := Kept{Notes: ns, NotesEnabled: true, SummaryEnabled: true, Meetings: idx}
+	if got, want := k.Count("ops"), len(k.History("ops")); got != want || want != 2 {
+		t.Fatalf("Count %d, History %d", got, want)
+	}
+}
