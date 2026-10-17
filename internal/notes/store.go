@@ -477,3 +477,20 @@ func (s *Store) Has(slug string, meeting int64) bool {
 	_, ok := s.summaryLocked(k)
 	return ok
 }
+
+// Bytes is how much the notes and summaries take on disk.
+func (s *Store) Bytes() int64 { return dirBytes(s.dir) }
+
+// dirBytes sums the sizes of the regular files under dir.
+func dirBytes(dir string) int64 {
+	var n int64
+	_ = filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			if info, err := d.Info(); err == nil {
+				n += info.Size()
+			}
+		}
+		return nil
+	})
+	return n
+}

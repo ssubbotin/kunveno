@@ -168,3 +168,11 @@ func TestHas(t *testing.T) {
 		t.Fatal("Has after the last part went")
 	}
 }
+
+func TestBytes(t *testing.T) {
+	s, _, _ := newStore(t)
+	put(t, s, t0, t0, "0123456789")
+	if got := s.Bytes(); got < 10 {
+		t.Fatalf("Bytes %d, want at least the 10-byte video", got)
+	}
+}

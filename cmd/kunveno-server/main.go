@@ -307,6 +307,7 @@ func routes(s server) *http.ServeMux {
 	mux.Handle("/internal/notes/summaries", summary)
 	mux.Handle("/internal/notes/summaries/", summary)
 	promReg := metrics.NewRegistry(reg, version)
+	metrics.RegisterKept(promReg, s.notes.Bytes, s.recordings.Bytes)
 	if gate != nil {
 		metrics.RegisterAuth(promReg, gate.Invites.Active)
 	}

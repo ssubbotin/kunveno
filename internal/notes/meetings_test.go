@@ -145,3 +145,17 @@ func TestHas(t *testing.T) {
 		t.Fatal("a meeting with nothing left keeps something")
 	}
 }
+
+func TestBytes(t *testing.T) {
+	s, dir, _, _, _ := meetingStore(t)
+	var want int64
+	files, _ := filepath.Glob(filepath.Join(dir, "ops", "*"))
+	for _, f := range files {
+		st, err := os.Stat(f)
+		must(t, err)
+		want += st.Size()
+	}
+	if got := s.Bytes(); got != want || want == 0 {
+		t.Fatalf("Bytes %d, files hold %d", got, want)
+	}
+}

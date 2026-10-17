@@ -1226,13 +1226,59 @@
       }
     },
     {
+      "id": 35,
+      "type": "timeseries",
+      "title": "Хранится на диске",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 77,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "kunveno_kept_bytes",
+          "legendFormat": "{{kind}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "description": "Заметки, итоги и записи встреч в томах данных: растёт с notes.keep и recording.keep."
+    },
+    {
       "id": 25,
       "type": "row",
       "title": "Заметки",
       "collapsed": true,
       "gridPos": {
         "x": 0,
-        "y": 77,
+        "y": 85,
         "w": 24,
         "h": 1
       },
@@ -1248,7 +1294,7 @@
           },
           "gridPos": {
             "x": 0,
-            "y": 78,
+            "y": 86,
             "w": 12,
             "h": 8
           },
@@ -1304,7 +1350,7 @@
           },
           "gridPos": {
             "x": 12,
-            "y": 78,
+            "y": 86,
             "w": 12,
             "h": 8
           },
@@ -1351,7 +1397,7 @@
           },
           "gridPos": {
             "x": 0,
-            "y": 86,
+            "y": 94,
             "w": 12,
             "h": 8
           },
@@ -1397,7 +1443,7 @@
           },
           "gridPos": {
             "x": 12,
-            "y": 86,
+            "y": 94,
             "w": 12,
             "h": 8
           },
@@ -1452,7 +1498,7 @@
           },
           "gridPos": {
             "x": 0,
-            "y": 94,
+            "y": 102,
             "w": 12,
             "h": 8
           },
@@ -1498,7 +1544,7 @@
           },
           "gridPos": {
             "x": 12,
-            "y": 94,
+            "y": 102,
             "w": 12,
             "h": 8
           },
@@ -1553,7 +1599,7 @@
           },
           "gridPos": {
             "x": 0,
-            "y": 102,
+            "y": 110,
             "w": 6,
             "h": 4
           },
@@ -1607,7 +1653,7 @@
           },
           "gridPos": {
             "x": 6,
-            "y": 102,
+            "y": 110,
             "w": 18,
             "h": 4
           },
@@ -1660,7 +1706,7 @@
       "collapsed": true,
       "gridPos": {
         "x": 0,
-        "y": 78,
+        "y": 86,
         "w": 24,
         "h": 1
       },
@@ -1676,7 +1722,7 @@
           },
           "gridPos": {
             "x": 0,
-            "y": 79,
+            "y": 87,
             "w": 6,
             "h": 4
           },
@@ -1730,7 +1776,7 @@
           },
           "gridPos": {
             "x": 6,
-            "y": 79,
+            "y": 87,
             "w": 18,
             "h": 4
           },
@@ -1783,7 +1829,7 @@
           },
           "gridPos": {
             "x": 0,
-            "y": 83,
+            "y": 91,
             "w": 12,
             "h": 8
           },
@@ -1830,7 +1876,7 @@
           },
           "gridPos": {
             "x": 12,
-            "y": 83,
+            "y": 91,
             "w": 12,
             "h": 8
           },
@@ -1877,7 +1923,7 @@
           },
           "gridPos": {
             "x": 0,
-            "y": 91,
+            "y": 99,
             "w": 12,
             "h": 8
           },
@@ -1924,7 +1970,7 @@
           },
           "gridPos": {
             "x": 12,
-            "y": 91,
+            "y": 99,
             "w": 12,
             "h": 8
           },
@@ -1971,7 +2017,7 @@
           },
           "gridPos": {
             "x": 0,
-            "y": 99,
+            "y": 107,
             "w": 12,
             "h": 8
           },

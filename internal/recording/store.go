@@ -477,3 +477,17 @@ func (s *Store) Has(slug string, meeting int64) bool {
 
 // Keep is how long a part is kept after its upload.
 func (s *Store) Keep() time.Duration { return s.keep }
+
+// Bytes is how much the recordings take on disk.
+func (s *Store) Bytes() int64 {
+	var n int64
+	_ = filepath.WalkDir(s.dir, func(_ string, d os.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			if info, err := d.Info(); err == nil {
+				n += info.Size()
+			}
+		}
+		return nil
+	})
+	return n
+}
