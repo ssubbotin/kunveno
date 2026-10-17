@@ -31,16 +31,6 @@ export function lastItems(
   return items;
 }
 
-// withoutKinds removes items that are gone; each goes alone.
-export function withoutKinds(items: LastItem[], kinds: LastKind[]): LastItem[] {
-  return items.filter((i) => !kinds.includes(i.kind));
-}
-
-// deleteRequests lists the delete requests a choice in the dialog needs, one per item.
-export function deleteRequests(choice: LastKind | 'all', items: LastItem[]): LastKind[] {
-  return choice === 'all' ? items.map((i) => i.kind) : [choice];
-}
-
 // lastCaption says what is there and the nearest expiry; null when there is nothing.
 export function lastCaption(items: LastItem[]): { key: Key; until: Date } | null {
   if (items.length === 0) return null;
@@ -81,7 +71,7 @@ export function lastSummary(v: unknown): MeetingSummary | null {
 }
 
 // formatTime writes a time of day by the same rules as formatUntil.
-function formatTime(d: Date, locale: string): string {
+export function formatTime(d: Date, locale: string): string {
   const opts: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit' };
   if (!new Intl.DateTimeFormat(locale, opts).resolvedOptions().hour12) opts.hour = '2-digit';
   return new Intl.DateTimeFormat(locale, opts).format(d);

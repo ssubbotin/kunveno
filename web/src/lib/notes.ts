@@ -2,16 +2,20 @@
 // PIN and the interface language, which the file's fixed labels follow, saved through a temporary
 // link) and deleting them (DELETE on the same path with the room PIN).
 import type { Key } from './i18n/messages';
+import { meetingPath } from './meetingPath';
 
 export type NotesError = 'bad_pin' | 'gone' | 'recording' | 'too_many' | 'failed';
 export type NotesResult = { ok: true; blob: Blob; filename: string } | { ok: false; error: NotesError; retryAfter?: number };
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 type Translate = (key: Key, vars?: Record<string, string | number>) => string;
 
-export async function fetchNotes(fetchFn: Fetch, slug: string, pin: string, lang: string): Promise<NotesResult> {
+// The notes of one meeting when meeting is given; the room's latest otherwise.
+const notesPath = (slug: string, meeting?: Date) => (meeting ? `${meetingPath(slug, meeting)}/notes` : `/api/rooms/${encodeURIComponent(slug)}/notes`);
+
+export async function fetchNotes(fetchFn: Fetch, slug: string, pin: string, lang: string, meeting?: Date): Promise<NotesResult> {
   let res: Response;
   try {
-    res = await fetchFn(`/api/rooms/${encodeURIComponent(slug)}/notes`, {
+    res = await fetchFn(notesPath(slug, meeting), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pin, lang }),
@@ -32,10 +36,10 @@ export async function fetchNotes(fetchFn: Fetch, slug: string, pin: string, lang
 export type DeleteResult = { ok: true } | { ok: false; error: NotesError; retryAfter?: number };
 
 // deleteNotes deletes the room's last meeting notes; 'recording' while they are still being taken.
-export async function deleteNotes(fetchFn: Fetch, slug: string, pin: string): Promise<DeleteResult> {
+export async function deleteNotes(fetchFn: Fetch, slug: string, pin: string, meeting?: Date): Promise<DeleteResult> {
   let res: Response;
   try {
-    res = await fetchFn(`/api/rooms/${encodeURIComponent(slug)}/notes`, {
+    res = await fetchFn(notesPath(slug, meeting), {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pin }),
