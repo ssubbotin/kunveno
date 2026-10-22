@@ -7,10 +7,10 @@ describe('RoomState', () => {
     s.apply({ type: 'joined', self: { id: 'a', name: 'Ann', muted: false }, room: { slug: 'ops', name: 'Operations' } });
     expect(s.selfId).toBe('a');
     expect(s.roomName).toBe('Operations');
-    s.apply({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: false }, { id: 'b', name: 'Bob', muted: true }], sharer: 'b', echo: false, notes: false, recording: false });
+    s.apply({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: false }, { id: 'b', name: 'Bob', muted: true }], sharer: 'b', echo: false, notes: false, recording: false, facilitator: false });
     expect(s.others.map((p) => p.id)).toEqual(['b']);
     expect(s.isSharing).toBe(false);
-    s.apply({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: false }], sharer: 'a', echo: false, notes: false, recording: false });
+    s.apply({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: false }], sharer: 'a', echo: false, notes: false, recording: false, facilitator: false });
     expect(s.isSharing).toBe(true);
   });
 
@@ -37,7 +37,7 @@ describe('RoomState', () => {
   });
   it('tracks the echo flag and keeps bots out of the people count', () => {
     const s = new RoomState();
-    s.apply({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: false, bot: false }, { id: 'e', name: 'Echo', muted: false, bot: true }], sharer: '', echo: true, notes: false, recording: false });
+    s.apply({ type: 'participants', participants: [{ id: 'a', name: 'Ann', muted: false, bot: false }, { id: 'e', name: 'Echo', muted: false, bot: true }], sharer: '', echo: true, notes: false, recording: false, facilitator: false });
     expect(s.echo).toBe(true);
     expect(s.peopleCount).toBe(1);
     s.reset();
@@ -59,7 +59,7 @@ describe('RoomState', () => {
     const s = new RoomState();
     s.apply({ type: 'notes_ready' });
     expect(s.notesReady).toBe(true);
-    s.apply({ type: 'participants', participants: [], sharer: '', echo: false, notes: true, recording: false });
+    s.apply({ type: 'participants', participants: [], sharer: '', echo: false, notes: true, recording: false, facilitator: false });
     expect(s.notes).toBe(true);
     expect(s.notesReady).toBe(false); // a new recording hides the old notice
     for (let i = 0; i < MAX_PHRASES + 5; i++) s.apply({ type: 'phrase', name: 'Анна', start: i, text: `фраза ${i}` });
@@ -69,15 +69,27 @@ describe('RoomState', () => {
     s.reset();
     expect([s.notes, s.notesReady, s.phrases.length]).toEqual([false, false, 0]);
   });
+  it('tracks facilitator and its offer', () => {
+    const s = new RoomState();
+    expect(s.facilitatorOffered).toBe(false);
+    s.apply({ type: 'joined', self: { id: 'a', name: 'Ann', muted: false }, room: { slug: 'ops', name: 'Ops', facilitator: true } });
+    expect(s.facilitatorOffered).toBe(true);
+    s.apply({ type: 'participants', participants: [], sharer: '', echo: false, notes: false, recording: false, facilitator: true });
+    expect(s.facilitator).toBe(true);
+    s.reset();
+    expect(s.facilitator).toBe(false);
+    expect(s.facilitatorOffered).toBe(false);
+  });
+
   it('tracks recording and recording_ready', () => {
     const s = new RoomState();
-    s.apply({ type: 'participants', participants: [], sharer: '', echo: false, notes: false, recording: true });
+    s.apply({ type: 'participants', participants: [], sharer: '', echo: false, notes: false, recording: true, facilitator: false });
     expect(s.recording).toBe(true);
     s.apply({ type: 'recording_ready' });
     expect(s.recordingReady).toBe(true);
-    s.apply({ type: 'participants', participants: [], sharer: '', echo: false, notes: false, recording: false });
+    s.apply({ type: 'participants', participants: [], sharer: '', echo: false, notes: false, recording: false, facilitator: false });
     expect(s.recordingReady).toBe(true); // switching off keeps the notice
-    s.apply({ type: 'participants', participants: [], sharer: '', echo: false, notes: false, recording: true });
+    s.apply({ type: 'participants', participants: [], sharer: '', echo: false, notes: false, recording: true, facilitator: false });
     expect(s.recordingReady).toBe(false); // a new recording hides the old notice
     s.apply({ type: 'recording_ready' });
     s.reset();
