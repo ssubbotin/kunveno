@@ -23,7 +23,7 @@ type Participant struct {
 	Name  string
 	Muted bool
 	Bot   bool // a server-side helper such as the echo, not a person
-	// BotKind says which helper: BotEcho, BotPlayer, BotCamera, BotNotes or BotRecorder.
+	// BotKind says which helper: BotEcho, BotPlayer, BotCamera, BotNotes, BotRecorder or BotFacilitator.
 	BotKind string
 	// Quality is the connection grade ("good", "fair", "poor"), empty until measured.
 	Quality string
@@ -40,6 +40,7 @@ type Snapshot struct {
 	Echo         bool // someone asked for the echo helper in this room
 	Notes        bool // someone asked for meeting notes in this room
 	Recording    bool // someone asked for a recording of this room's meeting
+	Facilitator  bool // someone asked for the meeting facilitator in this room
 }
 
 // Room is safe for concurrent use.
@@ -48,19 +49,20 @@ type Room struct {
 	max             int
 	created         bool // made through the API, not from the config file
 
-	mu        sync.Mutex
-	members   map[string]*Participant
-	order     []string
-	sharer    string
-	echo      bool
-	player    bool
-	notes     bool
-	recording bool
-	meeting   time.Time        // start of the current meeting, or of the last one
-	people    map[string]bool  // trimmed names of the people who joined the current meeting
-	last      Summary          // the most recently ended meeting
-	hasLast   bool             // some meeting has ended
-	now       func() time.Time // time.Now; tests replace it
+	mu          sync.Mutex
+	members     map[string]*Participant
+	order       []string
+	sharer      string
+	echo        bool
+	player      bool
+	notes       bool
+	recording   bool
+	facilitator bool
+	meeting     time.Time        // start of the current meeting, or of the last one
+	people      map[string]bool  // trimmed names of the people who joined the current meeting
+	last        Summary          // the most recently ended meeting
+	hasLast     bool             // some meeting has ended
+	now         func() time.Time // time.Now; tests replace it
 }
 
 func New(slug, name, pin string, max int) *Room {
@@ -104,11 +106,12 @@ func (r *Room) JoinGuest(id, name string) error {
 
 // Helper kinds that join rooms as bots.
 const (
-	BotEcho     = "echo"
-	BotPlayer   = "player"
-	BotCamera   = "camera"
-	BotNotes    = "notes"
-	BotRecorder = "recorder"
+	BotEcho        = "echo"
+	BotPlayer      = "player"
+	BotCamera      = "camera"
+	BotNotes       = "notes"
+	BotRecorder    = "recorder"
+	BotFacilitator = "facilitator"
 )
 
 // JoinBot admits a trusted server-side helper without a PIN; capacity still applies.
@@ -189,6 +192,19 @@ func (r *Room) Recording() bool {
 	return r.recording
 }
 
+// SetFacilitator records whether the room wants the meeting facilitator.
+func (r *Room) SetFacilitator(on bool) {
+	r.mu.Lock()
+	r.facilitator = on
+	r.mu.Unlock()
+}
+
+func (r *Room) Facilitator() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.facilitator
+}
+
 // Meeting returns the start of the current meeting (from the first person entering a room without
 // people until the last person leaves) and whether it is still going on. After it ends the start
 // stays, so late phrases still find their meeting; zero before the first meeting.
@@ -235,9 +251,10 @@ func (r *Room) LeaveEnding(id string) (releasedShare bool, meeting Summary, ende
 		}
 	}
 	if !r.hasPeopleLocked() {
-		r.echo = false      // nobody left to listen
-		r.notes = false     // nor to take notes of
-		r.recording = false // nor to record
+		r.echo = false        // nobody left to listen
+		r.notes = false       // nor to take notes of
+		r.recording = false   // nor to record
+		r.facilitator = false // nor to lead
 		if !p.Bot {
 			r.last = Summary{Start: r.meeting, End: r.now(), People: len(r.people)}
 			r.hasLast = true
@@ -301,7 +318,7 @@ func (r *Room) StopShare(id string) bool {
 func (r *Room) Snapshot() Snapshot {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	s := Snapshot{Sharer: r.sharer, Echo: r.echo, Notes: r.notes, Recording: r.recording, Participants: make([]Participant, 0, len(r.order))}
+	s := Snapshot{Sharer: r.sharer, Echo: r.echo, Notes: r.notes, Recording: r.recording, Facilitator: r.facilitator, Participants: make([]Participant, 0, len(r.order))}
 	for _, id := range r.order {
 		s.Participants = append(s.Participants, *r.members[id])
 	}
