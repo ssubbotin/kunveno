@@ -548,8 +548,9 @@ func TestDepartedKeptOnlyWhileTakingNotes(t *testing.T) {
 	ca, ida := join(t, e, "Ann")
 	cb, idb := join(t, e, "Bob")
 	_ = cb.Close(websocket.StatusNormalClosure, "")
-	for len(expect(t, ca, "participants").Participants) != 1 {
-	}
+	// Wait for Bob's leave on the server. A one-person snapshot does not show it: Ann's own join
+	// sent one, still unread, so notes could go on before Bob's leave and he would rightly be kept.
+	waitFor(t, func() bool { return e.conf.Members("ops") == 1 })
 	notesOn(t, ca, true)
 	bot, _ := joinNotesBot(t, e)
 	send(t, bot, phrase(idb, "Фраза Боба.", time.Second))
