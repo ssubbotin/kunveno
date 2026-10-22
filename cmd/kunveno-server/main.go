@@ -146,6 +146,9 @@ func run(cfgPath string, log *slog.Logger) error {
 		rec = recStore
 		conf.SetRecording(rec)
 	}
+	if cfg.Facilitator.Enabled {
+		conf.SetFacilitator(cfg.Facilitator.Offered)
+	}
 	ws := sig.New(conf, cfg.HTTP.AllowedOrigins, log)
 	var gate *auth.Gate // nil while auth.enabled is off
 	if cfg.Auth.Enabled {
@@ -161,7 +164,7 @@ func run(cfgPath string, log *slog.Logger) error {
 	srv := &http.Server{Addr: cfg.HTTP.Listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
-	log.Info("kunveno-server started", "version", version, "listen", cfg.HTTP.Listen, "udp_port", engine.Port(), "tcp_port", engine.TCPPort(), "advertise_ip", cfg.Media.AdvertiseIP, "rooms", len(reg.All()), "rooms_file", cfg.RoomsFile, "backgrounds", cfg.BackgroundsDir, "notes", cfg.Notes.Enabled, "recording", cfg.Recording.Enabled, "auth", cfg.Auth.Enabled)
+	log.Info("kunveno-server started", "version", version, "listen", cfg.HTTP.Listen, "udp_port", engine.Port(), "tcp_port", engine.TCPPort(), "advertise_ip", cfg.Media.AdvertiseIP, "rooms", len(reg.All()), "rooms_file", cfg.RoomsFile, "backgrounds", cfg.BackgroundsDir, "notes", cfg.Notes.Enabled, "recording", cfg.Recording.Enabled, "facilitator", cfg.Facilitator.Enabled, "auth", cfg.Auth.Enabled)
 
 	select {
 	case err := <-errc:
@@ -273,7 +276,8 @@ func routes(s server) *http.ServeMux {
 	mux.Handle("POST /api/rooms/{slug}/recording", protect(httpapi.RecordingLink(reg, rec, pins, links)))
 	mux.Handle("GET /api/rooms/{slug}/recording/{token}", protect(httpapi.RecordingFile(rec, links, time.Local)))
 	mux.Handle("DELETE /api/rooms/{slug}/recording", protect(httpapi.RecordingDelete(reg, rec, pins)))
-	mux.Handle("/internal/recording", httpapi.RecordingRooms(reg, cfg.Recording.Enabled)) // never proxied by nginx
+	mux.Handle("/internal/recording", httpapi.RecordingRooms(reg, cfg.Recording.Enabled))       // never proxied by nginx
+	mux.Handle("/internal/facilitator", httpapi.FacilitatorRooms(reg, cfg.Facilitator.Enabled)) // never proxied by nginx
 	// A recording is accepted for the meeting the room runs now, or one the room still knows of
 	// (lobby.Kept.Knows: listed, with material, or begun within recording.keep).
 	knownMeeting := func(slug string, meeting time.Time) bool {
@@ -300,7 +304,7 @@ func routes(s server) *http.ServeMux {
 		mux.Handle("POST /api/rooms/{slug}/invites/list", inv)
 		mux.Handle("DELETE /api/rooms/{slug}/invites/{id}", inv)
 	}
-	mux.Handle("/api/info", httpapi.Info(cfg.UI.Title, cfg.UI.Reactions, cfg.UI.NoiseSuppression, cfg.Notes.Enabled, cfg.Notes.Live, cfg.Recording.Enabled, cfg.Media.ReconnectGrace, signIn))
+	mux.Handle("/api/info", httpapi.Info(cfg.UI.Title, cfg.UI.Reactions, cfg.UI.NoiseSuppression, cfg.Notes.Enabled, cfg.Notes.Live, cfg.Recording.Enabled, cfg.Facilitator.Enabled, cfg.Media.ReconnectGrace, signIn))
 	mux.Handle("/internal/echo", httpapi.EchoRooms(reg))                      // never proxied by nginx
 	mux.Handle("/internal/notes", httpapi.NotesRooms(reg, cfg.Notes.Enabled)) // never proxied by nginx
 	summary := httpapi.SummaryInternal(s.notes, summaries, time.Local)        // never proxied by nginx

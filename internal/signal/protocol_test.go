@@ -79,8 +79,8 @@ func TestParseClientEchoRoleNeedsNoPIN(t *testing.T) {
 }
 
 func TestServerMessagesEncode(t *testing.T) {
-	b, _ := json.Marshal(Participants([]ParticipantInfo{{ID: "a", Name: "Ann", Muted: true}, {ID: "e", Name: "Echo", Bot: true}}, "", true, false, false))
-	want := `{"type":"participants","participants":[{"id":"a","name":"Ann","muted":true},{"id":"e","name":"Echo","muted":false,"bot":true}],"sharer":"","echo":true,"notes":false,"recording":false}`
+	b, _ := json.Marshal(Participants([]ParticipantInfo{{ID: "a", Name: "Ann", Muted: true}, {ID: "e", Name: "Echo", Bot: true}}, "", true, false, false, false))
+	want := `{"type":"participants","participants":[{"id":"a","name":"Ann","muted":true},{"id":"e","name":"Echo","muted":false,"bot":true}],"sharer":"","echo":true,"notes":false,"recording":false,"facilitator":false}`
 	if string(b) != want {
 		t.Errorf("participants:\n got %s\nwant %s", b, want)
 	}
@@ -168,7 +168,7 @@ func TestParseRecordingMessages(t *testing.T) {
 }
 
 func TestParticipantsCarriesRecording(t *testing.T) {
-	b, _ := json.Marshal(Participants(nil, "", false, false, true))
+	b, _ := json.Marshal(Participants(nil, "", false, false, true, false))
 	if !strings.Contains(string(b), `"recording":true`) {
 		t.Fatal(string(b))
 	}
@@ -246,5 +246,31 @@ func TestJoinWithInviteNeedsNoPIN(t *testing.T) {
 	}
 	if _, err := ParseClient([]byte(`{"type":"join","room":"ops","invite":"abc","pin":"1234","name":"G"}`)); err == nil {
 		t.Fatal("invite and pin together were accepted")
+	}
+}
+
+func TestParseFacilitatorMessages(t *testing.T) {
+	if m, err := ParseClient([]byte(`{"type":"facilitator","on":true}`)); err != nil || !*m.On {
+		t.Fatalf("m = %+v, err = %v", m, err)
+	}
+	if _, err := ParseClient([]byte(`{"type":"facilitator"}`)); !errors.Is(err, ErrBadMessage) {
+		t.Fatalf("facilitator without on: %v", err)
+	}
+	if m, err := ParseClient([]byte(`{"type":"join","room":"ops","name":"Ведущий","role":"facilitator"}`)); err != nil || m.Role != RoleFacilitator {
+		t.Fatalf("facilitator join: %+v %v", m, err)
+	}
+	if RoleFacilitator != room.BotFacilitator {
+		t.Fatalf("role %q, room bot kind %q", RoleFacilitator, room.BotFacilitator)
+	}
+}
+
+func TestParticipantsCarriesFacilitator(t *testing.T) {
+	b, _ := json.Marshal(Participants(nil, "", false, false, false, true))
+	if !strings.Contains(string(b), `"facilitator":true`) {
+		t.Fatal(string(b))
+	}
+	b, _ = json.Marshal(JoinedWithFacilitator(ParticipantInfo{ID: "a", Name: "Ann"}, "ops", "Operations"))
+	if string(b) != `{"type":"joined","self":{"id":"a","name":"Ann","muted":false},"room":{"slug":"ops","name":"Operations","facilitator":true}}` {
+		t.Fatal(string(b))
 	}
 }
