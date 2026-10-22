@@ -170,7 +170,7 @@ func TestFacilitatorReceivesPeoplesAudioOnly(t *testing.T) {
 }
 
 func TestNotesAndRecorderHearTheFacilitator(t *testing.T) {
-	e, _ := newNotesEnv(t, true)
+	e, store := newNotesEnv(t, true)
 	e.conf.SetFacilitator(func(slug string) bool { return slug == "ops" })
 	e.conf.FacilitatorStopGrace = 300 * time.Millisecond
 	rec, err := recording.Open(t.TempDir(), 24*time.Hour, nil)
@@ -196,6 +196,14 @@ func TestNotesAndRecorderHearTheFacilitator(t *testing.T) {
 	send(t, notesBot, phrase(fid, "Начнём с Анны.", 0))
 	if m := expect(t, ca, "phrase"); m.Name != "Ведущий" || m.Text != "Начнём с Анны." {
 		t.Fatalf("live phrase = %+v", m)
+	}
+	waitPhrases(t, e, 1)
+	notesOn(t, ca, false)
+	expect(t, notesBot, "stop")
+	send(t, notesBot, `{"type":"leave"}`)
+	tr := waitReady(t, store)
+	if len(tr.Phrases) != 1 || tr.Phrases[0].Name != "Ведущий" || tr.Phrases[0].Text != "Начнём с Анны." {
+		t.Fatalf("transcript = %+v", tr.Phrases)
 	}
 }
 
