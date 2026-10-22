@@ -1,15 +1,15 @@
 // bot marks a server-side helper such as the echo; the parser always fills it in. guest marks a
 // person who joined by an invitation link (sign-in on).
 export type Quality = 'good' | 'fair' | 'poor';
-export type BotKind = 'echo' | 'player' | 'camera' | 'notes' | 'recorder';
+export type BotKind = 'echo' | 'player' | 'camera' | 'notes' | 'recorder' | 'facilitator';
 export type Participant = { id: string; name: string; muted: boolean; bot?: boolean; botKind?: BotKind; quality?: Quality; camera?: boolean; guest?: boolean };
 const QUALITIES: readonly string[] = ['good', 'fair', 'poor'];
 
 export type ServerMessage =
-  | { type: 'joined'; self: Participant; room: { slug: string; name: string } }
+  | { type: 'joined'; self: Participant; room: { slug: string; name: string; facilitator?: boolean } }
   | { type: 'error'; code: string; message: string; retryAfter?: number }
   | { type: 'offer'; sdp: string }
-  | { type: 'participants'; participants: Participant[]; sharer: string; echo: boolean; notes: boolean; recording: boolean }
+  | { type: 'participants'; participants: Participant[]; sharer: string; echo: boolean; notes: boolean; recording: boolean; facilitator: boolean }
   | { type: 'reaction'; from: string; emoji: string }
   // The meeting's notes can be downloaded.
   | { type: 'notes_ready' }
@@ -32,6 +32,7 @@ export type ClientMessage =
   | { type: 'echo'; on: boolean }
   | { type: 'notes'; on: boolean }
   | { type: 'recording'; on: boolean }
+  | { type: 'facilitator'; on: boolean }
   | { type: 'camera'; on: boolean }
   | { type: 'video'; receive: boolean }
   | { type: 'react'; emoji: string }
@@ -57,7 +58,7 @@ export function parseServerMessage(raw: string): ServerMessage {
   switch (v.type) {
     case 'joined':
       if (!isParticipant(v.self) || typeof v.room?.slug !== 'string' || typeof v.room?.name !== 'string') bad('joined');
-      return { type: 'joined', self: v.self, room: { slug: v.room.slug, name: v.room.name } };
+      return { type: 'joined', self: v.self, room: { slug: v.room.slug, name: v.room.name, ...(v.room.facilitator === true ? { facilitator: true } : {}) } };
     case 'error':
       if (typeof v.code !== 'string') bad('error');
       return {
@@ -76,13 +77,14 @@ export function parseServerMessage(raw: string): ServerMessage {
           quality: QUALITIES.includes(p.quality as string) ? p.quality : undefined,
           camera: p.camera === true ? true : undefined,
           guest: p.guest === true ? true : undefined,
-          botKind: ['echo', 'player', 'camera', 'notes', 'recorder'].includes((p as { bot_kind?: unknown }).bot_kind as string)
+          botKind: ['echo', 'player', 'camera', 'notes', 'recorder', 'facilitator'].includes((p as { bot_kind?: unknown }).bot_kind as string)
             ? ((p as { bot_kind?: unknown }).bot_kind as BotKind) : undefined,
         })),
         sharer: v.sharer,
         echo: v.echo === true,
         notes: v.notes === true,
         recording: v.recording === true,
+        facilitator: v.facilitator === true,
       };
     case 'reaction':
       if (typeof v.from !== 'string' || typeof v.emoji !== 'string') bad('reaction');

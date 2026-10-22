@@ -33,6 +33,8 @@
       <span class="avatar" aria-hidden="true">
         {#if p.botKind === 'notes'}
           <svg viewBox="0 0 24 24"><path d="M6 3h9l3 3v15H6zM9 9h6M9 13h6M9 17h4" /></svg>
+        {:else if p.botKind === 'facilitator'}
+          <svg viewBox="0 0 24 24"><path d="M4 5h16v10H9l-5 4z" /><path d="M8 9h8M8 12h5" /></svg>
         {:else if p.botKind === 'recorder'}
           <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3" /><circle cx="12" cy="12" r="3.5" fill="currentColor" /></svg>
         {:else if p.bot}
@@ -42,7 +44,7 @@
         {/if}
       </span>
       <span class="who">
-        <span class="name">{p.botKind === 'echo' ? t('people.echoName') : p.botKind === 'notes' ? t('people.notesName') : p.botKind === 'recorder' ? t('people.recorderName') : p.name}</span>
+        <span class="name">{p.botKind === 'echo' ? t('people.echoName') : p.botKind === 'notes' ? t('people.notesName') : p.botKind === 'recorder' ? t('people.recorderName') : p.botKind === 'facilitator' ? t('people.facilitatorName') : p.name}</span>
         <span class="tags">
           {#if p.id === selfId}<span>{t('people.you')}</span>{/if}
           {#if p.guest}<span>{t('guest.mark')}</span>{/if}
@@ -53,6 +55,7 @@
             {:else}<span>{t('people.notesTag')}</span>{/if}
           {/if}
           {#if p.botKind === 'recorder'}<span>{t('people.recorderTag')}</span>{/if}
+          {#if p.botKind === 'facilitator'}<span>{t('people.facilitatorTag')}</span>{/if}
           {#if p.botKind === 'player'}<span>{t('people.playerTag')}</span>{/if}
           {#if p.botKind === 'camera'}<span class="live-tag">{t('people.cameraTag')}</span>{/if}
           {#if p.id === sharer}<span class="share">{t('people.sharing')}</span>{/if}

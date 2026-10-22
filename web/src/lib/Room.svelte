@@ -405,6 +405,14 @@
                 <span class="switch" aria-hidden="true"></span>
               </button>
             {/if}
+            {#if site.facilitatorEnabled && rs.facilitatorOffered && !guest}
+              <button type="button" class="row" role="switch" aria-checked={rs.facilitator} aria-label={t('control.facilitator')} aria-describedby="facilitator-hint"
+                disabled={rs.status !== 'connected'} onclick={() => session.setFacilitator(!rs.facilitator)}>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v10H9l-5 4z" /><path d="M8 9h8M8 12h5" /></svg>
+                <span class="text">{t('control.facilitator')}<small id="facilitator-hint">{t('control.facilitatorHint')}</small></span>
+                <span class="switch" aria-hidden="true"></span>
+              </button>
+            {/if}
             <button type="button" class="row" role="switch" aria-checked={!rs.receiveVideo} aria-label={t('control.noVideo')} aria-describedby="novideo-hint"
               onclick={() => session.setReceiveVideo(!rs.receiveVideo)}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z" /><circle cx="12" cy="12" r="2.5" /><path d="M3 3l18 18" /></svg>

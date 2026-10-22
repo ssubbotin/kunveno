@@ -1,5 +1,6 @@
 // Package conference runs the meetings: who is in each live room, which media every member
-// receives, the share lock, the helpers (echo, player, notes bot, recorder) and their lifecycles.
+// receives, the share lock, the helpers (echo, player, notes bot, recorder, facilitator) and their
+// lifecycles.
 // It knows nothing of WebSocket or of the wire format: a member's client is a Conn, and what the
 // client is told is an Event. The signal package adapts both to the protocol.
 package conference
@@ -80,7 +81,7 @@ func (e *RefusedError) Error() string { return e.Reason }
 // JoinRequest is a validated join.
 type JoinRequest struct {
 	Room, Name, PIN string
-	Role            string // empty for a person; room.BotEcho, BotPlayer, BotCamera, BotNotes or BotRecorder
+	Role            string // empty for a person; room.BotEcho, BotPlayer, BotCamera, BotNotes, BotRecorder or BotFacilitator
 	Client          string // the page's id, if it sent one
 	TCPOnly         bool   // the member's UDP path failed
 	Guest           bool   // admitted by an invitation; no PIN
@@ -115,6 +116,8 @@ type Conference struct {
 	NotesStopGrace time.Duration
 	// RecordingStopGrace is how long a stopped recorder may take to upload and leave. Set before serving.
 	RecordingStopGrace time.Duration
+	// FacilitatorStopGrace is how long a stopped facilitator may take to leave. Set before serving.
+	FacilitatorStopGrace time.Duration
 	// RejoinGrace is how long after a meeting ended its expired invitations and sessions still
 	// let their people back, for a blip that dropped everyone at once. Set before serving.
 	RejoinGrace time.Duration
@@ -126,6 +129,9 @@ type Conference struct {
 	recMu     sync.Mutex       // orders every room's recording flag and the store's active mark; taken before c.mu, never while holding it
 	recording *recording.Store // meeting recording (recording.enabled); nil when off
 	meetings  *meetings.Store  // summaries of ended meetings; nil keeps none
+	// facilitatorOffered reports the rooms with the facilitator switch (facilitator.enabled and
+	// facilitator.rooms); nil when off. The room's flag is changed under mu.
+	facilitatorOffered func(slug string) bool
 
 	mu      sync.Mutex
 	live    map[string]*liveRoom // slug -> members
@@ -156,14 +162,14 @@ func (c *Conference) forgetEndedLocked(lr *liveRoom) {
 // Member is one session in a live room.
 type Member struct {
 	id, name, slug string
-	bot            bool        // a helper: the echo, a player, the notes bot or the recorder
-	botKind        string      // room.BotEcho, BotPlayer, BotCamera, BotNotes or BotRecorder
-	guest          bool        // admitted by an invitation: cannot switch the echo, notes or recording
+	bot            bool        // a helper: the echo, a player, the notes bot, the recorder or the facilitator
+	botKind        string      // room.BotEcho, BotPlayer, BotCamera, BotNotes, BotRecorder or BotFacilitator
+	guest          bool        // admitted by an invitation: cannot switch the echo, notes, recording or facilitator
 	invite         string      // the guest's invitation ID, for DropInvite
 	noVideo        bool        // declined other participants' cameras; guarded by Conference.mu
-	stopping       bool        // notes bot or recorder told to stop; guarded by Conference.mu
+	stopping       bool        // notes bot, recorder or facilitator told to stop; guarded by Conference.mu
 	stoppedAtJoin  bool        // notes bot whose notes were switched off while it joined; guarded by Conference.mu
-	stopTimer      *time.Timer // closes a stopped notes bot or recorder that does not leave; guarded by Conference.mu
+	stopTimer      *time.Timer // closes a stopped notes bot, recorder or facilitator that does not leave; guarded by Conference.mu
 	meeting        time.Time   // notes bot: start of the meeting it joined to take notes of
 	client         string      // the page's id from join, if it sent one
 	lastReaction   time.Time   // for the reaction rate limit; only the session's read loop uses it
@@ -185,7 +191,8 @@ func (m *Member) Log() *slog.Logger { return m.log }
 // New returns a conference over the rooms of reg.
 func New(reg *room.Registry, media Media, log *slog.Logger) *Conference {
 	return &Conference{reg: reg, media: media, log: log, live: map[string]*liveRoom{}, QualityEvery: 3 * time.Second,
-		NotesStopGrace: DefaultNotesStopGrace, RecordingStopGrace: DefaultRecordingStopGrace, RejoinGrace: DefaultRejoinGrace,
+		NotesStopGrace: DefaultNotesStopGrace, RecordingStopGrace: DefaultRecordingStopGrace,
+		FacilitatorStopGrace: DefaultFacilitatorStopGrace, RejoinGrace: DefaultRejoinGrace,
 		reactions: set(config.DefaultReactions)}
 }
 
@@ -231,6 +238,8 @@ func (c *Conference) Join(conn Conn, req JoinRequest) (*Member, error) {
 		return nil, &RefusedError{"notes not requested in this room"}
 	case req.Role == room.BotRecorder && (c.recording == nil || !lr.room.Recording() || c.hasActiveRecorder(lr)):
 		return nil, &RefusedError{"recording not requested in this room"}
+	case req.Role == room.BotFacilitator && !c.facilitatorWanted(lr):
+		return nil, &RefusedError{"facilitator not requested in this room"}
 	}
 	if !bot {
 		c.mu.Lock()
@@ -275,6 +284,13 @@ func (c *Conference) Join(conn Conn, req JoinRequest) (*Member, error) {
 		s.log.Info("invitation revoked during the join; guest refused")
 		return nil, ErrRevoked
 	}
+	if req.Role == room.BotFacilitator && lr.hasActiveFacilitatorLocked() {
+		// Another facilitator got in since the check above: one room has one facilitator.
+		c.mu.Unlock()
+		_ = peer.Close()
+		lr.room.Leave(id)
+		return nil, &RefusedError{"facilitator not requested in this room"}
+	}
 	lr.members[id] = s
 	if key := req.admitKey(); !bot && key != "" {
 		if lr.admitted == nil {
@@ -307,7 +323,7 @@ func (c *Conference) Join(conn Conn, req JoinRequest) (*Member, error) {
 		}
 	}
 	metrics.Joins.WithLabelValues(lr.room.Slug(), "ok").Inc()
-	joined := Joined{ID: id, Name: req.Name, Slug: lr.room.Slug(), RoomName: lr.room.Name()}
+	joined := Joined{ID: id, Name: req.Name, Slug: lr.room.Slug(), RoomName: lr.room.Name(), Offered: c.offersFacilitator(lr.room.Slug())}
 	if req.Role == room.BotRecorder {
 		joined.Recorder = true
 		joined.Meeting, _ = lr.room.Meeting()
@@ -328,6 +344,9 @@ func (c *Conference) Join(conn Conn, req JoinRequest) (*Member, error) {
 	if s.botKind == room.BotRecorder && !lr.room.Recording() {
 		c.stopRecorders(lr) // switched off while this recorder was joining
 	}
+	if s.botKind == room.BotFacilitator && !lr.room.Facilitator() {
+		c.stopFacilitators(lr) // switched off while this facilitator was joining
+	}
 	return s, nil
 }
 
@@ -346,7 +365,8 @@ func (c *Conference) Leave(s *Member) {
 	lr, _ := c.lookup(s.slug)
 	wasNotes := lr.room.Notes()
 	wasRecording := lr.room.Recording()
-	if !s.bot {
+	wasFacilitator := lr.room.Facilitator()
+	if !s.bot || s.botKind == room.BotFacilitator {
 		// Before leaving the members, so a phrase of this person is never without a name.
 		c.rememberSpeaker(lr, s, wasNotes)
 	}
@@ -385,6 +405,12 @@ func (c *Conference) Leave(s *Member) {
 		c.recorderLeft(lr, s)
 	case wasRecording && !lr.room.Recording():
 		c.stopRecorders(lr) // the last person left
+	}
+	switch {
+	case s.botKind == room.BotFacilitator:
+		c.facilitatorLeft(s)
+	case wasFacilitator && !lr.room.Facilitator():
+		c.stopFacilitators(lr) // the last person left
 	}
 	c.broadcast(lr)
 }
@@ -644,10 +670,10 @@ func (c *Conference) declinesVideo(s *Member) bool {
 }
 
 // ReceiveVideo drops or restores s's subscriptions to everyone's camera, for participants on a
-// weak link who keep audio and the shared screen only. The notes bot hears audio only and the
-// recorder's media is fixed, so both are ignored.
+// weak link who keep audio and the shared screen only. The notes bot and the facilitator hear
+// audio only and the recorder's media is fixed, so all three are ignored.
 func (c *Conference) ReceiveVideo(s *Member, receive bool) {
-	if s.botKind == room.BotNotes || s.botKind == room.BotRecorder {
+	if s.botKind == room.BotNotes || s.botKind == room.BotRecorder || s.botKind == room.BotFacilitator {
 		return
 	}
 	lr, _ := c.lookup(s.slug)

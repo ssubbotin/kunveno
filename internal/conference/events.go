@@ -15,6 +15,7 @@ type Joined struct {
 	Slug, RoomName string
 	Recorder       bool      // the member is the recorder, which is told the meeting's start
 	Meeting        time.Time // the start of the meeting, for the recorder
+	Offered        bool      // the room offers the facilitator switch
 }
 
 // Roster is the room's participants and switches, sent to everyone on every change.
@@ -26,7 +27,7 @@ type ShareBusy struct{}
 // Reaction is a participant's emoji, shown to everyone in the room.
 type Reaction struct{ From, Emoji string }
 
-// Stop asks the notes bot or the recorder to finish and leave.
+// Stop asks the notes bot, the recorder or the facilitator to finish and leave.
 type Stop struct{}
 
 // NotesReady tells the people in a room that its notes can be downloaded.

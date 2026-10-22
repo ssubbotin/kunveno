@@ -176,21 +176,21 @@ func TestDeleteGuessingIsBlocked(t *testing.T) {
 
 func TestInfo(t *testing.T) {
 	rec := httptest.NewRecorder()
-	Info("Конференц связь", []string{"👍", "☕"}, true, true, false, false, 15, nil).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
-	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != `{"auth":{"enabled":false,"providers":[]},"noise_suppression":true,"notes":true,"notes_live":false,"reactions":["👍","☕"],"reconnect_grace":15,"recording":false,"title":"Конференц связь"}` {
+	Info("Конференц связь", []string{"👍", "☕"}, true, true, false, false, false, 15, nil).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
+	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != `{"auth":{"enabled":false,"providers":[]},"facilitator":false,"noise_suppression":true,"notes":true,"notes_live":false,"reactions":["👍","☕"],"reconnect_grace":15,"recording":false,"title":"Конференц связь"}` {
 		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
 }
 
 func TestInfoSignIn(t *testing.T) {
 	rec := httptest.NewRecorder()
-	Info("T", nil, false, false, false, false, 15, &SignInInfo{Enabled: true, Providers: []auth.ProviderInfo{{Type: "yandex", Label: "Яндекс"}}}).
+	Info("T", nil, false, false, false, false, false, 15, &SignInInfo{Enabled: true, Providers: []auth.ProviderInfo{{Type: "yandex", Label: "Яндекс"}}}).
 		ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
 	if !strings.Contains(rec.Body.String(), `"auth":{"enabled":true,"providers":[{"type":"yandex","label":"Яндекс"}]}`) {
 		t.Fatalf("%s", rec.Body)
 	}
 	rec = httptest.NewRecorder()
-	Info("T", nil, false, false, false, false, 15, &SignInInfo{}).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
+	Info("T", nil, false, false, false, false, false, 15, &SignInInfo{}).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
 	if !strings.Contains(rec.Body.String(), `"auth":{"enabled":false,"providers":[]}`) {
 		t.Fatalf("off: %s", rec.Body)
 	}
@@ -198,8 +198,16 @@ func TestInfoSignIn(t *testing.T) {
 
 func TestInfoRecording(t *testing.T) {
 	rec := httptest.NewRecorder()
-	Info("T", nil, false, false, false, true, 30, nil).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
+	Info("T", nil, false, false, false, true, false, 30, nil).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
 	if !strings.Contains(rec.Body.String(), `"recording":true`) || !strings.Contains(rec.Body.String(), `"reconnect_grace":30`) {
+		t.Fatalf("%s", rec.Body)
+	}
+}
+
+func TestInfoFacilitator(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Info("T", nil, false, false, false, false, true, 15, nil).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
+	if !strings.Contains(rec.Body.String(), `"facilitator":true`) {
 		t.Fatalf("%s", rec.Body)
 	}
 }

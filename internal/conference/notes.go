@@ -31,15 +31,19 @@ func (c *Conference) SetNotes(store *notes.Store, live bool) {
 	c.notesLive = live
 }
 
-// receives reports whether to is subscribed to from's track of kind: the notes bot hears people's
-// audio only; the recorder gets people's audio, screen and cameras; everyone else receives
-// everything.
+// receives reports whether to is subscribed to from's track of kind: the facilitator hears
+// people's audio only; the notes bot hears the audio of people and of the facilitator; the
+// recorder gets people's audio, screen and cameras and the facilitator's audio; everyone else
+// receives everything.
 func receives(to, from *Member, kind media.Kind) bool {
+	speaks := !from.bot || from.botKind == room.BotFacilitator // a voice the notes and the recording keep
 	switch to.botKind {
-	case room.BotNotes:
+	case room.BotFacilitator:
 		return kind == media.KindAudio && !from.bot
+	case room.BotNotes:
+		return kind == media.KindAudio && speaks
 	case room.BotRecorder:
-		return !from.bot
+		return !from.bot || (kind == media.KindAudio && speaks)
 	}
 	return true
 }
@@ -167,7 +171,8 @@ func (c *Conference) hasNotesBot(lr *liveRoom, meeting time.Time) bool {
 }
 
 // Phrase takes one phrase from the notes bot, already validated by the caller: what speaker said
-// between start and end. A phrase from anyone else, one whose speaker the server does not know, or
+// between start and end; the speaker is a person or the facilitator, named as the room sees it. A
+// phrase from anyone else, one whose speaker the server does not know (another helper included), or
 // one from a bot stopped in its own join once the transcript has ended is dropped; the bot's
 // session stays open.
 func (c *Conference) Phrase(s *Member, speaker, text string, start, end time.Time) {
@@ -177,7 +182,7 @@ func (c *Conference) Phrase(s *Member, speaker, text string, start, end time.Tim
 	lr, _ := c.lookup(s.slug)
 	var name string
 	c.mu.Lock()
-	if o, here := lr.members[speaker]; here && !o.bot {
+	if o, here := lr.members[speaker]; here && (!o.bot || o.botKind == room.BotFacilitator) {
 		name = o.name
 	}
 	late := s.stoppedAtJoin
@@ -252,9 +257,9 @@ func (c *Conference) appendPhrase(lr *liveRoom, p notes.Phrase) error {
 	return c.notes.Phrase(slug, p)
 }
 
-// rememberSpeaker keeps the name of a person who left, for the phrases the bot still sends. Only
-// while the room takes notes (wasNotes: it did until this person left) or its transcript is open,
-// so a room without notes keeps no names.
+// rememberSpeaker keeps the name of a person (or the facilitator) who left, for the phrases the bot
+// still sends. Only while the room takes notes (wasNotes: it did until this person left) or its
+// transcript is open, so a room without notes keeps no names.
 func (c *Conference) rememberSpeaker(lr *liveRoom, s *Member, wasNotes bool) {
 	if c.notes == nil {
 		return

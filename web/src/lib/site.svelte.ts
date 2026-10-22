@@ -14,7 +14,7 @@ const MAX_LABEL = 40;
 // A provider type names a path segment of /auth/<type>/start.
 const PROVIDER_TYPE = /^[a-z0-9-]{1,32}$/;
 
-export type Info = { title: string; reactions: string[]; noiseSuppression: boolean; notesEnabled: boolean; notesLive: boolean; recordingEnabled: boolean; reconnectGrace: number; auth: Auth };
+export type Info = { title: string; reactions: string[]; noiseSuppression: boolean; notesEnabled: boolean; notesLive: boolean; recordingEnabled: boolean; facilitatorEnabled: boolean; reconnectGrace: number; auth: Auth };
 
 // authFrom reads the sign-in block defensively: anything malformed means sign-in off.
 function authFrom(v: unknown): Auth {
@@ -33,7 +33,7 @@ function authFrom(v: unknown): Auth {
 export const DEFAULT_RECONNECT_GRACE = 15;
 
 export function infoFrom(info: unknown): Info {
-  const v = (info ?? {}) as { title?: unknown; reactions?: unknown; noise_suppression?: unknown; notes?: unknown; notes_live?: unknown; recording?: unknown; reconnect_grace?: unknown; auth?: unknown };
+  const v = (info ?? {}) as { title?: unknown; reactions?: unknown; noise_suppression?: unknown; notes?: unknown; notes_live?: unknown; recording?: unknown; facilitator?: unknown; reconnect_grace?: unknown; auth?: unknown };
   const title = typeof v.title === 'string' && v.title.trim() !== '' ? v.title.trim() : DEFAULT_TITLE;
   const list = Array.isArray(v.reactions)
     ? v.reactions.filter((e): e is string => typeof e === 'string' && e !== '' && new TextEncoder().encode(e).length <= 16)
@@ -44,7 +44,7 @@ export function infoFrom(info: unknown): Info {
   return {
     reconnectGrace,
     title, reactions: list.length > 0 ? list : DEFAULT_REACTIONS, noiseSuppression: v.noise_suppression === true,
-    notesEnabled, notesLive: notesEnabled && v.notes_live === true, recordingEnabled: v.recording === true,
+    notesEnabled, notesLive: notesEnabled && v.notes_live === true, recordingEnabled: v.recording === true, facilitatorEnabled: v.facilitator === true,
     auth: authFrom(v.auth),
   };
 }
@@ -58,6 +58,8 @@ class Site {
   notesLive = $state(false);
   // Meeting recording (recording.enabled; the kunveno-recorder add-on)
   recordingEnabled = $state(false);
+  // Stand-up facilitator bot (facilitator.enabled)
+  facilitatorEnabled = $state(false);
   // Seconds before a disconnected media connection restarts the session (media.reconnect_grace).
   reconnectGrace = $state(DEFAULT_RECONNECT_GRACE);
   // Sign-in (auth.enabled): off keeps the lobby open to everyone, as without it.
@@ -99,6 +101,7 @@ async function fetchInfo(): Promise<void> {
     site.notesEnabled = info.notesEnabled;
     site.notesLive = info.notesLive;
     site.recordingEnabled = info.recordingEnabled;
+    site.facilitatorEnabled = info.facilitatorEnabled;
     site.reconnectGrace = info.reconnectGrace;
     site.auth = info.auth;
     site.loaded = true;

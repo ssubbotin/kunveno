@@ -20,8 +20,9 @@
 //     of rooms that want notes; the bot polls it every 2 s. It is empty while notes.enabled is off.
 //   - The bot joins each listed room over loopback with {"type":"join","room":slug,"name":...,
 //     "role":"notes"} (no PIN); the join is refused unless the room wants notes. It sends no media
-//     and receives every person's audio track (stream id = participant id), no video and no other
-//     helper's audio.
+//     and receives every person's audio track (stream id = participant id) and the facilitator's
+//     audio (stream id = its participant id), no video and nothing from other helpers. A phrase
+//     whose speaker is the facilitator is stored under the facilitator's name.
 //   - For each recognised phrase it sends {"type":"phrase","speaker":<participant id>,
 //     "start":<unix ms>,"end":<unix ms>,"text":...}. A malformed frame (wrong field types, a missing
 //     speaker, start or end) is a bad_message: the server closes the socket, as for any other
@@ -68,7 +69,8 @@
 //     join is refused unless the room wants a recording, and while another recorder of the room
 //     that was not told to stop is there. The joined message carries "meeting": the start of the
 //     meeting (RFC 3339), which the upload names. The bot sends no media and receives every
-//     person's audio (stream id = participant id), the current sharer's screen and every
+//     person's audio (stream id = participant id), the facilitator's audio (stream id = its
+//     participant id), the current sharer's screen and every
 //     person's camera (stream id = participant id + "/camera"); nothing from other helpers. A
 //     camera switched off stops sending; the participants message says whose camera is on.
 //   - When the room no longer wants a recording the server sends {"type":"stop"}. The bot finishes
@@ -84,6 +86,28 @@
 //   - Upload answers: 204 stored (the room hears recording_ready), 400 no or bad meeting or part
 //     header, 404 recording off or no such room, 409 a meeting the room neither runs now nor
 //     lists, 413 larger than recording.max_size.
+//
+// The facilitator bot contract (the commercial kunveno-facilitator add-on), stable like the others:
+//
+//   - The switch exists only with facilitator.enabled and only in the rooms listed in
+//     facilitator.rooms; there the joined message carries "room":{...,"facilitator":true}. A person
+//     (never a guest or a helper) switches it with {"type":"facilitator","on":true|false}; the
+//     participants message says whether it is on ("facilitator"). Elsewhere the switch is ignored.
+//   - GET /internal/facilitator (loopback only) returns the slugs of rooms that want the
+//     facilitator; empty while facilitator.enabled is off. The bot polls it every 2 s.
+//   - The bot joins with {"type":"join","room":slug,"name":...,"role":"facilitator"} (no PIN);
+//     its name is the one its phrases carry in the notes (the client labels the bot with its own
+//     translated name). The bot uses pkg/botclient and sends its speech as Opus PT 111 on the
+//     audio slot (mid 0) of the server's offer, as cmd/kunveno-echo does; the names and the bot
+//     flag of each stream id come from the participants messages. The join is
+//     refused unless the room offers the facilitator and wants it, and while another facilitator
+//     of the room that was not told to stop is there. It may send audio (its speech, heard by
+//     everyone, the notes bot and the recorder included) and receives every person's audio
+//     (stream id = participant id), no video and nothing from other helpers.
+//   - When the room no longer wants the facilitator (switched off, or the last person left) the
+//     server sends {"type":"stop"}. The bot stops speaking and sends {"type":"leave"}. A bot still
+//     there 5 s after the stop is closed. The stop may arrive before "joined" (the switch went off
+//     during the join), so the bot accepts it at any point after sending its join.
 package signal
 
 import (
@@ -125,8 +149,10 @@ const (
 	RoleCamera   = "camera"   // a live RTSP feed, through the same player service
 	RoleNotes    = "notes"    // the meeting-notes bot (kunveno-notes add-on)
 	RoleRecorder = "recorder" // the meeting recording bot (kunveno-recorder add-on)
-	MediaTCP     = "tcp"
-	MaxSDPLen    = 256 * 1024
+	// RoleFacilitator is the voice stand-up facilitator (kunveno-facilitator add-on).
+	RoleFacilitator = "facilitator"
+	MediaTCP        = "tcp"
+	MaxSDPLen       = 256 * 1024
 )
 
 // Phrase limits of the notes bot contract.
@@ -215,7 +241,7 @@ type ClientMessage struct {
 	// Client identifies the page: a join with the same client id replaces that page's earlier
 	// session, so a page never shows up twice.
 	Client  string `json:"client,omitempty"`
-	On      *bool  `json:"on,omitempty"`      // echo, camera, notes, recording
+	On      *bool  `json:"on,omitempty"`      // echo, camera, notes, recording, facilitator
 	Receive *bool  `json:"receive,omitempty"` // video: whether to receive cameras
 	Emoji   string `json:"emoji,omitempty"`   // react: one of Reactions
 
@@ -245,7 +271,7 @@ func ParseClient(data []byte) (ClientMessage, error) {
 			return m, fmt.Errorf("%w: join.client", ErrBadMessage)
 		case m.Media != "" && m.Media != MediaTCP:
 			return m, fmt.Errorf("%w: join.media", ErrBadMessage)
-		case m.Role != "" && m.Role != RoleEcho && m.Role != RolePlayer && m.Role != RoleCamera && m.Role != RoleNotes && m.Role != RoleRecorder:
+		case m.Role != "" && m.Role != RoleEcho && m.Role != RolePlayer && m.Role != RoleCamera && m.Role != RoleNotes && m.Role != RoleRecorder && m.Role != RoleFacilitator:
 			return m, fmt.Errorf("%w: join.role", ErrBadMessage)
 		case m.Invite != "" && (m.Role != "" || m.PIN != "" || len(m.Invite) > 64):
 			return m, fmt.Errorf("%w: join.invite", ErrBadMessage)
@@ -263,7 +289,7 @@ func ParseClient(data []byte) (ClientMessage, error) {
 		if m.Candidate == nil {
 			return m, fmt.Errorf("%w: candidate", ErrBadMessage)
 		}
-	case "echo", "camera", "notes", "recording":
+	case "echo", "camera", "notes", "recording", "facilitator":
 		if m.On == nil {
 			return m, fmt.Errorf("%w: %s.on", ErrBadMessage, m.Type)
 		}
@@ -302,7 +328,7 @@ type ParticipantInfo struct {
 	Name  string `json:"name"`
 	Muted bool   `json:"muted"`
 	Bot   bool   `json:"bot,omitempty"`
-	// BotKind: "echo", "player", "camera", "notes" or "recorder" for helpers.
+	// BotKind: "echo", "player", "camera", "notes", "recorder" or "facilitator" for helpers.
 	BotKind string `json:"bot_kind,omitempty"`
 	// Quality is the connection grade: "good", "fair" or "poor"; absent until measured.
 	Quality string `json:"quality,omitempty"`
@@ -313,6 +339,8 @@ type ParticipantInfo struct {
 type roomInfo struct {
 	Slug string `json:"slug"`
 	Name string `json:"name"`
+	// Facilitator: the facilitator switch is offered in this room (facilitator.rooms).
+	Facilitator bool `json:"facilitator,omitempty"`
 }
 
 type joinedMsg struct {
@@ -340,12 +368,18 @@ type participantsMsg struct {
 	Participants []ParticipantInfo `json:"participants"`
 	Sharer       string            `json:"sharer"`
 	Echo         bool              `json:"echo"`
-	Notes        bool              `json:"notes"`     // the room takes meeting notes
-	Recording    bool              `json:"recording"` // the room's meeting is being recorded
+	Notes        bool              `json:"notes"`       // the room takes meeting notes
+	Recording    bool              `json:"recording"`   // the room's meeting is being recorded
+	Facilitator  bool              `json:"facilitator"` // the room wants the facilitator
 }
 
 func Joined(self ParticipantInfo, slug, name string) any {
 	return joinedMsg{Type: "joined", Self: self, Room: roomInfo{Slug: slug, Name: name}}
+}
+
+// JoinedWithFacilitator is joined in a room that offers the facilitator switch.
+func JoinedWithFacilitator(self ParticipantInfo, slug, name string) any {
+	return joinedMsg{Type: "joined", Self: self, Room: roomInfo{Slug: slug, Name: name, Facilitator: true}}
 }
 
 // JoinedRecorder is joined for a recorder: it also carries the start of the meeting.
@@ -374,11 +408,11 @@ type reactionMsg struct {
 // Reaction tells the room that a participant sent an emoji; it is not part of the room state.
 func Reaction(from, emoji string) any { return reactionMsg{Type: "reaction", From: from, Emoji: emoji} }
 
-func Participants(list []ParticipantInfo, sharer string, echo, notes, recording bool) any {
+func Participants(list []ParticipantInfo, sharer string, echo, notes, recording, facilitator bool) any {
 	if list == nil {
 		list = []ParticipantInfo{}
 	}
-	return participantsMsg{Type: "participants", Participants: list, Sharer: sharer, Echo: echo, Notes: notes, Recording: recording}
+	return participantsMsg{Type: "participants", Participants: list, Sharer: sharer, Echo: echo, Notes: notes, Recording: recording, Facilitator: facilitator}
 }
 
 // validPhrase checks a phrase's content: text of 1..MaxPhraseLen characters once every whitespace
@@ -400,7 +434,8 @@ type typeOnlyMsg struct {
 	Type string `json:"type"`
 }
 
-// Stop asks the notes bot to send its last phrases and leave.
+// Stop asks the notes bot to send its last phrases and leave, the recorder to upload its file and
+// leave, and the facilitator to stop speaking and leave.
 func Stop() any { return typeOnlyMsg{Type: "stop"} }
 
 // NotesReady tells the people in a room that its notes can be downloaded.

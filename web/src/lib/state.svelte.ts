@@ -48,6 +48,9 @@ export class RoomState {
   // The room is being recorded; the recording of this meeting became ready.
   recording = $state(false);
   recordingReady = $state(false);
+  // The stand-up facilitator bot is switched on; the room offers the switch.
+  facilitator = $state(false);
+  facilitatorOffered = $state(false);
   phrases = $state<LivePhrase[]>([]);
   private phraseSeq = 0;
   // The emoji each participant sent last, shown on their tile for a few seconds.
@@ -93,6 +96,8 @@ export class RoomState {
     this.notesReady = false;
     this.recording = false;
     this.recordingReady = false;
+    this.facilitator = false;
+    this.facilitatorOffered = false;
     this.phrases = [];
     this.transport = '';
   }
@@ -104,6 +109,7 @@ export class RoomState {
         this.selfName = msg.self.name;
         this.roomSlug = msg.room.slug;
         this.roomName = msg.room.name;
+        this.facilitatorOffered = msg.room.facilitator === true;
         this.errorCode = '';
         this.errorMessage = '';
         break;
@@ -115,6 +121,7 @@ export class RoomState {
         this.notes = msg.notes;
         if (msg.recording && !this.recording) this.recordingReady = false; // a new recording; the old notice is stale
         this.recording = msg.recording;
+        this.facilitator = msg.facilitator;
         break;
       case 'error':
         this.status = 'error';

@@ -91,3 +91,18 @@ func TestRegistryRecordingRooms(t *testing.T) {
 		t.Fatalf("got %#v, want an empty list", got)
 	}
 }
+
+func TestRegistryFacilitatorRooms(t *testing.T) {
+	g := NewRegistry()
+	a, b := New("a", "A", "1234", 15), New("b", "B", "1234", 15)
+	g.Add(a)
+	g.Add(b)
+	b.SetFacilitator(true)
+	if got := g.FacilitatorRooms(); len(got) != 1 || got[0] != "b" {
+		t.Fatalf("got %v", got)
+	}
+	b.SetFacilitator(false)
+	if got := g.FacilitatorRooms(); got == nil || len(got) != 0 {
+		t.Fatalf("got %#v, want an empty list", got)
+	}
+}

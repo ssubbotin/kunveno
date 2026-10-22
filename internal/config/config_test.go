@@ -520,3 +520,37 @@ func TestAuthPublicURLNormalised(t *testing.T) {
 		}
 	}
 }
+
+func TestFacilitatorDefaults(t *testing.T) {
+	cfg, err := Parse([]byte("media:\n  advertise_ip: 10.0.0.1\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Facilitator.Enabled || cfg.Facilitator.Offered("ops") {
+		t.Fatalf("defaults = %+v", cfg.Facilitator)
+	}
+}
+
+func TestFacilitatorRooms(t *testing.T) {
+	cfg, err := Parse([]byte("media:\n  advertise_ip: 10.0.0.1\nfacilitator:\n  enabled: true\n  rooms: [ops]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Facilitator.Offered("ops") || cfg.Facilitator.Offered("other") {
+		t.Fatalf("set = %+v", cfg.Facilitator)
+	}
+	off, err := Parse([]byte("media:\n  advertise_ip: 10.0.0.1\nfacilitator:\n  rooms: [ops]\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if off.Facilitator.Offered("ops") {
+		t.Fatal("offered while disabled")
+	}
+}
+
+func TestFacilitatorBadSlug(t *testing.T) {
+	_, err := Parse([]byte("media:\n  advertise_ip: 10.0.0.1\nfacilitator:\n  enabled: true\n  rooms: [\"Bad Slug\"]\n"))
+	if err == nil || !strings.Contains(err.Error(), "facilitator.rooms") {
+		t.Fatalf("err = %v", err)
+	}
+}

@@ -140,3 +140,21 @@ func TestJoinGuestNeedsNoPINButCountsTowardCapacity(t *testing.T) {
 		t.Fatalf("over capacity: %v", err)
 	}
 }
+
+func TestFacilitatorFlagClearedWhenThePeopleLeave(t *testing.T) {
+	r := New("ops", "Ops", "1234", 15)
+	if err := r.Join("a", "Ann", "1234"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.JoinBot("b", "Ведущий", BotFacilitator); err != nil {
+		t.Fatal(err)
+	}
+	r.SetFacilitator(true)
+	if !r.Facilitator() || !r.Snapshot().Facilitator {
+		t.Fatal("facilitator not set")
+	}
+	r.Leave("a")
+	if r.Facilitator() {
+		t.Fatal("facilitator kept with only the bot left")
+	}
+}

@@ -184,3 +184,14 @@ func (g *Registry) RecordingRooms() []string {
 	}
 	return out
 }
+
+// FacilitatorRooms lists the slugs of rooms that want the meeting facilitator.
+func (g *Registry) FacilitatorRooms() []string {
+	out := []string{}
+	for _, r := range g.All() {
+		if r.Facilitator() {
+			out = append(out, r.slug)
+		}
+	}
+	return out
+}

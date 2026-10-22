@@ -101,13 +101,16 @@ func wire(e conference.Event) any {
 		if e.Recorder {
 			return JoinedRecorder(self, e.Slug, e.RoomName, e.Meeting)
 		}
+		if e.Offered {
+			return JoinedWithFacilitator(self, e.Slug, e.RoomName)
+		}
 		return Joined(self, e.Slug, e.RoomName)
 	case conference.Roster:
 		list := make([]ParticipantInfo, len(e.Participants))
 		for i, p := range e.Participants {
 			list[i] = ParticipantInfo{ID: p.ID, Name: p.Name, Muted: p.Muted, Bot: p.Bot, BotKind: p.BotKind, Quality: p.Quality, Camera: p.Camera, Guest: p.Guest}
 		}
-		return Participants(list, e.Sharer, e.Echo, e.Notes, e.Recording)
+		return Participants(list, e.Sharer, e.Echo, e.Notes, e.Recording, e.Facilitator)
 	case conference.ShareBusy:
 		return ErrorMsg(CodeShareBusy, "someone else is sharing")
 	case conference.Reaction:
@@ -273,6 +276,8 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 			h.conf.SwitchNotes(s, *m.On)
 		case "recording":
 			h.conf.SwitchRecording(s, *m.On)
+		case "facilitator":
+			h.conf.SwitchFacilitator(s, *m.On)
 		case "phrase":
 			if s.Role() != RoleNotes {
 				continue

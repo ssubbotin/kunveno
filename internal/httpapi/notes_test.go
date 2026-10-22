@@ -256,7 +256,7 @@ func TestNotesRoomsIsLocalOnly(t *testing.T) {
 
 func TestInfoNotesLiveNeedsNotes(t *testing.T) {
 	rec := httptest.NewRecorder()
-	Info("T", nil, false, false, true, false, 15, nil).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
+	Info("T", nil, false, false, true, false, false, 15, nil).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
 	if !strings.Contains(rec.Body.String(), `"notes":false`) || !strings.Contains(rec.Body.String(), `"notes_live":false`) {
 		t.Fatalf("%s", rec.Body)
 	}

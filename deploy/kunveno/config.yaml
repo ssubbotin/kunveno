@@ -37,6 +37,12 @@ ui:
 #  keep: 1d            # how long the last meeting's recording stays: 90m, 12h, 1d, 2d
 #  dir: /var/lib/kunveno/recordings
 #  max_size: 8GB       # largest file the bot may hand over
+# Voice stand-up facilitator. The switch appears only in the listed rooms. Needs the private
+# kunveno-facilitator add-on running; set enabled: true together with installing it,
+# then: docker compose restart server
+#facilitator:
+#  enabled: true
+#  rooms: [ops]
 # Sign-in (optional). Off: anyone who reaches the server sees the lobby, as before. On: people sign
 # in with a provider; room PINs are still asked; guests join one room by an invitation link.
 # auth:

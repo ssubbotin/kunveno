@@ -196,3 +196,10 @@ Meeting history (with notes and recording on, `notes.keep: 2d`, `recording.keep:
     lowers the recording line within a minute.
 68. A room removed from `config.yaml` (server restarted) keeps its files until they expire; adding
     the room back lists its meetings again.
+
+Facilitator (`facilitator.enabled: true`, `facilitator.rooms` lists one room):
+
+69. With `facilitator.enabled` off no room shows the facilitator switch.
+70. The switch is shown in the listed room only, to people; a guest and an unlisted room do not see it.
+71. With the add-on running: switching it on brings the bot into the room (listed with its own name,
+    marked as a helper); switching it off removes it within 5 s; the last person leaving removes it too.
