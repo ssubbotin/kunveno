@@ -116,6 +116,9 @@ type Config struct {
 		KeepFor  time.Duration `yaml:"-"`
 		MaxBytes int64         `yaml:"-"`
 	} `yaml:"recording"`
+	// Facilitator configures the voice stand-up facilitator. It needs the bot of the private
+	// kunveno-facilitator add-on; switch it on together with installing it.
+	Facilitator Facilitator `yaml:"facilitator"`
 	// Auth is the optional sign-in (see package auth). Off by default: no sign-in, as before.
 	Auth struct {
 		Enabled bool `yaml:"enabled"`
@@ -191,6 +194,28 @@ const (
 	DefaultMaxParticipants  = 15
 	MaxParticipantsLimit    = 50
 )
+
+// Facilitator is the facilitator section: the switch appears only in the listed rooms.
+type Facilitator struct {
+	// Enabled offers the facilitator; false hides every facilitator control.
+	Enabled bool `yaml:"enabled"`
+	// Rooms lists the room slugs that offer it. A slug need not be a configured room
+	// (rooms created in the lobby are allowed).
+	Rooms []string `yaml:"rooms"`
+}
+
+// Offered reports whether the facilitator is offered in the room: enabled and listed.
+func (f Facilitator) Offered(slug string) bool {
+	if !f.Enabled {
+		return false
+	}
+	for _, r := range f.Rooms {
+		if r == slug {
+			return true
+		}
+	}
+	return false
+}
 
 var slugRe = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
 
@@ -397,6 +422,11 @@ func (c *Config) Validate() error {
 	}
 	if _, err := ParseSize(c.Recording.MaxSize); err != nil {
 		errs = append(errs, fmt.Errorf("recording.max_size: %w", err))
+	}
+	for i, slug := range c.Facilitator.Rooms {
+		if !slugRe.MatchString(slug) {
+			errs = append(errs, fmt.Errorf("facilitator.rooms[%d] %q must match %s", i, slug, slugRe))
+		}
 	}
 	seen := map[string]bool{}
 	for i, r := range c.Rooms {
