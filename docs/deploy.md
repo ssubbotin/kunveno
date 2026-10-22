@@ -284,8 +284,8 @@ only together with the add-on (the same text is the package comment of `internal
    slugs of rooms that want the facilitator; the bot polls it every 2 s. The list is empty while
    `facilitator.enabled` is off.
 3. The bot joins with `{"type":"join","room":…,"name":…,"role":"facilitator"}` (no PIN). Its name is
-   the one its phrases carry in the meeting notes (the client labels the bot with its own
-   translated name). The bot uses `pkg/botclient` and sends its speech as Opus PT 111 on the audio
+   the one its phrases carry in the meeting notes (the client shows the bot under this
+   name with a bot tag). The bot uses `pkg/botclient` and sends its speech as Opus PT 111 on the audio
    slot (mid 0) of the server's offer, as `cmd/kunveno-echo` does; the names and the bot flag of
    each stream id come from the `participants` messages. The join is refused
    unless the room offers the facilitator and wants it, and while another facilitator of the room

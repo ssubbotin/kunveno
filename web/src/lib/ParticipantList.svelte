@@ -44,7 +44,7 @@
         {/if}
       </span>
       <span class="who">
-        <span class="name">{p.botKind === 'echo' ? t('people.echoName') : p.botKind === 'notes' ? t('people.notesName') : p.botKind === 'recorder' ? t('people.recorderName') : p.botKind === 'facilitator' ? t('people.facilitatorName') : p.name}</span>
+        <span class="name">{p.botKind === 'echo' ? t('people.echoName') : p.botKind === 'notes' ? t('people.notesName') : p.botKind === 'recorder' ? t('people.recorderName') : p.name}</span>
         <span class="tags">
           {#if p.id === selfId}<span>{t('people.you')}</span>{/if}
           {#if p.guest}<span>{t('guest.mark')}</span>{/if}
