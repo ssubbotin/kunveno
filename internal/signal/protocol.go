@@ -20,8 +20,9 @@
 //     of rooms that want notes; the bot polls it every 2 s. It is empty while notes.enabled is off.
 //   - The bot joins each listed room over loopback with {"type":"join","room":slug,"name":...,
 //     "role":"notes"} (no PIN); the join is refused unless the room wants notes. It sends no media
-//     and receives every person's audio track (stream id = participant id), no video and no other
-//     helper's audio.
+//     and receives every person's audio track (stream id = participant id) and the facilitator's
+//     audio (stream id = its participant id), no video and nothing from other helpers. A phrase
+//     whose speaker is the facilitator is stored under the facilitator's name.
 //   - For each recognised phrase it sends {"type":"phrase","speaker":<participant id>,
 //     "start":<unix ms>,"end":<unix ms>,"text":...}. A malformed frame (wrong field types, a missing
 //     speaker, start or end) is a bad_message: the server closes the socket, as for any other
@@ -68,7 +69,8 @@
 //     join is refused unless the room wants a recording, and while another recorder of the room
 //     that was not told to stop is there. The joined message carries "meeting": the start of the
 //     meeting (RFC 3339), which the upload names. The bot sends no media and receives every
-//     person's audio (stream id = participant id), the current sharer's screen and every
+//     person's audio (stream id = participant id), the facilitator's audio (stream id = its
+//     participant id), the current sharer's screen and every
 //     person's camera (stream id = participant id + "/camera"); nothing from other helpers. A
 //     camera switched off stops sending; the participants message says whose camera is on.
 //   - When the room no longer wants a recording the server sends {"type":"stop"}. The bot finishes
@@ -94,7 +96,10 @@
 //   - GET /internal/facilitator (loopback only) returns the slugs of rooms that want the
 //     facilitator; empty while facilitator.enabled is off. The bot polls it every 2 s.
 //   - The bot joins with {"type":"join","room":slug,"name":...,"role":"facilitator"} (no PIN);
-//     its name is the one people see and the one its phrases carry in the notes. The join is
+//     its name is the one its phrases carry in the notes (the client labels the bot with its own
+//     translated name). The bot uses pkg/botclient and sends its speech as Opus PT 111 on the
+//     audio slot (mid 0) of the server's offer, as cmd/kunveno-echo does; the names and the bot
+//     flag of each stream id come from the participants messages. The join is
 //     refused unless the room offers the facilitator and wants it, and while another facilitator
 //     of the room that was not told to stop is there. It may send audio (its speech, heard by
 //     everyone, the notes bot and the recorder included) and receives every person's audio

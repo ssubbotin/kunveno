@@ -243,10 +243,10 @@ type SignInInfo struct {
 // Info serves GET /api/info: installation details the client shows: the title, the reactions
 // participants can send, whether the noise filter is on by default, whether meeting notes are
 // offered (notes.enabled), whether phrases are shown live (notes.live) and whether meeting
-// recording is offered (recording.enabled), whether the facilitator is offered (facilitator.enabled;
-// the rooms that offer it say so in their joined message), how many seconds a client waits on a disconnected
-// media connection before restarting (media.reconnect_grace) and, as "auth", whether sign-in is on
-// and with which providers (signIn; nil is off).
+// recording is offered (recording.enabled), whether the facilitator is offered
+// (facilitator.enabled; the rooms that offer it say so in their joined message), how many seconds
+// a client waits on a disconnected media connection before restarting (media.reconnect_grace) and,
+// as "auth", whether sign-in is on and with which providers (signIn; nil is off).
 func Info(title string, reactions []string, noiseSuppression, notesEnabled, notesLive, recordingEnabled, facilitatorEnabled bool, reconnectGrace int, signIn *SignInInfo) http.Handler {
 	in := SignInInfo{Providers: []auth.ProviderInfo{}}
 	if signIn != nil && signIn.Enabled {

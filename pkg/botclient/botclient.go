@@ -38,7 +38,7 @@ func Dial(ctx context.Context, url string, insecure bool) (*websocket.Conn, erro
 	return conn, nil
 }
 
-// Serve joins room as a helper (role "echo", "player", "camera", "notes" or "recorder") and answers every
+// Serve joins room as a helper (role "echo", "player", "camera", "notes", "recorder" or "facilitator") and answers every
 // offer on pc until the connection or ctx ends. onJoined (may be nil) runs once the server has
 // admitted us and gets a function for sending further messages.
 func Serve(ctx context.Context, conn *websocket.Conn, pc *webrtc.PeerConnection, room, name, role string, onJoined func(send func(any) error)) error {
