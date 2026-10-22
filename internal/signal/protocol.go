@@ -96,8 +96,8 @@
 //   - GET /internal/facilitator (loopback only) returns the slugs of rooms that want the
 //     facilitator; empty while facilitator.enabled is off. The bot polls it every 2 s.
 //   - The bot joins with {"type":"join","room":slug,"name":...,"role":"facilitator"} (no PIN);
-//     its name is the one its phrases carry in the notes (the client labels the bot with its own
-//     translated name). The bot uses pkg/botclient and sends its speech as Opus PT 111 on the
+//     its name is the one its phrases carry in the notes (the client shows the bot under this
+//     name with a bot tag). The bot uses pkg/botclient and sends its speech as Opus PT 111 on the
 //     audio slot (mid 0) of the server's offer, as cmd/kunveno-echo does; the names and the bot
 //     flag of each stream id come from the participants messages. The join is
 //     refused unless the room offers the facilitator and wants it, and while another facilitator
