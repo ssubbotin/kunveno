@@ -37,6 +37,10 @@ Licensed under the GNU Affero General Public License v3.0 only; a commercial lic
 - Meeting recording with the commercial `kunveno-recorder` add-on: the shared screen and everyone's
   audio as one MP4 video, downloaded from the room or the lobby (see
   [Meeting recording](#meeting-recording)).
+- A stand-up facilitator with the private `kunveno-facilitator` add-on: in the rooms you list, a
+  person switches it on and a voice bot runs the stand-up, calling on each person, asking short
+  follow-ups from the sprint and parking long discussions until after the round (Russian only for
+  now; see `docs/deploy.md`).
 - Works behind awkward networks: when a participant's UDP path fails, the browser falls back to
   ICE over TCP on the same port.
 - Interface in Russian (default), English and Spanish; the installation title is configurable.
@@ -411,6 +415,8 @@ through the manual checks in [docs/test-matrix.md](docs/test-matrix.md).
 | `recording.keep` | how long a recording stays after it ends: a whole number and `m`, `h` or `d` (`90m`, `12h`, `1d`, `2d`; default `1d`) |
 | `recording.dir` | where recordings are kept (`/var/lib/kunveno/recordings`, in the stack's data volume) |
 | `recording.max_size` | the largest recording the server accepts: a whole number and `MB` or `GB` (`500MB`, `8GB`; default `8GB`) |
+| `facilitator.enabled` | `true` offers the stand-up facilitator switch in the rooms of `facilitator.rooms`; needs the `kunveno-facilitator` add-on (default `false`, which hides every facilitator control) |
+| `facilitator.rooms` | list of room slugs that offer the facilitator (`[ops]`); a room created in the lobby may be listed too |
 | `auth.enabled` | `true` turns sign-in on (default `false`: no sign-in, as before) |
 | `auth.public_url` | the address people open, `https://` only; the provider's callback `<public_url>/auth/<type>/callback` is built from it |
 | `auth.session` | how long a sign-in lasts, a Go duration (`12h` by default, 1m to 720h) |

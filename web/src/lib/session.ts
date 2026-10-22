@@ -564,11 +564,12 @@ export class Session {
     this.sig?.send({ type: 'notes', on });
   }
 
-  // Asks the server to record the meeting in this room, or to stop.
+  // Asks the server to switch the stand-up facilitator on or off in this room.
   setFacilitator(on: boolean): void {
     this.sig?.send({ type: 'facilitator', on });
   }
 
+  // Asks the server to record the meeting in this room, or to stop.
   setRecording(on: boolean): void {
     this.sig?.send({ type: 'recording', on });
   }

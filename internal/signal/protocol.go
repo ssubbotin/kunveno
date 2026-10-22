@@ -101,7 +101,8 @@
 //     (stream id = participant id), no video and nothing from other helpers.
 //   - When the room no longer wants the facilitator (switched off, or the last person left) the
 //     server sends {"type":"stop"}. The bot stops speaking and sends {"type":"leave"}. A bot still
-//     there 5 s after the stop is closed.
+//     there 5 s after the stop is closed. The stop may arrive before "joined" (the switch went off
+//     during the join), so the bot accepts it at any point after sending its join.
 package signal
 
 import (

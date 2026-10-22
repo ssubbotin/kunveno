@@ -258,9 +258,8 @@ func (c *Conference) appendPhrase(lr *liveRoom, p notes.Phrase) error {
 }
 
 // rememberSpeaker keeps the name of a person (or the facilitator) who left, for the phrases the bot
-// still sends. Only
-// while the room takes notes (wasNotes: it did until this person left) or its transcript is open,
-// so a room without notes keeps no names.
+// still sends. Only while the room takes notes (wasNotes: it did until this person left) or its
+// transcript is open, so a room without notes keeps no names.
 func (c *Conference) rememberSpeaker(lr *liveRoom, s *Member, wasNotes bool) {
 	if c.notes == nil {
 		return

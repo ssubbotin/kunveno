@@ -254,6 +254,47 @@ together with the add-on (the same text is the package comment of `internal/sign
 
 The Debian packages have no recorder add-on; with them leave `recording.enabled` off.
 
+## Meeting facilitator
+
+The facilitator needs the private `kunveno-facilitator` add-on, which ships its own image and a
+compose overlay with an installation guide. It is a voice bot that runs a stand-up: it calls on
+each person, asks short follow-ups from the sprint and parks long discussions until after the
+round (Russian only for now). With the add-on installed, set in `config.yaml`:
+
+```yaml
+facilitator:
+  enabled: true
+  rooms: [ops]
+```
+
+and run `docker compose restart server`. The switch appears only in the listed rooms (a slug may
+also be a room created in the lobby). With `enabled: false` (the default) the server ignores the
+switch, refuses the bot, lists no rooms at `/internal/facilitator`, and the client shows nothing
+about the facilitator. `/api/info` has the key `facilitator`.
+
+**The facilitator bot contract.** The add-on depends on this interface of the server; it changes
+only together with the add-on (the same text is the package comment of `internal/signal/protocol.go`):
+
+1. A person (never a guest or a helper) switches the facilitator with
+   `{"type":"facilitator","on":true|false}`. In a room that offers it the `joined` message carries
+   `room.facilitator: true`, and the `participants` message says whether it is on (`facilitator`).
+   In other rooms the switch is ignored.
+2. `GET /internal/facilitator` on loopback (never proxied by nginx) returns a JSON list of the
+   slugs of rooms that want the facilitator; the bot polls it every 2 s. The list is empty while
+   `facilitator.enabled` is off.
+3. The bot joins with `{"type":"join","room":…,"name":…,"role":"facilitator"}` (no PIN). Its name is
+   the one people see and the one its phrases carry in the meeting notes. The join is refused
+   unless the room offers the facilitator and wants it, and while another facilitator of the room
+   that was not told to stop is there. The bot sends its speech (heard by everyone, the notes bot
+   and the recorder included) and receives every person's audio (stream id = participant id), no
+   video and nothing from other helpers.
+4. When the room no longer wants the facilitator (switched off, or the last person left) the server
+   sends `{"type":"stop"}`. The bot stops speaking and sends `{"type":"leave"}`. A bot still there
+   5 s after the stop is closed. The stop may arrive before `joined` (the switch went off during
+   the join), so the bot accepts it at any point after sending its join.
+
+The Debian packages have no facilitator add-on; with them leave `facilitator.enabled` off.
+
 ## Sign-in with Yandex ID
 
 Off by default. Turn it on for a server that faces the internet; the user-facing description is in

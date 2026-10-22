@@ -101,6 +101,11 @@ Go packages are separated so each is tested alone:
   the closed `kunveno-recorder` add-on over `PUT /internal/recording/{slug}`. Its bot contract is
   documented in `internal/signal/protocol.go` next to the notes one and changes only together with
   the add-on. `recording.enabled` (default false) hides every recording control.
+- The facilitator (voice stand-up) is the closed `kunveno-facilitator` add-on (another repository),
+  a bot with role `facilitator` (loopback only, no PIN) that polls `GET /internal/facilitator`. The
+  switch `{"type":"facilitator","on":bool}` (people only) works with `facilitator.enabled` and only
+  in `facilitator.rooms`; the contract is in `internal/signal/protocol.go`, changed only together
+  with the add-on.
 
 Media model, which explains most design choices:
 
