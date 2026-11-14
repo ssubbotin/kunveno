@@ -119,6 +119,18 @@ type Config struct {
 	// Facilitator configures the voice stand-up facilitator. It needs the bot of the private
 	// kunveno-facilitator add-on; switch it on together with installing it.
 	Facilitator Facilitator `yaml:"facilitator"`
+	// Documents configures meeting documents: Markdown files the facilitator bot prepares during a
+	// meeting, kept as the meeting's material.
+	Documents struct {
+		// Enabled accepts documents and shows them; false hides every documents control.
+		Enabled bool `yaml:"enabled"`
+		// Keep is how long a document stays after its last update (notes.ParseKeep format);
+		// DefaultDocumentsKeep when unset.
+		Keep *string `yaml:"keep"`
+		Dir  string  `yaml:"dir"`
+		// KeepFor is Keep parsed; set by Parse and Load.
+		KeepFor time.Duration `yaml:"-"`
+	} `yaml:"documents"`
 	// Auth is the optional sign-in (see package auth). Off by default: no sign-in, as before.
 	Auth struct {
 		Enabled bool `yaml:"enabled"`
@@ -188,6 +200,8 @@ const (
 	DefaultMeetingsKeep     = "30d"
 	DefaultRecordingDir     = "/var/lib/kunveno/recordings"
 	DefaultRecordingMaxSize = "8GB"
+	DefaultDocumentsKeep    = DefaultNotesKeep
+	DefaultDocumentsDir     = "/var/lib/kunveno/documents"
 	DefaultUDPPort          = 7000
 	DefaultShareMaxKbps     = 2500
 	DefaultReconnectGrace   = 15
@@ -293,6 +307,7 @@ func parse(data []byte, getenv func(string) string, detect func() (string, error
 	cfg.Notes.KeepFor, _ = notes.ParseKeep(*cfg.Notes.Keep)           // checked by Validate
 	cfg.Recording.KeepFor, _ = notes.ParseKeep(*cfg.Recording.Keep)   // checked by Validate
 	cfg.Meetings.KeepFor, _ = notes.ParseKeep(*cfg.Meetings.Keep)     // checked by Validate
+	cfg.Documents.KeepFor, _ = notes.ParseKeep(*cfg.Documents.Keep)   // checked by Validate
 	cfg.Recording.MaxBytes, _ = ParseSize(cfg.Recording.MaxSize)      // checked by Validate
 	cfg.Auth.SessionTTL, _ = time.ParseDuration(cfg.Auth.Session)     // checked by Validate
 	cfg.Auth.InviteMaxTTL, _ = time.ParseDuration(cfg.Auth.InviteMax) // checked by Validate
@@ -342,6 +357,13 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Recording.Dir == "" {
 		c.Recording.Dir = DefaultRecordingDir
+	}
+	if c.Documents.Keep == nil {
+		keep := DefaultDocumentsKeep
+		c.Documents.Keep = &keep
+	}
+	if c.Documents.Dir == "" {
+		c.Documents.Dir = DefaultDocumentsDir
 	}
 	if c.Recording.MaxSize == "" {
 		c.Recording.MaxSize = DefaultRecordingMaxSize
@@ -413,6 +435,11 @@ func (c *Config) Validate() error {
 	if c.Recording.Keep != nil {
 		if _, err := notes.ParseKeep(*c.Recording.Keep); err != nil {
 			errs = append(errs, fmt.Errorf("recording.keep: %w", err))
+		}
+	}
+	if c.Documents.Keep != nil {
+		if _, err := notes.ParseKeep(*c.Documents.Keep); err != nil {
+			errs = append(errs, fmt.Errorf("documents.keep: %w", err))
 		}
 	}
 	if c.Meetings.Keep != nil {

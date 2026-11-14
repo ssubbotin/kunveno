@@ -98,6 +98,8 @@ func TestSignInGuardsTheAPI(t *testing.T) {
 		{"POST", "/api/rooms/ops/invites"},
 		{"POST", "/api/rooms/ops/invites/list"},
 		{"DELETE", "/api/rooms/ops/invites/x"},
+		{"POST", "/api/rooms/ops/documents/minutes"},
+		{"GET", "/api/rooms/ops/meetings"},
 	} {
 		if w := do(h, c.method, c.path, `{"pin":"1234"}`, nil, publicURL); w.Code != http.StatusUnauthorized {
 			t.Errorf("%s %s without a session: %d, want 401", c.method, c.path, w.Code)
@@ -149,6 +151,27 @@ func TestSignInOffChangesNothing(t *testing.T) {
 	}
 	if w := do(h, "GET", "/auth/me", "", nil, ""); w.Code == http.StatusUnauthorized || w.Code == 200 {
 		t.Errorf("/auth/ served without sign-in: %d", w.Code)
+	}
+}
+
+// With documents off (the default) the upload is refused and /api/info does not mention them.
+func TestDocumentsOffByDefault(t *testing.T) {
+	h := testServer(t, nil)
+	r := httptest.NewRequest("PUT", "/internal/documents/ops/minutes?title=T", strings.NewReader("x"))
+	r.RemoteAddr = "127.0.0.1:1"
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("upload: %d", w.Code)
+	}
+	if w := do(h, "PUT", "/internal/documents/ops/minutes?title=T", "x", nil, ""); w.Code != http.StatusForbidden {
+		t.Errorf("upload off loopback: %d", w.Code)
+	}
+	if w := do(h, "POST", "/api/rooms/ops/documents/minutes", `{"pin":"1234"}`, nil, ""); w.Code != http.StatusNotFound {
+		t.Errorf("download: %d", w.Code)
+	}
+	if w := do(h, "GET", "/api/info", "", nil, ""); strings.Contains(w.Body.String(), "documents") {
+		t.Errorf("info: %s", w.Body)
 	}
 }
 

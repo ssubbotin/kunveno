@@ -43,6 +43,12 @@ ui:
 #facilitator:
 #  enabled: true
 #  rooms: [ops]
+# Meeting documents: Markdown files the facilitator prepares during a meeting (minutes, a plan),
+# downloadable in the room and in the lobby's meeting list with the room PIN.
+#documents:
+#  enabled: true
+#  keep: 1d            # how long a document stays after its last update: 90m, 12h, 1d, 2d
+#  dir: /var/lib/kunveno/documents
 # Sign-in (optional). Off: anyone who reaches the server sees the lobby, as before. On: people sign
 # in with a provider; room PINs are still asked; guests join one room by an invitation link.
 # auth:

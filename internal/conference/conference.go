@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ssubbotin/kunveno/internal/config"
+	"github.com/ssubbotin/kunveno/internal/documents"
 	"github.com/ssubbotin/kunveno/internal/media"
 	"github.com/ssubbotin/kunveno/internal/meetings"
 	"github.com/ssubbotin/kunveno/internal/metrics"
@@ -129,6 +130,7 @@ type Conference struct {
 	recMu     sync.Mutex       // orders every room's recording flag and the store's active mark; taken before c.mu, never while holding it
 	recording *recording.Store // meeting recording (recording.enabled); nil when off
 	meetings  *meetings.Store  // summaries of ended meetings; nil keeps none
+	documents *documents.Store // meeting documents (documents.enabled); nil when off
 	// facilitatorOffered reports the rooms with the facilitator switch (facilitator.enabled and
 	// facilitator.rooms); nil when off. The room's flag is changed under mu.
 	facilitatorOffered func(slug string) bool
@@ -334,6 +336,11 @@ func (c *Conference) Join(conn Conn, req JoinRequest) (*Member, error) {
 	}
 	s.log.Info("joined", "name", req.Name)
 	c.broadcast(lr)
+	if docs, ok := c.documentsFor(lr); ok && !bot {
+		if err := conn.Send(docs); err != nil {
+			s.log.Warn("documents write", "err", err)
+		}
+	}
 	peer.Negotiate()
 	if notesOffAtJoin && !lr.room.Notes() {
 		c.mu.Lock()

@@ -3,6 +3,7 @@ package conference
 import (
 	"time"
 
+	"github.com/ssubbotin/kunveno/internal/documents"
 	"github.com/ssubbotin/kunveno/internal/room"
 )
 
@@ -43,6 +44,9 @@ type LivePhrase struct {
 	Text  string
 }
 
+// Documents is the list of the meeting's documents (documents.enabled), sent to people.
+type Documents struct{ List []documents.Info }
+
 func (Joined) event()         {}
 func (Roster) event()         {}
 func (ShareBusy) event()      {}
@@ -51,3 +55,4 @@ func (Stop) event()           {}
 func (NotesReady) event()     {}
 func (RecordingReady) event() {}
 func (LivePhrase) event()     {}
+func (Documents) event()      {}

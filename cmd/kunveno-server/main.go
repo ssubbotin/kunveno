@@ -21,6 +21,7 @@ import (
 	"github.com/ssubbotin/kunveno/internal/backgrounds"
 	"github.com/ssubbotin/kunveno/internal/conference"
 	"github.com/ssubbotin/kunveno/internal/config"
+	"github.com/ssubbotin/kunveno/internal/documents"
 	"github.com/ssubbotin/kunveno/internal/httpapi"
 	"github.com/ssubbotin/kunveno/internal/lobby"
 	"github.com/ssubbotin/kunveno/internal/media"
@@ -71,13 +72,16 @@ func run(cfgPath string, log *slog.Logger) error {
 		return err
 	}
 	// Every directory the server writes, so that a bad owner stops it now with the fix, not later.
-	// The notes and recording directories only when their feature is on.
+	// The notes, recording and documents directories only when their feature is on.
 	dirs := []string{filepath.Dir(cfg.RoomsFile)}
 	if cfg.Notes.Enabled {
 		dirs = append(dirs, cfg.Notes.Dir)
 	}
 	if cfg.Recording.Enabled {
 		dirs = append(dirs, cfg.Recording.Dir)
+	}
+	if cfg.Documents.Enabled {
+		dirs = append(dirs, cfg.Documents.Dir)
 	}
 	for _, dir := range dirs {
 		if err := access.Writable(dir); err != nil {
@@ -127,12 +131,19 @@ func run(cfgPath string, log *slog.Logger) error {
 		return fmt.Errorf("recording %s: %w", cfg.Recording.Dir, err)
 	}
 	go sweepRecordings(ctx, recStore, log) // recordings expire whether or not recording is enabled
+	docStore, err := documents.Open(cfg.Documents.Dir, cfg.Documents.KeepFor, nil)
+	if err != nil {
+		return fmt.Errorf("documents %s: %w", cfg.Documents.Dir, err)
+	}
+	go sweepDocuments(ctx, docStore, log) // documents expire whether or not documents are enabled
 	// Summaries of ended meetings, next to the rooms file: shown in the lobby while notes or a
 	// recording of the meeting are kept.
 	meets := meetings.Open(filepath.Join(filepath.Dir(cfg.RoomsFile), "meetings.json"), nil)
 	meets.SetKeep(cfg.Meetings.KeepFor)
-	// A meeting stays listed while its notes, summary or a recording part is kept.
-	has := func(slug string, meeting int64) bool { return store.Has(slug, meeting) || recStore.Has(slug, meeting) }
+	// A meeting stays listed while its notes, summary, a recording part or a document is kept.
+	has := func(slug string, meeting int64) bool {
+		return store.Has(slug, meeting) || recStore.Has(slug, meeting) || docStore.Has(slug, meeting)
+	}
 	go sweepMeetings(ctx, meets, has, log)
 
 	conf := conference.New(reg, engineMedia{engine}, log)
@@ -149,6 +160,9 @@ func run(cfgPath string, log *slog.Logger) error {
 	if cfg.Facilitator.Enabled {
 		conf.SetFacilitator(cfg.Facilitator.Offered)
 	}
+	if cfg.Documents.Enabled {
+		conf.SetDocuments(docStore)
+	}
 	ws := sig.New(conf, cfg.HTTP.AllowedOrigins, log)
 	var gate *auth.Gate // nil while auth.enabled is off
 	if cfg.Auth.Enabled {
@@ -159,12 +173,12 @@ func run(cfgPath string, log *slog.Logger) error {
 		go sweepInvites(ctx, gate.Invites, log)
 	}
 	mux := routes(server{cfg: cfg, reg: reg, persist: persist, notes: store, recordings: recStore, meetings: meets,
-		conf: conf, ws: ws, gate: gate, log: log})
+		documents: docStore, conf: conf, ws: ws, gate: gate, log: log})
 
 	srv := &http.Server{Addr: cfg.HTTP.Listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
-	log.Info("kunveno-server started", "version", version, "listen", cfg.HTTP.Listen, "udp_port", engine.Port(), "tcp_port", engine.TCPPort(), "advertise_ip", cfg.Media.AdvertiseIP, "rooms", len(reg.All()), "rooms_file", cfg.RoomsFile, "backgrounds", cfg.BackgroundsDir, "notes", cfg.Notes.Enabled, "recording", cfg.Recording.Enabled, "facilitator", cfg.Facilitator.Enabled, "auth", cfg.Auth.Enabled)
+	log.Info("kunveno-server started", "version", version, "listen", cfg.HTTP.Listen, "udp_port", engine.Port(), "tcp_port", engine.TCPPort(), "advertise_ip", cfg.Media.AdvertiseIP, "rooms", len(reg.All()), "rooms_file", cfg.RoomsFile, "backgrounds", cfg.BackgroundsDir, "notes", cfg.Notes.Enabled, "recording", cfg.Recording.Enabled, "facilitator", cfg.Facilitator.Enabled, "documents", cfg.Documents.Enabled, "auth", cfg.Auth.Enabled)
 
 	select {
 	case err := <-errc:
@@ -222,6 +236,7 @@ type server struct {
 	notes      *notes.Store
 	recordings *recording.Store // served only while recording.enabled is on
 	meetings   *meetings.Store
+	documents  *documents.Store // served only while documents.enabled is on; may be nil
 	conf       *conference.Conference
 	ws         *sig.Handler
 	gate       *auth.Gate // nil: sign-in off
@@ -264,7 +279,7 @@ func routes(s server) *http.ServeMux {
 	summaries := cfg.Notes.Enabled && cfg.Notes.Summary
 	kept := lobby.Kept{
 		Notes: s.notes, NotesEnabled: cfg.Notes.Enabled, Recordings: s.recordings, RecordingEnabled: cfg.Recording.Enabled, Meetings: s.meetings,
-		SummaryEnabled: summaries,
+		SummaryEnabled: summaries, Documents: s.documents, DocumentsEnabled: cfg.Documents.Enabled,
 	}
 	rooms := protect(httpapi.Rooms(httpapi.RoomsConfig{Registry: reg, Persist: s.persist, PINs: pins, Deleted: deleted, Kept: kept}))
 	mux.Handle("/api/rooms", rooms)
@@ -289,6 +304,12 @@ func routes(s server) *http.ServeMux {
 		return kept.Knows(slug, meeting, time.Now(), cfg.Recording.KeepFor)
 	}
 	mux.Handle("PUT /internal/recording/{slug}", httpapi.RecordingUpload(reg, rec, cfg.Recording.MaxBytes, s.conf.RecordingStored, knownMeeting)) // never proxied by nginx
+	var docs *documents.Store                                                                                                                     // nil while documents.enabled is off
+	if cfg.Documents.Enabled {
+		docs = s.documents
+	}
+	mux.Handle("PUT /internal/documents/{slug}/{id}", httpapi.DocumentUpload(reg, docs, s.conf.DocumentMeeting, s.conf.DocumentsStored)) // never proxied by nginx
+	mux.Handle("POST /api/rooms/{slug}/documents/{id}", protect(httpapi.DocumentDownload(reg, docs, pins, time.Local)))
 	httpapi.RegisterMeetings(mux, httpapi.MeetingsConfig{Registry: reg, Kept: kept, PINs: pins, Links: links, Loc: time.Local}, protect)
 	bg := backgrounds.New(cfg.BackgroundsDir, s.log).Handler() // public: guests use backgrounds too
 	mux.Handle("/api/backgrounds", bg)
@@ -304,7 +325,7 @@ func routes(s server) *http.ServeMux {
 		mux.Handle("POST /api/rooms/{slug}/invites/list", inv)
 		mux.Handle("DELETE /api/rooms/{slug}/invites/{id}", inv)
 	}
-	mux.Handle("/api/info", httpapi.Info(cfg.UI.Title, cfg.UI.Reactions, cfg.UI.NoiseSuppression, cfg.Notes.Enabled, cfg.Notes.Live, cfg.Recording.Enabled, cfg.Facilitator.Enabled, cfg.Media.ReconnectGrace, signIn))
+	mux.Handle("/api/info", httpapi.Info(cfg.UI.Title, cfg.UI.Reactions, cfg.UI.NoiseSuppression, cfg.Notes.Enabled, cfg.Notes.Live, cfg.Recording.Enabled, cfg.Facilitator.Enabled, cfg.Media.ReconnectGrace, signIn).WithDocuments(cfg.Documents.Enabled))
 	mux.Handle("/internal/echo", httpapi.EchoRooms(reg))                      // never proxied by nginx
 	mux.Handle("/internal/notes", httpapi.NotesRooms(reg, cfg.Notes.Enabled)) // never proxied by nginx
 	summary := httpapi.SummaryInternal(s.notes, summaries, time.Local)        // never proxied by nginx
@@ -359,6 +380,22 @@ func sweepMeetings(ctx context.Context, store *meetings.Store, has func(string, 
 	for {
 		if err := store.Sweep(has); err != nil {
 			log.Warn("cannot save the meetings file", "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// sweepDocuments deletes expired meeting documents every minute.
+func sweepDocuments(ctx context.Context, store *documents.Store, log *slog.Logger) {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		for _, g := range store.Sweep() {
+			log.Info("documents expired", "room", g.Slug, "meeting", time.UnixMilli(g.Meeting).Format(time.RFC3339))
 		}
 		select {
 		case <-ctx.Done():

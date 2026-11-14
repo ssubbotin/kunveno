@@ -123,6 +123,12 @@ func wire(e conference.Event) any {
 		return RecordingReady()
 	case conference.LivePhrase:
 		return LivePhrase(e.Name, e.Start.UnixMilli(), e.Text)
+	case conference.Documents:
+		list := make([]DocumentInfo, len(e.List))
+		for i, d := range e.List {
+			list[i] = DocumentInfo{ID: d.ID, Title: d.Title, Updated: d.Updated.UnixMilli(), Rev: d.Rev}
+		}
+		return Documents(list)
 	}
 	panic("signal: unknown conference event")
 }

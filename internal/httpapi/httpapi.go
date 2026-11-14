@@ -246,22 +246,36 @@ type SignInInfo struct {
 // recording is offered (recording.enabled), whether the facilitator is offered
 // (facilitator.enabled; the rooms that offer it say so in their joined message), how many seconds
 // a client waits on a disconnected media connection before restarting (media.reconnect_grace) and,
-// as "auth", whether sign-in is on and with which providers (signIn; nil is off).
-func Info(title string, reactions []string, noiseSuppression, notesEnabled, notesLive, recordingEnabled, facilitatorEnabled bool, reconnectGrace int, signIn *SignInInfo) http.Handler {
+// as "auth", whether sign-in is on and with which providers (signIn; nil is off). WithDocuments
+// adds "documents".
+func Info(title string, reactions []string, noiseSuppression, notesEnabled, notesLive, recordingEnabled, facilitatorEnabled bool, reconnectGrace int, signIn *SignInInfo) *InfoHandler {
 	in := SignInInfo{Providers: []auth.ProviderInfo{}}
 	if signIn != nil && signIn.Enabled {
 		in.Enabled = true
 		in.Providers = append(in.Providers, signIn.Providers...)
 	}
-	body := map[string]any{"title": title, "reactions": reactions, "noise_suppression": noiseSuppression,
+	return &InfoHandler{body: map[string]any{"title": title, "reactions": reactions, "noise_suppression": noiseSuppression,
 		"notes": notesEnabled, "notes_live": notesEnabled && notesLive, "recording": recordingEnabled, "facilitator": facilitatorEnabled, "reconnect_grace": reconnectGrace,
-		"auth": in}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Cache-Control", "no-store")
-		writeJSON(w, http.StatusOK, body)
-	})
+		"auth": in}}
+}
+
+// InfoHandler is the /api/info handler; configure it before serving.
+type InfoHandler struct{ body map[string]any }
+
+// WithDocuments adds "documents": true while meeting documents are on (documents.enabled); while
+// they are off the key is left out and the answer stays as before.
+func (h *InfoHandler) WithDocuments(on bool) *InfoHandler {
+	if on {
+		h.body["documents"] = true
+	}
+	return h
+}
+
+func (h *InfoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, h.body)
 }

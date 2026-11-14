@@ -455,3 +455,24 @@ type livePhraseMsg struct {
 func LivePhrase(name string, start int64, text string) any {
 	return livePhraseMsg{Type: "phrase", Name: name, Start: start, Text: text}
 }
+
+// DocumentInfo is one meeting document in the documents message; updated is Unix ms.
+type DocumentInfo struct {
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	Updated int64  `json:"updated"`
+	Rev     int    `json:"rev"`
+}
+
+type documentsMsg struct {
+	Type string         `json:"type"`
+	List []DocumentInfo `json:"list"`
+}
+
+// Documents tells people the documents of the room's meeting (documents.enabled).
+func Documents(list []DocumentInfo) any {
+	if list == nil {
+		list = []DocumentInfo{}
+	}
+	return documentsMsg{Type: "documents", List: list}
+}
