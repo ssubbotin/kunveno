@@ -203,3 +203,21 @@ Facilitator (`facilitator.enabled: true`, `facilitator.rooms` lists one room):
 70. The switch is shown in the listed room only, to people; a guest and an unlisted room do not see it.
 71. With the add-on running: switching it on brings the bot into the room (listed with its own name,
     marked as a helper); switching it off removes it within 5 s; the last person leaving removes it too.
+
+Meeting documents (`documents.enabled: true` and the facilitator add-on running in `ops`; while the
+facilitator is in the room a document can also be stored by hand on the host:
+`curl -X PUT --data-binary @minutes.md '127.0.0.1:8080/internal/documents/ops/minutes?title=Minutes'`):
+
+72. With `documents.enabled` off the More menu and the meeting list show no documents, the upload
+    answers 404 and `/api/info` has no `documents` key.
+73. Without the facilitator in the room the upload answers 409 and nothing appears in the room.
+74. With the facilitator in the room: after an upload More shows "Meeting documents" with the title
+    and "version 1", the More button carries the dot, a screen reader announces "Document ready";
+    the download saves a Markdown file named after the room, the meeting's start and the title
+    (a Cyrillic title keeps its letters).
+75. Uploading the same id again: the row shows "version 2" and the new title, the download gives the
+    new text, a screen reader announces "Document updated". A person who joins later sees the list
+    at once. A guest sees no documents.
+76. The meeting list in the lobby shows the meeting's documents with "Download" and "Delete"; a
+    wrong PIN is refused and counts toward the PIN limit; deleting removes the row. Deleting the
+    room removes its documents; after `documents.keep` they disappear on their own.
