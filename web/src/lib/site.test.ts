@@ -41,6 +41,11 @@ describe('infoFrom notes', () => {
     expect(infoFrom({}).facilitatorEnabled).toBe(false);
   });
 
+  it('reads the documents flag, leaving it out while off', () => {
+    expect(infoFrom({ documents: true }).documentsEnabled).toBe(true);
+    expect(infoFrom({ documents: 'true' }).documentsEnabled).toBeUndefined();
+    expect(infoFrom({}).documentsEnabled).toBeUndefined();
+  });
   it('reads the recording flag', () => {
     expect(infoFrom({ recording: true }).recordingEnabled).toBe(true);
     expect(infoFrom({}).recordingEnabled).toBe(false);

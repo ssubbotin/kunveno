@@ -96,4 +96,13 @@ describe('RoomState', () => {
     expect(s.recording).toBe(false);
     expect(s.recordingReady).toBe(false);
   });
+  it('keeps the meeting\'s documents until a reset', () => {
+    const s = new RoomState();
+    expect(s.documents).toEqual([]);
+    s.apply({ type: 'documents', list: [{ id: 'minutes', title: 'Протокол', updated: 1, rev: 1 }] });
+    s.apply({ type: 'documents', list: [{ id: 'minutes', title: 'Протокол встречи', updated: 2, rev: 2 }, { id: 'plan', title: 'План', updated: 3, rev: 1 }] });
+    expect(s.documents.map((d) => [d.id, d.rev])).toEqual([['minutes', 2], ['plan', 1]]);
+    s.reset();
+    expect(s.documents).toEqual([]);
+  });
 });

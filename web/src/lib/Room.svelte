@@ -18,6 +18,9 @@
   import { presetLabel } from './background/presets';
   import { loadPrefs } from './media';
   import InviteDialog from './InviteDialog.svelte';
+  import { documentErrorText, fetchDocument } from './documents';
+  import { saveFile } from './notes';
+  import type { DocumentItem } from './protocol';
 
   // invites: sign-in is on and we are an employee, so More offers guest invitations.
   let { session, invites = false }: { session: Session; invites?: boolean } = $props();
@@ -246,6 +249,36 @@
     rs.recordingReady = false;
     rs.notesReady = false;
   }
+  // The meeting's documents, in More; downloaded with the PIN this session joined with.
+  const documentsShown = $derived(site.documentsEnabled && !guest && rs.documents.length > 0);
+  let documentBusy = $state(false);
+  let documentError = $state('');
+  async function downloadDocument(d: DocumentItem) {
+    if (documentBusy) return;
+    documentBusy = true;
+    documentError = '';
+    try {
+      const r = await fetchDocument(fetch, rs.roomSlug, session.pin, d.id);
+      if (r.ok) saveFile(r.blob, r.filename);
+      else documentError = documentErrorText(r, t);
+    } finally {
+      documentBusy = false;
+    }
+  }
+  // A new or updated document is announced; the same list sent again after a reconnect is not.
+  const documentRevs = new Map<string, number>();
+  $effect(() => {
+    const list = rs.documents;
+    const shown = site.documentsEnabled && !guest;
+    untrack(() => {
+      for (const d of list) {
+        const was = documentRevs.get(d.id);
+        if (shown && was === undefined) announce(t('documents.ready', { title: d.title }));
+        else if (shown && was !== undefined && d.rev > was) announce(t('documents.updated', { title: d.title }));
+        documentRevs.set(d.id, d.rev);
+      }
+    });
+  });
   const statusText = $derived(
     rs.status === 'connected' ? (rs.transport === 'tcp' ? t('status.backup') : t('status.connected'))
       : rs.status === 'reconnecting' ? t('status.reconnecting')
@@ -367,7 +400,7 @@
       </div>
 
       <div class="popover-anchor">
-        <button class="btn" class:active={more} class:flag={!more && (rs.echo || !rs.receiveVideo || rs.notes || rs.recording)} aria-expanded={more} aria-controls="more-menu" title={t('control.more')}
+        <button class="btn" class:active={more} class:flag={!more && (rs.echo || !rs.receiveVideo || rs.notes || rs.recording || documentsShown)} aria-expanded={more} aria-controls="more-menu" title={t('control.more')}
           bind:this={moreBtn} onclick={openMore}>
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="19" cy="12" r="1.3" /></svg>
           <span class="label">{t('control.more')}</span>
@@ -412,6 +445,18 @@
                 <span class="text">{t('control.facilitator')}<small id="facilitator-hint">{t('control.facilitatorHint')}</small></span>
                 <span class="switch" aria-hidden="true"></span>
               </button>
+            {/if}
+            {#if documentsShown}
+              <p class="group-title" id="documents-title">{t('documents.title')}</p>
+              {#each rs.documents as d (d.id)}
+                <button type="button" class="row" disabled={documentBusy} aria-describedby="documents-title doc-{d.id}" onclick={() => downloadDocument(d)}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6zM12 9v7M9 13l3 3 3-3" /></svg>
+                  <span class="text">{d.title}<small id="doc-{d.id}">{t('documents.hint', { rev: d.rev })}</small></span>
+                  <span class="keys">{t('last.download')}</span>
+                </button>
+              {/each}
+              {#if documentError}<p class="doc-error" role="alert">{documentError}</p>{/if}
+              <hr class="sep" />
             {/if}
             <button type="button" class="row" role="switch" aria-checked={!rs.receiveVideo} aria-label={t('control.noVideo')} aria-describedby="novideo-hint"
               onclick={() => session.setReceiveVideo(!rs.receiveVideo)}>
@@ -525,6 +570,9 @@
   .bg-dialog form, .actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; margin-top: 1rem; }
   .keys { font: inherit; font-size: .8rem; color: var(--muted); }
   .text small { color: var(--muted); font-size: .8rem; line-height: 1.3; }
+  .group-title { margin: .4rem .7rem .1rem; color: var(--muted); font-size: .8rem; }
+  .doc-error { margin: .2rem .7rem; color: #f1b5b3; font-size: .85rem; }
+  .sep { width: 100%; margin: .3rem 0; border: 0; border-top: 1px solid var(--line); }
   .switch { width: 2rem; height: 1.15rem; border-radius: 999px; background: var(--line); position: relative; transition: background .15s; }
   .switch::after { content: ''; position: absolute; top: .15rem; left: .15rem; width: .85rem; height: .85rem; border-radius: 50%; background: var(--text); transition: transform .15s; }
   .row[aria-checked='true'] .switch { background: var(--live); }

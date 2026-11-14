@@ -1,6 +1,6 @@
 <script lang="ts">
-  // The room's meetings, newest first, behind its PIN: each meeting's notes, summary and recording
-  // parts, each downloaded or deleted on its own (a delete asks once, in place).
+  // The room's meetings, newest first, behind its PIN: each meeting's notes, summary, recording
+  // parts and documents, each downloaded or deleted on its own (a delete asks once, in place).
   import { i18n, t } from './i18n/i18n.svelte';
   import { LANG_TAGS } from './i18n/messages';
   import { formatSummary, formatTime, formatUntil } from './lastMeeting';
@@ -8,11 +8,12 @@
   import { deleteNotes, fetchNotes, notesErrorText, saveFile } from './notes';
   import { deleteRecording, recordingErrorText, recordingLink, startDownload } from './recording';
   import { deleteSummary, fetchSummary } from './summary';
+  import { deleteDocument, documentErrorText, fetchDocument } from './documents';
 
   // onchange: the room's meetings changed, so the room list is stale.
   let { onchange }: { onchange: () => void } = $props();
 
-  type Item = { kind: 'notes' | 'summary' | 'part'; part?: number };
+  type Item = { kind: 'notes' | 'summary' | 'part' | 'document'; part?: number; id?: string };
 
   let dialog: HTMLDialogElement;
   let form: HTMLFormElement;
@@ -28,7 +29,7 @@
   let busy = $state(false);
   let asking = $state(''); // the item whose deletion is being confirmed
 
-  const keyOf = (m: MeetingRow, it: Item) => `${m.meeting}:${it.kind}:${it.part ?? ''}`;
+  const keyOf = (m: MeetingRow, it: Item) => `${m.meeting}:${it.kind}:${it.part ?? it.id ?? ''}`;
   const locale = () => LANG_TAGS[i18n.lang];
   const until = (d: Date) => formatUntil(d, locale());
 
@@ -66,6 +67,11 @@
         if (r.ok) return startDownload(r.url);
         error = recordingErrorText(r, t);
         if (r.error === 'gone') await changed();
+      } else if (it.kind === 'document' && it.id !== undefined) {
+        const r = await fetchDocument(fetch, slug, pin, it.id, m.meeting);
+        if (r.ok) return saveFile(r.blob, r.filename);
+        error = documentErrorText(r, t);
+        if (r.error === 'gone') await changed();
       } else {
         const r = it.kind === 'notes' ? await fetchNotes(fetch, slug, pin, i18n.lang, m.meeting) : await fetchSummary(fetch, slug, pin, i18n.lang, m.meeting);
         if (r.ok) return saveFile(r.blob, r.filename);
@@ -86,9 +92,12 @@
       const r =
         it.kind === 'notes' ? await deleteNotes(fetch, slug, pin, m.meeting)
         : it.kind === 'summary' ? await deleteSummary(fetch, slug, pin, m.meeting)
+        : it.kind === 'document' ? await deleteDocument(fetch, slug, pin, it.id!, m.meeting)
         : await deleteRecording(fetch, slug, pin, { meeting: m.meeting, part: it.part! });
       if (!r.ok) {
-        error = it.kind === 'part' ? recordingErrorText(r, t, 'recording.deleteFailed') : notesErrorText(r, t, it.kind === 'notes' ? 'notes.deleteFailed' : 'summary.deleteFailed');
+        error = it.kind === 'part' ? recordingErrorText(r, t, 'recording.deleteFailed')
+          : it.kind === 'document' ? documentErrorText(r, t, 'documents.deleteFailed')
+          : notesErrorText(r, t, it.kind === 'notes' ? 'notes.deleteFailed' : 'summary.deleteFailed');
         if (r.error === 'bad_pin') pinInput.focus();
         if (r.error !== 'gone') return;
       }
@@ -164,7 +173,10 @@
                   m.summary.state === 'ready' ? t('last.summaryReady', { time: until(m.summary.until) }) : t(m.summary.state === 'pending' ? 'last.summaryPending' : 'last.summaryFailed'),
                   m.summary.state === 'ready')}
               {/if}
-              {#if m.parts.length === 0 && !m.notes && !m.summary}
+              {#each m.documents as d (d.id)}
+                {@render item(m, { kind: 'document', id: d.id }, d.title, t('documents.until', { rev: d.rev, time: until(d.until) }), true)}
+              {/each}
+              {#if m.parts.length === 0 && !m.notes && !m.summary && m.documents.length === 0}
                 <li class="muted">{t('meetings.nothing')}</li>
               {/if}
             </ul>
