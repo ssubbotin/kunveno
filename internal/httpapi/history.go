@@ -20,7 +20,10 @@ type MeetingsConfig struct {
 	Kept     lobby.Kept // the stores and which features are on
 	PINs     *ratelimit.Limiter
 	Links    *Links // recording download links
-	Loc      *time.Location
+	// DocumentsChanged runs after a document of the room's meeting that started at meeting was
+	// deleted, so the room hears its new list; may be nil.
+	DocumentsChanged func(slug string, meeting time.Time)
+	Loc              *time.Location
 }
 
 type partItem struct {
@@ -206,6 +209,9 @@ func RegisterMeetings(mux *http.ServeMux, c MeetingsConfig, wrap func(http.Handl
 		case err != nil:
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		default:
+			if c.DocumentsChanged != nil {
+				c.DocumentsChanged(slug, time.UnixMilli(meeting))
+			}
 			w.WriteHeader(http.StatusNoContent)
 		}
 	})

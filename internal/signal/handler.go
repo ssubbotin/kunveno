@@ -128,7 +128,7 @@ func wire(e conference.Event) any {
 		for i, d := range e.List {
 			list[i] = DocumentInfo{ID: d.ID, Title: d.Title, Updated: d.Updated.UnixMilli(), Rev: d.Rev}
 		}
-		return Documents(list)
+		return Documents(e.Meeting.UnixMilli(), list)
 	}
 	panic("signal: unknown conference event")
 }

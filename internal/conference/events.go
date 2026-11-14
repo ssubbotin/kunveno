@@ -44,8 +44,12 @@ type LivePhrase struct {
 	Text  string
 }
 
-// Documents is the list of the meeting's documents (documents.enabled), sent to people.
-type Documents struct{ List []documents.Info }
+// Documents is the list of the documents of the meeting that started at Meeting
+// (documents.enabled), sent to people.
+type Documents struct {
+	Meeting time.Time
+	List    []documents.Info
+}
 
 func (Joined) event()         {}
 func (Roster) event()         {}

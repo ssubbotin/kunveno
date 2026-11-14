@@ -209,6 +209,9 @@ func TestDeleteAndRemove(t *testing.T) {
 	if !s.Has("dev", m) {
 		t.Fatal("another room lost its documents")
 	}
+	if s.Bytes() <= 0 {
+		t.Fatalf("bytes %d", s.Bytes())
+	}
 	if s2 := open(t, dir, &clock{t0}); s2.Has("ops", m) {
 		t.Fatal("removed documents back after a restart")
 	}
@@ -258,5 +261,22 @@ func TestFileName(t *testing.T) {
 		if got := FileName("ops", start, c.title, c.id, loc); got != c.want {
 			t.Errorf("%q: %q, want %q", c.title, got, c.want)
 		}
+	}
+}
+
+// A meeting that loses one of its documents is reported, so the room can hear its new list.
+func TestSweepReportsPartialLoss(t *testing.T) {
+	c := &clock{t0}
+	s := open(t, t.TempDir(), c)
+	m := t0.UnixMilli()
+	s.Put("ops", m, "old", "Старый", []byte("x"))
+	c.t = t0.Add(12 * time.Hour)
+	s.Put("ops", m, "new", "Новый", []byte("y"))
+	c.t = t0.Add(25 * time.Hour)
+	if gone := s.Sweep(); len(gone) != 1 || gone[0].Meeting != m {
+		t.Fatalf("gone %+v", gone)
+	}
+	if l := s.List("ops", m); len(l) != 1 || l[0].ID != "new" {
+		t.Fatalf("left %+v", l)
 	}
 }

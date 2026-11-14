@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -24,8 +26,9 @@ func newDocumentsEnv(t *testing.T) (*env, *documents.Store) {
 }
 
 type docMsg struct {
-	Type string `json:"type"`
-	List []struct {
+	Type    string `json:"type"`
+	Meeting int64  `json:"meeting"`
+	List    []struct {
 		ID      string `json:"id"`
 		Title   string `json:"title"`
 		Updated int64  `json:"updated"`
@@ -76,7 +79,15 @@ func storeDocument(t *testing.T, e *env, store *documents.Store, id, title strin
 	if _, err := store.Put("ops", meeting.UnixMilli(), id, title, []byte("# "+title)); err != nil {
 		t.Fatal(err)
 	}
-	e.conf.DocumentsStored("ops", meeting)
+	e.conf.DocumentsChanged("ops", meeting)
+}
+
+// liveMeeting is the start of the room's live meeting in Unix ms.
+func liveMeeting(t *testing.T, e *env) int64 {
+	t.Helper()
+	r, _ := e.reg.Get("ops")
+	m, _ := r.Meeting()
+	return m.UnixMilli()
 }
 
 // A document is accepted only while a facilitator is in the room's live meeting.
@@ -107,6 +118,9 @@ func TestDocumentsMessageToPeople(t *testing.T) {
 	bot, _ := joinFacilitator(t, e)
 	storeDocument(t, e, store, "minutes", "Протокол")
 	m := expectDocuments(t, ca)
+	if m.Meeting != liveMeeting(t, e) || m.Meeting == 0 {
+		t.Fatalf("meeting %d, want %d", m.Meeting, liveMeeting(t, e))
+	}
 	if len(m.List) != 1 || m.List[0].ID != "minutes" || m.List[0].Title != "Протокол" || m.List[0].Rev != 1 || m.List[0].Updated <= 0 {
 		t.Fatalf("list = %+v", m.List)
 	}
@@ -115,23 +129,76 @@ func TestDocumentsMessageToPeople(t *testing.T) {
 		t.Fatalf("replaced = %+v", m.List)
 	}
 	cb, _ := joinRoom(t, e, "ops", "Bob")
-	if m := expectDocuments(t, cb); len(m.List) != 1 || m.List[0].Rev != 2 {
-		t.Fatalf("on join = %+v", m.List)
+	if m := expectDocuments(t, cb); len(m.List) != 1 || m.List[0].Rev != 2 || m.Meeting != liveMeeting(t, e) {
+		t.Fatalf("on join = %+v", m)
 	}
 	noDocuments(t, bot)
 }
 
-// Without documents nothing is said: not on join, not after a facilitator came.
-func TestNoDocumentsMessageWhenEmptyOrOff(t *testing.T) {
-	e, _ := newDocumentsEnv(t)
+// A deleted document of the live meeting gives the room its new list, an empty one included; a
+// change to another meeting says nothing.
+func TestDocumentsListAfterDelete(t *testing.T) {
+	e, store := newDocumentsEnv(t)
 	ca, _ := joinRoom(t, e, "ops", "Ann")
-	noDocuments(t, ca)
-	off := newFacilitatorEnv(t) // documents.enabled off: SetDocuments never called
-	cb, _ := joinRoom(t, off, "ops", "Bob")
-	facilitatorOn(t, cb, true)
-	joinFacilitator(t, off)
-	if _, ok := off.conf.DocumentMeeting("ops"); ok {
-		t.Fatal("documents accepted while off")
+	facilitatorOn(t, ca, true)
+	joinFacilitator(t, e)
+	storeDocument(t, e, store, "minutes", "Протокол")
+	storeDocument(t, e, store, "plan", "План")
+	for len(expectDocuments(t, ca).List) != 2 {
 	}
-	noDocuments(t, cb)
+	m := liveMeeting(t, e)
+	if err := store.Delete("ops", m, "minutes"); err != nil {
+		t.Fatal(err)
+	}
+	e.conf.DocumentsChanged("ops", time.UnixMilli(m))
+	if got := expectDocuments(t, ca); len(got.List) != 1 || got.List[0].ID != "plan" {
+		t.Fatalf("after delete %+v", got.List)
+	}
+	if err := store.Delete("ops", m, "plan"); err != nil {
+		t.Fatal(err)
+	}
+	e.conf.DocumentsChanged("ops", time.UnixMilli(m))
+	if got := expectDocuments(t, ca); len(got.List) != 0 || got.Meeting != m {
+		t.Fatalf("after the last delete %+v", got)
+	}
+	e.conf.DocumentsChanged("ops", time.UnixMilli(m-60000)) // an earlier meeting
+	noDocuments(t, ca)
+}
+
+// Two uploads at once: the list of the first is built before the second document is stored but
+// is slow to go out; the last list the room hears still holds both documents.
+func TestConcurrentUploadsEndWithTheFullList(t *testing.T) {
+	e, store := newDocumentsEnv(t)
+	ca, _ := joinRoom(t, e, "ops", "Ann")
+	facilitatorOn(t, ca, true)
+	joinFacilitator(t, e)
+	meeting, _ := e.conf.DocumentMeeting("ops")
+	firstIn := make(chan struct{})
+	var calls atomic.Int32
+	e.conf.BeforeDocumentsSend = func() {
+		if calls.Add(1) == 1 {
+			close(firstIn)
+			time.Sleep(300 * time.Millisecond) // the second upload runs meanwhile
+		}
+	}
+	upload := func(id string) {
+		if _, err := store.Put("ops", meeting.UnixMilli(), id, id, []byte("x")); err != nil {
+			t.Error(err)
+		}
+		e.conf.DocumentsChanged("ops", meeting)
+	}
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() { defer wg.Done(); upload("minutes") }()
+	<-firstIn
+	go func() { defer wg.Done(); upload("plan") }()
+	wg.Wait()
+	var last docMsg
+	for i := 0; i < 2; i++ {
+		last = expectDocuments(t, ca)
+	}
+	if len(last.List) != 2 {
+		t.Fatalf("the last list has %d documents", len(last.List))
+	}
+	noDocuments(t, ca)
 }

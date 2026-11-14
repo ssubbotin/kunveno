@@ -73,7 +73,7 @@ type Info struct {
 // Until is when the document expires under keep.
 func (i Info) Until(keep time.Duration) time.Time { return i.Updated.Add(keep) }
 
-// Gone names a meeting whose last document the sweep removed.
+// Gone names a meeting that lost a document in the sweep.
 type Gone struct {
 	Slug    string
 	Meeting int64
@@ -323,7 +323,7 @@ func (s *Store) Remove(slug string) error {
 	return os.RemoveAll(filepath.Join(s.dir, slug))
 }
 
-// Sweep deletes expired documents and returns the meetings left with none, sorted.
+// Sweep deletes expired documents and returns the meetings that lost one, sorted.
 func (s *Store) Sweep() []Gone {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -346,9 +346,7 @@ func (s *Store) Sweep() []Gone {
 				_ = os.Remove(s.bodyPath(k, d.ID))
 			}
 		}
-		if len(kept) == 0 {
-			gone = append(gone, Gone{Slug: k.slug, Meeting: k.meeting})
-		}
+		gone = append(gone, Gone{Slug: k.slug, Meeting: k.meeting})
 		s.cleanLocked(k)
 	}
 	sort.Slice(gone, func(i, j int) bool {
@@ -412,6 +410,20 @@ func writeFile(path string, data []byte) error {
 		return err
 	}
 	return os.Rename(tmp.Name(), path)
+}
+
+// Bytes is how much the documents take on disk.
+func (s *Store) Bytes() int64 {
+	var n int64
+	_ = filepath.WalkDir(s.dir, func(_ string, d fs.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			if info, err := d.Info(); err == nil {
+				n += info.Size()
+			}
+		}
+		return nil
+	})
+	return n
 }
 
 // FileName is a download's name: the room, the meeting's start and the title, letters and digits

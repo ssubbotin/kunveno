@@ -135,7 +135,6 @@ func run(cfgPath string, log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("documents %s: %w", cfg.Documents.Dir, err)
 	}
-	go sweepDocuments(ctx, docStore, log) // documents expire whether or not documents are enabled
 	// Summaries of ended meetings, next to the rooms file: shown in the lobby while notes or a
 	// recording of the meeting are kept.
 	meets := meetings.Open(filepath.Join(filepath.Dir(cfg.RoomsFile), "meetings.json"), nil)
@@ -163,6 +162,8 @@ func run(cfgPath string, log *slog.Logger) error {
 	if cfg.Documents.Enabled {
 		conf.SetDocuments(docStore)
 	}
+	// Documents expire whether or not documents are enabled; a live meeting's room hears its new list.
+	go sweepDocuments(ctx, docStore, conf.DocumentsChanged, log)
 	ws := sig.New(conf, cfg.HTTP.AllowedOrigins, log)
 	var gate *auth.Gate // nil while auth.enabled is off
 	if cfg.Auth.Enabled {
@@ -308,9 +309,9 @@ func routes(s server) *http.ServeMux {
 	if cfg.Documents.Enabled {
 		docs = s.documents
 	}
-	mux.Handle("PUT /internal/documents/{slug}/{id}", httpapi.DocumentUpload(reg, docs, s.conf.DocumentMeeting, s.conf.DocumentsStored)) // never proxied by nginx
-	mux.Handle("POST /api/rooms/{slug}/documents/{id}", protect(httpapi.DocumentDownload(reg, docs, pins, time.Local)))
-	httpapi.RegisterMeetings(mux, httpapi.MeetingsConfig{Registry: reg, Kept: kept, PINs: pins, Links: links, Loc: time.Local}, protect)
+	mux.Handle("PUT /internal/documents/{slug}/{id}", httpapi.DocumentUpload(reg, docs, s.conf.DocumentMeeting, s.conf.DocumentsChanged)) // never proxied by nginx
+	httpapi.RegisterMeetings(mux, httpapi.MeetingsConfig{Registry: reg, Kept: kept, PINs: pins, Links: links, Loc: time.Local,
+		DocumentsChanged: s.conf.DocumentsChanged}, protect)
 	bg := backgrounds.New(cfg.BackgroundsDir, s.log).Handler() // public: guests use backgrounds too
 	mux.Handle("/api/backgrounds", bg)
 	mux.Handle("/api/backgrounds/", bg)
@@ -325,14 +326,18 @@ func routes(s server) *http.ServeMux {
 		mux.Handle("POST /api/rooms/{slug}/invites/list", inv)
 		mux.Handle("DELETE /api/rooms/{slug}/invites/{id}", inv)
 	}
-	mux.Handle("/api/info", httpapi.Info(cfg.UI.Title, cfg.UI.Reactions, cfg.UI.NoiseSuppression, cfg.Notes.Enabled, cfg.Notes.Live, cfg.Recording.Enabled, cfg.Facilitator.Enabled, cfg.Media.ReconnectGrace, signIn).WithDocuments(cfg.Documents.Enabled))
+	mux.Handle("/api/info", httpapi.Info(cfg.UI.Title, cfg.UI.Reactions, cfg.UI.NoiseSuppression, cfg.Notes.Enabled, cfg.Notes.Live, cfg.Recording.Enabled, cfg.Facilitator.Enabled, cfg.Documents.Enabled, cfg.Media.ReconnectGrace, signIn))
 	mux.Handle("/internal/echo", httpapi.EchoRooms(reg))                      // never proxied by nginx
 	mux.Handle("/internal/notes", httpapi.NotesRooms(reg, cfg.Notes.Enabled)) // never proxied by nginx
 	summary := httpapi.SummaryInternal(s.notes, summaries, time.Local)        // never proxied by nginx
 	mux.Handle("/internal/notes/summaries", summary)
 	mux.Handle("/internal/notes/summaries/", summary)
 	promReg := metrics.NewRegistry(reg, version)
-	metrics.RegisterKept(promReg, s.notes.Bytes, s.recordings.Bytes)
+	var docBytes func() int64
+	if s.documents != nil {
+		docBytes = s.documents.Bytes
+	}
+	metrics.RegisterKept(promReg, s.notes.Bytes, s.recordings.Bytes, docBytes)
 	if gate != nil {
 		metrics.RegisterAuth(promReg, gate.Invites.Active)
 	}
@@ -390,12 +395,13 @@ func sweepMeetings(ctx context.Context, store *meetings.Store, has func(string, 
 }
 
 // sweepDocuments deletes expired meeting documents every minute.
-func sweepDocuments(ctx context.Context, store *documents.Store, log *slog.Logger) {
+func sweepDocuments(ctx context.Context, store *documents.Store, changed func(string, time.Time), log *slog.Logger) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
 	for {
 		for _, g := range store.Sweep() {
 			log.Info("documents expired", "room", g.Slug, "meeting", time.UnixMilli(g.Meeting).Format(time.RFC3339))
+			changed(g.Slug, time.UnixMilli(g.Meeting))
 		}
 		select {
 		case <-ctx.Done():

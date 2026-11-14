@@ -11,7 +11,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/ssubbotin/kunveno/internal/documents"
-	"github.com/ssubbotin/kunveno/internal/ratelimit"
 	"github.com/ssubbotin/kunveno/internal/room"
 )
 
@@ -19,7 +18,8 @@ import (
 // signal): PUT /internal/documents/{slug}/{id}?title=<text>, loopback only, body Markdown (UTF-8,
 // not blank, at most 512 KiB). id is ^[a-z0-9-]{1,40}$; the same id replaces the document of the
 // meeting. meeting reports the room's live meeting while a facilitator is in it; the document
-// belongs to that meeting. 204 stored (then stored tells the room), 400 a bad id, title or body,
+// belongs to that meeting. 200 stored, {"id","rev","updated"} with updated in Unix ms (then
+// stored tells the room), 400 a bad id, title or body,
 // 403 not loopback, 404 documents off (store nil) or no such room, 409 no live meeting with a
 // facilitator or the meeting already has 20 documents, 413 a larger body.
 func DocumentUpload(reg *room.Registry, store *documents.Store, meeting func(slug string) (time.Time, bool), stored func(slug string, meeting time.Time)) http.Handler {
@@ -57,7 +57,7 @@ func DocumentUpload(reg *room.Registry, store *documents.Store, meeting func(slu
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "no live meeting with a facilitator in this room"})
 			return
 		}
-		_, err = store.Put(slug, start.UnixMilli(), id, title, body)
+		info, err := store.Put(slug, start.UnixMilli(), id, title, body)
 		switch {
 		case errors.Is(err, documents.ErrTooMany):
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "the meeting already has 20 documents"})
@@ -67,30 +67,8 @@ func DocumentUpload(reg *room.Registry, store *documents.Store, meeting func(slu
 			if stored != nil {
 				stored(slug, start)
 			}
-			w.WriteHeader(http.StatusNoContent)
+			writeJSON(w, http.StatusOK, map[string]any{"id": info.ID, "rev": info.Rev, "updated": info.Updated.UnixMilli()})
 		}
-	})
-}
-
-// DocumentDownload serves POST /api/rooms/{slug}/documents/{id} with {"pin"}: the document id of
-// the room's newest meeting that keeps one, as Markdown, with the same checks as SummaryDownload;
-// 404 when there is none or documents are off (store nil).
-func DocumentDownload(reg *room.Registry, store *documents.Store, pins *ratelimit.Limiter, loc *time.Location) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		slug, id := r.PathValue("slug"), r.PathValue("id")
-		if store == nil || !documents.ValidID(id) {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "no document"})
-			return
-		}
-		if _, ok := pinChecked(w, r, slug, "documents", reg, pins); !ok {
-			return
-		}
-		meeting, ok := store.Latest(slug, id)
-		if !ok {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "no document"})
-			return
-		}
-		serveDocument(w, store, slug, meeting, id, loc)
 	})
 }
 

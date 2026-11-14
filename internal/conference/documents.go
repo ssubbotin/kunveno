@@ -37,9 +37,10 @@ func (c *Conference) DocumentMeeting(slug string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// DocumentsStored tells the people of the room the documents of its meeting that started at
-// meeting; the upload handler calls it after storing one. Nothing is sent once another meeting runs.
-func (c *Conference) DocumentsStored(slug string, meeting time.Time) {
+// DocumentsChanged tells the people of the room the documents of its meeting that started at
+// meeting, an empty list included; the upload, the delete and the expiry sweep call it after a
+// change. Nothing is sent when that meeting is not the one the room runs now.
+func (c *Conference) DocumentsChanged(slug string, meeting time.Time) {
 	if c.documents == nil {
 		return
 	}
@@ -47,27 +48,37 @@ func (c *Conference) DocumentsStored(slug string, meeting time.Time) {
 	if !ok {
 		return
 	}
-	if current, _ := lr.room.Meeting(); !current.Equal(meeting) {
+	lr.docsMu.Lock()
+	defer lr.docsMu.Unlock()
+	current, active := lr.room.Meeting()
+	if !active || current.UnixMilli() != meeting.UnixMilli() {
 		return
 	}
-	list := c.documents.List(slug, meeting.UnixMilli())
+	list := c.documents.List(slug, current.UnixMilli())
+	if c.BeforeDocumentsSend != nil {
+		c.BeforeDocumentsSend()
+	}
+	c.log.Info("documents changed", "room", slug, "count", len(list))
+	c.sendPeople(lr, Documents{Meeting: current, List: list})
+}
+
+// sendDocumentsOnJoin tells a person who just joined the documents of the room's live meeting,
+// when there are any.
+func (c *Conference) sendDocumentsOnJoin(lr *liveRoom, s *Member) {
+	if c.documents == nil {
+		return
+	}
+	lr.docsMu.Lock()
+	defer lr.docsMu.Unlock()
+	start, active := lr.room.Meeting()
+	if !active {
+		return
+	}
+	list := c.documents.List(lr.room.Slug(), start.UnixMilli())
 	if len(list) == 0 {
 		return
 	}
-	c.log.Info("documents stored", "room", slug, "count", len(list))
-	c.sendPeople(lr, Documents{List: list})
-}
-
-// documentsFor is the documents event of the room's live meeting for a person who just joined;
-// false when there are none or documents are off.
-func (c *Conference) documentsFor(lr *liveRoom) (Documents, bool) {
-	if c.documents == nil {
-		return Documents{}, false
+	if err := s.conn.Send(Documents{Meeting: start, List: list}); err != nil {
+		s.log.Warn("documents write", "err", err)
 	}
-	start, active := lr.room.Meeting()
-	if !active {
-		return Documents{}, false
-	}
-	list := c.documents.List(lr.room.Slug(), start.UnixMilli())
-	return Documents{List: list}, len(list) > 0
 }

@@ -25,6 +25,8 @@ type docRig struct {
 	live        time.Time
 	facilitator bool
 	stored      []time.Time
+	changed     []time.Time // deletes reported to the room
+	pins        *ratelimit.Limiter
 }
 
 func newDocRig(t *testing.T, enabled bool) *docRig {
@@ -40,12 +42,11 @@ func newDocRig(t *testing.T, enabled bool) *docRig {
 	if enabled {
 		s = store
 	}
-	pins := ratelimit.New(5, 10*time.Minute, time.Minute)
+	d.pins = ratelimit.New(5, 10*time.Minute, time.Minute)
 	meeting := func(slug string) (time.Time, bool) { return d.live, d.facilitator }
 	d.mux.Handle("PUT /internal/documents/{slug}/{id}", DocumentUpload(d.reg, s, meeting, func(slug string, m time.Time) { d.stored = append(d.stored, m) }))
-	d.mux.Handle("POST /api/rooms/{slug}/documents/{id}", DocumentDownload(d.reg, s, pins, msk))
 	RegisterMeetings(d.mux, MeetingsConfig{Registry: d.reg, Kept: lobby.Kept{Documents: store, DocumentsEnabled: enabled, Meetings: meetingsStore(t)},
-		PINs: pins, Links: NewLinks(time.Minute), Loc: msk}, nil)
+		PINs: d.pins, Links: NewLinks(time.Minute), Loc: msk, DocumentsChanged: func(slug string, m time.Time) { d.changed = append(d.changed, m) }}, nil)
 	return d
 }
 
@@ -62,6 +63,11 @@ func (d *docRig) req(method, target, body string, local bool) *httptest.Response
 
 func (d *docRig) put(id, title, body string) *httptest.ResponseRecorder {
 	return d.req(http.MethodPut, "/internal/documents/ops/"+id+"?title="+url.QueryEscape(title), body, true)
+}
+
+// doc is the per-meeting route of a document of the live meeting.
+func (d *docRig) doc(id string) string {
+	return fmt.Sprintf("/api/rooms/ops/meetings/%d/documents/%s", d.live.UnixMilli(), id)
 }
 
 func TestDocumentUploadChecks(t *testing.T) {
@@ -89,7 +95,7 @@ func TestDocumentUploadChecks(t *testing.T) {
 	if len(d.store.Meetings("ops")) != 0 || len(d.stored) != 0 {
 		t.Fatal("a refused upload was stored")
 	}
-	if w := d.put("minutes", strings.Repeat("я", 120), strings.Repeat("a", 512<<10)); w.Code != http.StatusNoContent {
+	if w := d.put("minutes", strings.Repeat("я", 120), strings.Repeat("a", 512<<10)); w.Code != http.StatusOK {
 		t.Fatalf("at the limits: %d %s", w.Code, w.Body)
 	}
 }
@@ -99,7 +105,7 @@ func TestDocumentUploadDisabled(t *testing.T) {
 	if w := d.put("minutes", "T", "x"); w.Code != http.StatusNotFound {
 		t.Fatalf("%d", w.Code)
 	}
-	if w := d.req(http.MethodPost, "/api/rooms/ops/documents/minutes", `{"pin":"1234"}`, false); w.Code != http.StatusNotFound {
+	if w := d.req(http.MethodPost, d.doc("minutes"), `{"pin":"1234"}`, false); w.Code != http.StatusNotFound {
 		t.Fatalf("download: %d", w.Code)
 	}
 }
@@ -118,11 +124,24 @@ func TestDocumentUploadNeedsAFacilitator(t *testing.T) {
 
 func TestDocumentUploadStoresAndReplaces(t *testing.T) {
 	d := newDocRig(t, true)
-	if w := d.put("minutes", "  Протокол  ", "# один"); w.Code != http.StatusNoContent {
-		t.Fatalf("%d %s", w.Code, w.Body)
+	type answer struct {
+		ID      string
+		Rev     int
+		Updated int64
 	}
-	if w := d.put("minutes", "Протокол встречи", "# два"); w.Code != http.StatusNoContent {
-		t.Fatalf("replace: %d %s", w.Code, w.Body)
+	read := func(w *httptest.ResponseRecorder) answer {
+		t.Helper()
+		var a answer
+		if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "application/json" || json.Unmarshal(w.Body.Bytes(), &a) != nil {
+			t.Fatalf("%d %s", w.Code, w.Body)
+		}
+		return a
+	}
+	if a := read(d.put("minutes", "  Протокол  ", "# один")); a.ID != "minutes" || a.Rev != 1 || a.Updated <= 0 {
+		t.Fatalf("first %+v", a)
+	}
+	if a := read(d.put("minutes", "Протокол встречи", "# два")); a.ID != "minutes" || a.Rev != 2 {
+		t.Fatalf("replace %+v", a)
 	}
 	list := d.store.List("ops", d.live.UnixMilli())
 	if len(list) != 1 || list[0].Rev != 2 || list[0].Title != "Протокол встречи" {
@@ -132,25 +151,22 @@ func TestDocumentUploadStoresAndReplaces(t *testing.T) {
 		t.Fatalf("stored %v", d.stored)
 	}
 	for i := 1; i < documents.MaxPerMeeting; i++ {
-		if w := d.put(fmt.Sprintf("d%d", i), "T", "x"); w.Code != http.StatusNoContent {
+		if w := d.put(fmt.Sprintf("d%d", i), "T", "x"); w.Code != http.StatusOK {
 			t.Fatalf("doc %d: %d", i, w.Code)
 		}
 	}
 	if w := d.put("one-more", "T", "x"); w.Code != http.StatusConflict {
 		t.Fatalf("21st: %d %s", w.Code, w.Body)
 	}
-	if w := d.put("minutes", "Протокол", "# три"); w.Code != http.StatusNoContent {
+	if w := d.put("minutes", "Протокол", "# три"); w.Code != http.StatusOK {
 		t.Fatalf("replace at the limit: %d", w.Code)
 	}
 }
 
-func TestDocumentDownloadInTheRoom(t *testing.T) {
+func TestDocumentFileNames(t *testing.T) {
 	d := newDocRig(t, true)
 	d.put("minutes", "Протокол встречи", "# Протокол\n")
-	if w := d.req(http.MethodPost, "/api/rooms/ops/documents/minutes", `{"pin":"0000"}`, false); w.Code != http.StatusForbidden {
-		t.Fatalf("wrong PIN: %d", w.Code)
-	}
-	w := d.req(http.MethodPost, "/api/rooms/ops/documents/minutes", `{"pin":"1234"}`, false)
+	w := d.req(http.MethodPost, d.doc("minutes"), `{"pin":"1234"}`, false)
 	if w.Code != 200 || w.Body.String() != "# Протокол\n" || w.Header().Get("Content-Type") != "text/markdown; charset=utf-8" {
 		t.Fatalf("%d %q %v", w.Code, w.Body, w.Header())
 	}
@@ -159,21 +175,35 @@ func TestDocumentDownloadInTheRoom(t *testing.T) {
 	if !strings.HasPrefix(cd, `attachment; filename="ops-2026-10-14-1030-minutes.md"; filename*=UTF-8''`) || !strings.HasSuffix(cd, want) {
 		t.Fatalf("disposition %q", cd)
 	}
-	if w := d.req(http.MethodPost, "/api/rooms/ops/documents/plan", `{"pin":"1234"}`, false); w.Code != http.StatusNotFound {
-		t.Fatalf("unknown: %d", w.Code)
+	d.put("plan", "Plan Q4", "x")
+	w = d.req(http.MethodPost, d.doc("plan"), `{"pin":"1234"}`, false)
+	if cd := w.Header().Get("Content-Disposition"); cd != `attachment; filename="ops-2026-10-14-1030-Plan-Q4.md"` {
+		t.Fatalf("%q", cd)
 	}
-	if w := d.req(http.MethodPost, "/api/rooms/ops/documents/Bad", `{"pin":"1234"}`, false); w.Code != http.StatusNotFound {
+	if w := d.req(http.MethodPost, d.doc("Bad"), `{"pin":"1234"}`, false); w.Code != http.StatusNotFound {
 		t.Fatalf("bad id: %d", w.Code)
 	}
 }
 
-// An ASCII title gives a plain file name.
-func TestDocumentPlainFileName(t *testing.T) {
+// Wrong PINs on the document routes count toward the shared limit: the address is blocked.
+func TestDocumentRoutesCountWrongPINs(t *testing.T) {
 	d := newDocRig(t, true)
-	d.put("plan", "Plan Q4", "x")
-	w := d.req(http.MethodPost, "/api/rooms/ops/documents/plan", `{"pin":"1234"}`, false)
-	if cd := w.Header().Get("Content-Disposition"); cd != `attachment; filename="ops-2026-10-14-1030-Plan-Q4.md"` {
-		t.Fatalf("%q", cd)
+	d.put("minutes", "Протокол", "x")
+	for i := 0; i < 5; i++ {
+		method := http.MethodPost
+		if i%2 == 1 {
+			method = http.MethodDelete
+		}
+		if w := d.req(method, d.doc("minutes"), `{"pin":"0000"}`, false); w.Code != http.StatusForbidden {
+			t.Fatalf("attempt %d: %d", i, w.Code)
+		}
+	}
+	w := d.req(http.MethodPost, d.doc("minutes"), `{"pin":"1234"}`, false)
+	if w.Code != http.StatusTooManyRequests || w.Header().Get("Retry-After") == "" {
+		t.Fatalf("blocked: %d %v", w.Code, w.Header())
+	}
+	if _, _, err := d.store.Load("ops", d.live.UnixMilli(), "minutes"); err != nil {
+		t.Fatal("deleted under a wrong PIN")
 	}
 }
 
@@ -223,6 +253,9 @@ func TestMeetingHistoryDocuments(t *testing.T) {
 	if w := d.req("DELETE", base+"minutes", `{"pin":"1234"}`, false); w.Code != http.StatusNoContent {
 		t.Fatalf("delete %d %s", w.Code, w.Body)
 	}
+	if len(d.changed) != 1 || !d.changed[0].Equal(d.live) {
+		t.Fatalf("delete not reported to the room: %v", d.changed)
+	}
 	if w := d.req("DELETE", base+"minutes", `{"pin":"1234"}`, false); w.Code != http.StatusNotFound {
 		t.Fatalf("delete again %d", w.Code)
 	}
@@ -249,14 +282,11 @@ func TestMeetingHistoryDocumentsOff(t *testing.T) {
 }
 
 func TestInfoDocuments(t *testing.T) {
-	rec := httptest.NewRecorder()
-	Info("T", nil, false, false, false, false, false, 15, nil).WithDocuments(true).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
-	if !strings.Contains(rec.Body.String(), `"documents":true`) {
-		t.Fatalf("%s", rec.Body)
-	}
-	rec = httptest.NewRecorder()
-	Info("T", nil, false, false, false, false, false, 15, nil).WithDocuments(false).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
-	if strings.Contains(rec.Body.String(), `documents`) {
-		t.Fatalf("off: %s", rec.Body)
+	for on, want := range map[bool]string{true: `"documents":true`, false: `"documents":false`} {
+		rec := httptest.NewRecorder()
+		Info("T", nil, false, false, false, false, false, on, 15, nil).ServeHTTP(rec, httptest.NewRequest("GET", "/api/info", nil))
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Fatalf("%v: %s", on, rec.Body)
+		}
 	}
 }
