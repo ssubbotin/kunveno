@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ssubbotin/kunveno/internal/documents"
 	"github.com/ssubbotin/kunveno/internal/meetings"
 	"github.com/ssubbotin/kunveno/internal/notes"
 )
@@ -61,5 +62,37 @@ func TestCountMatchesHistory(t *testing.T) {
 	k := Kept{Notes: ns, NotesEnabled: true, SummaryEnabled: true, Meetings: idx}
 	if got, want := k.Count("ops"), len(k.History("ops")); got != want || want != 2 {
 		t.Fatalf("Count %d, History %d", got, want)
+	}
+}
+
+// Documents count as a meeting's material while documents are on, and go with a deleted room
+// whatever is on.
+func TestDocuments(t *testing.T) {
+	now := time.Date(2026, 10, 17, 12, 0, 0, 0, time.UTC)
+	ds, err := documents.Open(t.TempDir(), 24*time.Hour, func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx := meetings.Open(filepath.Join(t.TempDir(), "meetings.json"), nil)
+	m := now.Add(-time.Hour)
+	if _, err := ds.Put("ops", m.UnixMilli(), "minutes", "Протокол", []byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	k := Kept{Documents: ds, Meetings: idx}
+	if k.Count("ops") != 0 || len(k.History("ops")) != 0 {
+		t.Fatal("documents listed while off")
+	}
+	k.DocumentsEnabled = true
+	h := k.History("ops")
+	if k.Count("ops") != 1 || len(h) != 1 || !h[0].Start.Equal(m) || len(h[0].Documents) != 1 || h[0].Documents[0].ID != "minutes" {
+		t.Fatalf("history %+v", h)
+	}
+	if !k.Knows("ops", m, now.Add(72*time.Hour), time.Hour) {
+		t.Fatal("a meeting with documents is not known")
+	}
+	k.DocumentsEnabled = false
+	k.Forget("ops")
+	if ds.Has("ops", m.UnixMilli()) {
+		t.Fatal("documents of a deleted room kept")
 	}
 }

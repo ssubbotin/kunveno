@@ -41,6 +41,8 @@ Licensed under the GNU Affero General Public License v3.0 only; a commercial lic
   person switches it on and a voice bot runs the stand-up, calling on each person, asking short
   follow-ups from the sprint and parking long discussions until after the round (Russian only for
   now; see `docs/deploy.md`).
+- Meeting documents: Markdown files the facilitator prepares during the meeting (minutes, a plan),
+  downloaded from the room or the lobby's meeting list with the room PIN.
 - Works behind awkward networks: when a participant's UDP path fails, the browser falls back to
   ICE over TCP on the same port.
 - Interface in Russian (default), English and Spanish; the installation title is configurable.
@@ -417,6 +419,9 @@ through the manual checks in [docs/test-matrix.md](docs/test-matrix.md).
 | `recording.max_size` | the largest recording the server accepts: a whole number and `MB` or `GB` (`500MB`, `8GB`; default `8GB`) |
 | `facilitator.enabled` | `true` offers the stand-up facilitator switch in the rooms of `facilitator.rooms`; needs the `kunveno-facilitator` add-on (default `false`, which hides every facilitator control) |
 | `facilitator.rooms` | list of room slugs that offer the facilitator (`[ops]`); a room created in the lobby may be listed too |
+| `documents.enabled` | `true` keeps the documents the facilitator prepares during a meeting and shows them in the room and the meeting list (default `false`, which hides every documents control) |
+| `documents.keep` | how long a document stays after its last update: a whole number and `m`, `h` or `d` (`90m`, `12h`, `1d`, `2d`; default `1d`) |
+| `documents.dir` | where documents are kept (`/var/lib/kunveno/documents`, in the stack's data volume) |
 | `auth.enabled` | `true` turns sign-in on (default `false`: no sign-in, as before) |
 | `auth.public_url` | the address people open, `https://` only; the provider's callback `<public_url>/auth/<type>/callback` is built from it |
 | `auth.session` | how long a sign-in lasts, a Go duration (`12h` by default, 1m to 720h) |

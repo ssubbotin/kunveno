@@ -1,5 +1,5 @@
 // Package lobby decides what the lobby shows of the material kept for each room after its
-// meetings: the notes, the recording and the meeting they belong to; and removes that material
+// meetings: the notes, the recording, the documents and the meeting they belong to; and removes that material
 // when a room is deleted. It has no HTTP; httpapi serves the result.
 package lobby
 
@@ -8,14 +8,15 @@ import (
 	"sort"
 	"time"
 
+	"github.com/ssubbotin/kunveno/internal/documents"
 	"github.com/ssubbotin/kunveno/internal/meetings"
 	"github.com/ssubbotin/kunveno/internal/notes"
 	"github.com/ssubbotin/kunveno/internal/recording"
 )
 
-// Kept holds the stores of meeting material. Notes and Recordings are set even while their feature
-// is off, so that deleting a room always deletes them; NotesEnabled and RecordingEnabled alone
-// decide what is shown. Any store may be nil.
+// Kept holds the stores of meeting material. Notes, Recordings and Documents are set even while
+// their feature is off, so that deleting a room always deletes them; NotesEnabled,
+// RecordingEnabled and DocumentsEnabled alone decide what is shown. Any store may be nil.
 type Kept struct {
 	Notes            *notes.Store
 	NotesEnabled     bool
@@ -24,6 +25,9 @@ type Kept struct {
 	Meetings         *meetings.Store // summaries of ended meetings
 	// SummaryEnabled shows the state of the meeting summary kept with the notes (notes.summary).
 	SummaryEnabled bool
+	// Documents are the meeting documents, shown while DocumentsEnabled (documents.enabled).
+	Documents        *documents.Store
+	DocumentsEnabled bool
 }
 
 // Material is what a room keeps, of the enabled features. A zero time means none.
@@ -53,6 +57,7 @@ type Meeting struct {
 	Summary      notes.SummaryState
 	SummaryUntil time.Time
 	Parts        []Part
+	Documents    []documents.Info // in the order first stored
 }
 
 // Of returns what the room keeps.
@@ -113,6 +118,12 @@ func (k Kept) History(slug string) []Meeting {
 			}
 		}
 	}
+	if k.documentsOn() {
+		for _, ms := range k.Documents.Meetings(slug) {
+			m := get(ms)
+			m.Documents = k.Documents.List(slug, ms)
+		}
+	}
 	out := make([]Meeting, 0, len(byStart))
 	for _, m := range byStart {
 		out = append(out, *m)
@@ -164,6 +175,11 @@ func (k Kept) Forget(slug string) {
 			slog.Warn("cannot delete the recording of a deleted room", "room", slug, "err", err)
 		}
 	}
+	if k.Documents != nil {
+		if err := k.Documents.Remove(slug); err != nil {
+			slog.Warn("cannot delete the documents of a deleted room", "room", slug, "err", err)
+		}
+	}
 	if err := k.Meetings.Delete(slug); err != nil {
 		slog.Warn("cannot delete the meetings of a deleted room", "room", slug, "err", err)
 	}
@@ -178,7 +194,8 @@ func (k Kept) Knows(slug string, meeting, now time.Time, window time.Duration) b
 		return true
 	}
 	ms := meeting.UnixMilli()
-	if (k.Notes != nil && k.Notes.Has(slug, ms)) || (k.Recordings != nil && k.Recordings.Has(slug, ms)) {
+	if (k.Notes != nil && k.Notes.Has(slug, ms)) || (k.Recordings != nil && k.Recordings.Has(slug, ms)) ||
+		(k.Documents != nil && k.Documents.Has(slug, ms)) {
 		return true
 	}
 	return !meeting.After(now) && now.Sub(meeting) <= window
@@ -206,5 +223,12 @@ func (k Kept) Count(slug string) int {
 			seen[ms] = true
 		}
 	}
+	if k.documentsOn() {
+		for _, ms := range k.Documents.Meetings(slug) {
+			seen[ms] = true
+		}
+	}
 	return len(seen)
 }
+
+func (k Kept) documentsOn() bool { return k.DocumentsEnabled && k.Documents != nil }

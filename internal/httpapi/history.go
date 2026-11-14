@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ssubbotin/kunveno/internal/documents"
 	"github.com/ssubbotin/kunveno/internal/lobby"
 	"github.com/ssubbotin/kunveno/internal/notes"
 	"github.com/ssubbotin/kunveno/internal/ratelimit"
@@ -19,7 +20,10 @@ type MeetingsConfig struct {
 	Kept     lobby.Kept // the stores and which features are on
 	PINs     *ratelimit.Limiter
 	Links    *Links // recording download links
-	Loc      *time.Location
+	// DocumentsChanged runs after a document of the room's meeting that started at meeting was
+	// deleted, so the room hears its new list; may be nil.
+	DocumentsChanged func(slug string, meeting time.Time)
+	Loc              *time.Location
 }
 
 type partItem struct {
@@ -38,6 +42,15 @@ type historyItem struct {
 	Summary      string     `json:"summary,omitempty"`
 	SummaryUntil string     `json:"summary_until,omitempty"`
 	Parts        []partItem `json:"parts"`
+	Documents    []docItem  `json:"documents,omitempty"` // only while documents are on
+}
+
+type docItem struct {
+	ID      string `json:"id"` // its name in the routes
+	Title   string `json:"title"`
+	Rev     int    `json:"rev"`
+	Updated string `json:"updated"` // RFC 3339
+	Until   string `json:"until"`   // RFC 3339: when it expires
 }
 
 // RegisterMeetings adds the meeting history routes to mux, each wrapped by wrap (the sign-in gate):
@@ -49,6 +62,8 @@ type historyItem struct {
 //	DELETE /api/rooms/{slug}/meetings/{meeting}/summary              {"pin"}: 204
 //	POST   /api/rooms/{slug}/meetings/{meeting}/recording/{part}     {"pin"}: a download link {"url","expires"}
 //	DELETE /api/rooms/{slug}/meetings/{meeting}/recording/{part}     {"pin"}: 204
+//	POST   /api/rooms/{slug}/meetings/{meeting}/documents/{id}       {"pin"}: the document as Markdown
+//	DELETE /api/rooms/{slug}/meetings/{meeting}/documents/{id}       {"pin"}: 204
 //
 // {meeting} and {part} are starts in Unix milliseconds. The item routes take the PIN with the same
 // per-address limit as the other PIN routes; 404 for an item that is not there or a feature that
@@ -61,6 +76,7 @@ func RegisterMeetings(mux *http.ServeMux, c MeetingsConfig, wrap func(http.Handl
 	notesOn := k.NotesEnabled && k.Notes != nil
 	summaryOn := notesOn && k.SummaryEnabled
 	recordingOn := k.RecordingEnabled && k.Recordings != nil
+	documentsOn := k.DocumentsEnabled && k.Documents != nil
 	handle := func(pattern string, f http.HandlerFunc) { mux.Handle(pattern, wrap(f)) }
 
 	handle("GET /api/rooms/{slug}/meetings", func(w http.ResponseWriter, r *http.Request) {
@@ -83,6 +99,10 @@ func RegisterMeetings(mux *http.ServeMux, c MeetingsConfig, wrap func(http.Handl
 			}
 			for _, p := range m.Parts {
 				it.Parts = append(it.Parts, partItem{Part: p.Start.UnixMilli(), Start: p.Start.In(c.Loc).Format(time.RFC3339), Until: p.Until.In(c.Loc).Format(time.RFC3339), Size: p.Size})
+			}
+			for _, d := range m.Documents {
+				it.Documents = append(it.Documents, docItem{ID: d.ID, Title: d.Title, Rev: d.Rev,
+					Updated: d.Updated.In(c.Loc).Format(time.RFC3339), Until: d.Until(k.Documents.Keep()).In(c.Loc).Format(time.RFC3339)})
 			}
 			items = append(items, it)
 		}
@@ -166,6 +186,32 @@ func RegisterMeetings(mux *http.ServeMux, c MeetingsConfig, wrap func(http.Handl
 		case err != nil:
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		default:
+			w.WriteHeader(http.StatusNoContent)
+		}
+	})
+	handle("POST /api/rooms/{slug}/meetings/{meeting}/documents/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		slug, meeting, _, ok := item(w, r, "documents", documentsOn && documents.ValidID(id))
+		if !ok {
+			return
+		}
+		serveDocument(w, k.Documents, slug, meeting, id, c.Loc)
+	})
+	handle("DELETE /api/rooms/{slug}/meetings/{meeting}/documents/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		slug, meeting, _, ok := item(w, r, "documents", documentsOn && documents.ValidID(id))
+		if !ok {
+			return
+		}
+		switch err := k.Documents.Delete(slug, meeting, id); {
+		case errors.Is(err, documents.ErrNoDocument):
+			gone(w, "document")
+		case err != nil:
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		default:
+			if c.DocumentsChanged != nil {
+				c.DocumentsChanged(slug, time.UnixMilli(meeting))
+			}
 			w.WriteHeader(http.StatusNoContent)
 		}
 	})

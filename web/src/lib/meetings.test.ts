@@ -48,6 +48,18 @@ describe('parseMeetings', () => {
   });
 });
 
+describe('parseMeetings documents', () => {
+  it('reads each meeting\'s documents and drops malformed ones', () => {
+    const [m] = parseMeetings([{ ...row, documents: [
+      { id: 'minutes', title: 'Протокол', rev: 2, updated: '2026-10-16T11:30:00+03:00', until: '2026-10-17T11:30:00+03:00' },
+      { id: 'Bad', title: 'x', rev: 1, updated: row.start, until: row.end },
+      { id: 'plan', title: 'План', rev: 1, updated: row.start, until: 'never' },
+    ] }]);
+    expect(m.documents).toEqual([{ id: 'minutes', title: 'Протокол', rev: 2, updated: new Date('2026-10-16T11:30:00+03:00'), until: new Date('2026-10-17T11:30:00+03:00') }]);
+    expect(parseMeetings([row])[0].documents).toEqual([]);
+  });
+});
+
 describe('fetchMeetings', () => {
   it('asks for the room and reads the rows', async () => {
     const f = fakeFetch(new Response(JSON.stringify([row]), { status: 200 }));

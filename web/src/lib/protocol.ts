@@ -4,6 +4,9 @@ export type Quality = 'good' | 'fair' | 'poor';
 export type BotKind = 'echo' | 'player' | 'camera' | 'notes' | 'recorder' | 'facilitator';
 export type Participant = { id: string; name: string; muted: boolean; bot?: boolean; botKind?: BotKind; quality?: Quality; camera?: boolean; guest?: boolean };
 const QUALITIES: readonly string[] = ['good', 'fair', 'poor'];
+// A meeting document (documents.enabled): updated is Unix milliseconds, rev counts its versions.
+export type DocumentItem = { id: string; title: string; updated: number; rev: number };
+const DOCUMENT_ID = /^[a-z0-9-]{1,40}$/;
 
 export type ServerMessage =
   | { type: 'joined'; self: Participant; room: { slug: string; name: string; facilitator?: boolean } }
@@ -16,7 +19,10 @@ export type ServerMessage =
   // The meeting's recording can be downloaded.
   | { type: 'recording_ready' }
   // notes.live: a recognised phrase; start is Unix milliseconds.
-  | { type: 'phrase'; name: string; start: number; text: string };
+  | { type: 'phrase'; name: string; start: number; text: string }
+  // The documents of the room's meeting (its start in Unix ms, as the meeting history names it), sent
+  // when one is stored, replaced, deleted or expires, and on join.
+  | { type: 'documents'; meeting: number; list: DocumentItem[] };
 
 // RestartReason says why a page dropped its previous session; sent with the next join.
 export type RestartReason = 'ws_closed' | 'media_disconnected' | 'media_failed' | 'connect_timeout' | 'media_error' | 'rtc_error';
@@ -45,6 +51,15 @@ function bad(what: string): never {
 function isParticipant(v: unknown): v is Participant {
   const p = v as Participant;
   return typeof p === 'object' && p !== null && typeof p.id === 'string' && typeof p.name === 'string' && typeof p.muted === 'boolean';
+}
+
+function documentItem(v: unknown): DocumentItem | null {
+  const d = v as Partial<Record<keyof DocumentItem, unknown>> | null;
+  if (typeof d !== 'object' || d === null) return null;
+  const { id, title, updated, rev } = d;
+  if (typeof id !== 'string' || !DOCUMENT_ID.test(id) || typeof title !== 'string' || title.trim() === '') return null;
+  if (typeof updated !== 'number' || !Number.isFinite(updated) || typeof rev !== 'number' || !Number.isInteger(rev) || rev < 1) return null;
+  return { id, title, updated, rev };
 }
 
 export function parseServerMessage(raw: string): ServerMessage {
@@ -96,6 +111,9 @@ export function parseServerMessage(raw: string): ServerMessage {
     case 'phrase':
       if (typeof v.name !== 'string' || typeof v.text !== 'string' || typeof v.start !== 'number' || !Number.isFinite(v.start)) bad('phrase');
       return { type: 'phrase', name: v.name, start: v.start, text: v.text };
+    case 'documents':
+      if (!Array.isArray(v.list) || !Number.isSafeInteger(v.meeting) || v.meeting <= 0) bad('documents');
+      return { type: 'documents', meeting: v.meeting, list: v.list.map(documentItem).filter((d: DocumentItem | null): d is DocumentItem => d !== null) };
     default:
       return bad(`type ${v.type}`);
   }

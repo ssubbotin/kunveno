@@ -384,6 +384,33 @@ func TestRecordingSettings(t *testing.T) {
 	}
 }
 
+func TestDocumentsDefaults(t *testing.T) {
+	cfg, err := Parse([]byte("media:\n  advertise_ip: 10.0.0.1\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := cfg.Documents
+	if d.Enabled || *d.Keep != "1d" || d.KeepFor != 24*time.Hour || d.Dir != "/var/lib/kunveno/documents" {
+		t.Fatalf("defaults = %+v", d)
+	}
+}
+
+func TestDocumentsSettings(t *testing.T) {
+	cfg, err := Parse([]byte("media:\n  advertise_ip: 10.0.0.1\ndocuments:\n  enabled: true\n  keep: 12h\n  dir: /d\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := cfg.Documents
+	if !d.Enabled || d.KeepFor != 12*time.Hour || d.Dir != "/d" {
+		t.Fatalf("set = %+v", d)
+	}
+	for _, bad := range []string{"keep: 1w", "keep: \"\"", "keep: 0d", "keep: 1.5h"} {
+		if _, err := Parse([]byte("media:\n  advertise_ip: 10.0.0.1\ndocuments:\n  " + bad + "\n")); err == nil || !strings.Contains(err.Error(), "documents.keep") {
+			t.Errorf("%q: %v", bad, err)
+		}
+	}
+}
+
 func TestReconnectGraceRange(t *testing.T) {
 	parse := func(v string) (*Config, error) {
 		return Parse([]byte("media: {advertise_ip: 10.8.0.1, reconnect_grace: " + v + "}\nrooms: [{slug: a, name: A, pin: \"1234\"}]\n"))

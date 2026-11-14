@@ -1,6 +1,6 @@
 // Package conference runs the meetings: who is in each live room, which media every member
 // receives, the share lock, the helpers (echo, player, notes bot, recorder, facilitator) and their
-// lifecycles.
+// lifecycles. Lock order: recMu, notesMu and a room's docsMu before mu, never while holding it.
 // It knows nothing of WebSocket or of the wire format: a member's client is a Conn, and what the
 // client is told is an Event. The signal package adapts both to the protocol.
 package conference
@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ssubbotin/kunveno/internal/config"
+	"github.com/ssubbotin/kunveno/internal/documents"
 	"github.com/ssubbotin/kunveno/internal/media"
 	"github.com/ssubbotin/kunveno/internal/meetings"
 	"github.com/ssubbotin/kunveno/internal/metrics"
@@ -118,6 +119,9 @@ type Conference struct {
 	RecordingStopGrace time.Duration
 	// FacilitatorStopGrace is how long a stopped facilitator may take to leave. Set before serving.
 	FacilitatorStopGrace time.Duration
+	// BeforeDocumentsSend, when set, runs between building a room's documents list and sending it;
+	// for tests of the ordering. Set before serving.
+	BeforeDocumentsSend func()
 	// RejoinGrace is how long after a meeting ended its expired invitations and sessions still
 	// let their people back, for a blip that dropped everyone at once. Set before serving.
 	RejoinGrace time.Duration
@@ -129,6 +133,7 @@ type Conference struct {
 	recMu     sync.Mutex       // orders every room's recording flag and the store's active mark; taken before c.mu, never while holding it
 	recording *recording.Store // meeting recording (recording.enabled); nil when off
 	meetings  *meetings.Store  // summaries of ended meetings; nil keeps none
+	documents *documents.Store // meeting documents (documents.enabled); nil when off
 	// facilitatorOffered reports the rooms with the facilitator switch (facilitator.enabled and
 	// facilitator.rooms); nil when off. The room's flag is changed under mu.
 	facilitatorOffered func(slug string) bool
@@ -142,6 +147,9 @@ type liveRoom struct {
 	room    *room.Room
 	members map[string]*Member
 	notes   notesRoom // guarded by Conference.notesMu
+	// docsMu orders the documents lists sent to the room, so the last one sent is never older than
+	// another; taken before Conference.mu, never while holding it.
+	docsMu sync.Mutex
 	// admitted holds the invitations and logins (JoinRequest.admitKey) admitted to the current
 	// meeting; ended is when the last person left. Both guarded by Conference.mu.
 	admitted map[string]bool
@@ -334,6 +342,9 @@ func (c *Conference) Join(conn Conn, req JoinRequest) (*Member, error) {
 	}
 	s.log.Info("joined", "name", req.Name)
 	c.broadcast(lr)
+	if !bot {
+		c.sendDocumentsOnJoin(lr, s)
+	}
 	peer.Negotiate()
 	if notesOffAtJoin && !lr.room.Notes() {
 		c.mu.Lock()

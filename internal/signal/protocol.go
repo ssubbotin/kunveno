@@ -108,6 +108,23 @@
 //     server sends {"type":"stop"}. The bot stops speaking and sends {"type":"leave"}. A bot still
 //     there 5 s after the stop is closed. The stop may arrive before "joined" (the switch went off
 //     during the join), so the bot accepts it at any point after sending its join.
+//   - Meeting documents (documents.enabled). While the bot is in the room's live meeting it may store
+//     Markdown documents with PUT /internal/documents/<slug>/<id>?title=<text> (loopback only,
+//     never proxied by nginx). id is ^[a-z0-9-]{1,40}$, chosen by the bot; title is 1..120
+//     characters once whitespace runs are collapsed and the ends trimmed; the body is UTF-8, not
+//     blank, at most 512 KiB. The same id replaces the document of that meeting: its revision grows
+//     by one, its update time moves and the title may change. A meeting keeps at most 20 documents.
+//     Answers: 200 stored with {"id","rev","updated"} (updated in Unix ms), 400 a bad id, title or
+//     body, 403 not loopback, 404 documents off or no such room, 409 no live meeting with a
+//     facilitator in the room or a 21st document, 413 a larger body. The document belongs to the
+//     meeting live at the upload. The people (never the bots) in the room get
+//     {"type":"documents","meeting":<ms>,"list":[{"id","title","updated","rev"}]} after each store
+//     and after a document of the live meeting is deleted or expires (then the list may be empty);
+//     meeting is the meeting's start in Unix ms as the meeting history names it, updated is Unix ms,
+//     the list is in the order first stored. A person who joins gets it after the participants
+//     message when the list is not empty. With documents off no such message is sent. People
+//     download a document with the room PIN under its meeting; it is kept documents.keep after its
+//     last update and removed with a deleted room.
 package signal
 
 import (
@@ -454,4 +471,26 @@ type livePhraseMsg struct {
 // LivePhrase shows a recognised phrase in the room (notes.live).
 func LivePhrase(name string, start int64, text string) any {
 	return livePhraseMsg{Type: "phrase", Name: name, Start: start, Text: text}
+}
+
+// DocumentInfo is one meeting document in the documents message; updated is Unix ms.
+type DocumentInfo struct {
+	ID      string `json:"id"`
+	Title   string `json:"title"`
+	Updated int64  `json:"updated"`
+	Rev     int    `json:"rev"`
+}
+
+type documentsMsg struct {
+	Type    string         `json:"type"`
+	Meeting int64          `json:"meeting"` // the meeting's start in Unix ms, as the meeting history names it
+	List    []DocumentInfo `json:"list"`
+}
+
+// Documents tells people the documents of the room's meeting (documents.enabled).
+func Documents(meeting int64, list []DocumentInfo) any {
+	if list == nil {
+		list = []DocumentInfo{}
+	}
+	return documentsMsg{Type: "documents", Meeting: meeting, List: list}
 }

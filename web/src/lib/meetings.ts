@@ -1,12 +1,16 @@
-// The meetings a room keeps (GET /api/rooms/<slug>/meetings): each with its notes, summary and
-// recording parts, newest first. No names; the items are downloaded and deleted with the room PIN
-// through the functions of notes.ts, summary.ts and recording.ts given the meeting.
+// The meetings a room keeps (GET /api/rooms/<slug>/meetings): each with its notes, summary,
+// recording parts and documents, newest first. No names; the items are downloaded and deleted with
+// the room PIN through the functions of notes.ts, summary.ts, recording.ts and documents.ts given
+// the meeting.
 import { summaryState, type SummaryState } from './summary';
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
 // part and meeting are the exact starts in Unix ms that name them in the routes.
 export type MeetingPart = { part: number; start: Date; until: Date; size: number };
+// A meeting document: id names it in the routes; until is when it expires.
+export type MeetingDocument = { id: string; title: string; rev: number; updated: Date; until: Date };
+const DOCUMENT_ID = /^[a-z0-9-]{1,40}$/;
 export type MeetingRow = {
   meeting: number;
   start: Date;
@@ -15,6 +19,7 @@ export type MeetingRow = {
   notes: Date | null; // until when the notes are kept; null when there are none
   summary: { state: SummaryState; until: Date } | null;
   parts: MeetingPart[];
+  documents: MeetingDocument[]; // in the order first stored; empty while documents are off
 };
 
 const date = (v: unknown): Date | null => {
@@ -42,6 +47,16 @@ export function parseMeetings(v: unknown): MeetingRow[] {
       if (ps && pu && Number.isSafeInteger(q.part)) parts.push({ part: q.part as number, start: ps, until: pu, size: typeof q.size === 'number' ? q.size : 0 });
     }
     parts.sort((a, b) => a.start.getTime() - b.start.getTime());
+    const documents: MeetingDocument[] = [];
+    for (const d of Array.isArray(r.documents) ? r.documents : []) {
+      const q = (typeof d === 'object' && d !== null ? d : {}) as Record<string, unknown>;
+      const updated = date(q.updated);
+      const until = date(q.until);
+      if (typeof q.id === 'string' && DOCUMENT_ID.test(q.id) && typeof q.title === 'string' && q.title.trim() !== '' &&
+        Number.isInteger(q.rev) && (q.rev as number) > 0 && updated && until) {
+        documents.push({ id: q.id, title: q.title, rev: q.rev as number, updated, until });
+      }
+    }
     out.push({
       meeting: r.meeting as number,
       start,
@@ -50,6 +65,7 @@ export function parseMeetings(v: unknown): MeetingRow[] {
       notes: date(r.notes_until),
       summary: state && summaryUntil ? { state, until: summaryUntil } : null,
       parts,
+      documents,
     });
   }
   return out;

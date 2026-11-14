@@ -79,4 +79,23 @@ describe('parseServerMessage', () => {
     expect(parseServerMessage('{"type":"error","code":"auth_required","message":"x"}')).toEqual({ type: 'error', code: 'auth_required', message: 'x' });
     expect(parseServerMessage('{"type":"error","code":"bad_invite","message":"x"}')).toEqual({ type: 'error', code: 'bad_invite', message: 'x' });
   });
+  it('reads the documents list, dropping malformed items', () => {
+    const m = parseServerMessage(JSON.stringify({
+      type: 'documents',
+      meeting: 1792137300000,
+      list: [
+        { id: 'minutes', title: 'Протокол', updated: 1792137300123, rev: 2 },
+        { id: 'Bad', title: 'x', updated: 1, rev: 1 },
+        { id: 'plan', title: '', updated: 1, rev: 1 },
+        { id: 'plan', title: 'План', updated: 'soon', rev: 1 },
+        { id: 'plan', title: 'План', updated: 1, rev: 0 },
+        'junk',
+      ],
+    }));
+    expect(m).toEqual({ type: 'documents', meeting: 1792137300000, list: [{ id: 'minutes', title: 'Протокол', updated: 1792137300123, rev: 2 }] });
+    expect(parseServerMessage('{"type":"documents","meeting":5,"list":[]}')).toEqual({ type: 'documents', meeting: 5, list: [] });
+    for (const raw of ['{"type":"documents"}', '{"type":"documents","meeting":5,"list":{}}', '{"type":"documents","list":[]}', '{"type":"documents","meeting":"5","list":[]}', '{"type":"documents","meeting":1.5,"list":[]}']) {
+      expect(() => parseServerMessage(raw)).toThrow(/bad message/);
+    }
+  });
 });

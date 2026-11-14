@@ -111,10 +111,11 @@ kunveno_invites_active 3
 // The bytes each kind of kept material holds on disk, read at scrape time.
 func TestKeptBytes(t *testing.T) {
 	r := NewRegistry(room.NewRegistry(), "test")
-	RegisterKept(r, func() int64 { return 10 }, func() int64 { return 2048 })
+	RegisterKept(r, func() int64 { return 10 }, func() int64 { return 2048 }, func() int64 { return 7 })
 	want := `
 # HELP kunveno_kept_bytes Bytes of meeting material kept on disk, by kind.
 # TYPE kunveno_kept_bytes gauge
+kunveno_kept_bytes{kind="documents"} 7
 kunveno_kept_bytes{kind="notes"} 10
 kunveno_kept_bytes{kind="recording"} 2048
 `

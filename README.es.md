@@ -43,6 +43,8 @@ Licencia GNU Affero General Public License v3.0 only; hay disponible una licenci
   que indiques, un participante lo activa y un bot de voz dirige la reunión: da la palabra a cada
   persona, hace preguntas breves sobre el sprint y aplaza las discusiones largas hasta el final de
   la ronda (por ahora solo en ruso; véase `docs/deploy.md`).
+- Documentos de la reunión: archivos Markdown que el facilitador prepara durante la reunión (acta,
+  plan); se descargan en la sala o en la lista de reuniones de la página de inicio con el PIN de la sala.
 - Funciona en redes difíciles: si a un participante le falla UDP, el navegador pasa a ICE sobre
   TCP en el mismo puerto.
 - Interfaz en ruso (por defecto), inglés y español; el título de la instalación es configurable.
@@ -437,6 +439,9 @@ repasa las comprobaciones manuales de [docs/test-matrix.md](docs/test-matrix.md)
 | `recording.max_size` | la grabación más grande que acepta el servidor: un número entero y `MB` o `GB` (`500MB`, `8GB`; por defecto `8GB`) |
 | `facilitator.enabled` | `true` ofrece el interruptor del facilitador en las salas de `facilitator.rooms`; necesita el complemento `kunveno-facilitator` (por defecto `false`, que oculta todo lo relativo al facilitador) |
 | `facilitator.rooms` | lista de códigos de sala que ofrecen el facilitador (`[ops]`); también puede figurar una sala creada en la página de inicio |
+| `documents.enabled` | `true` guarda los documentos que el facilitador prepara durante una reunión y los muestra en la sala y en la lista de reuniones (por defecto `false`, que oculta todo lo relativo a los documentos) |
+| `documents.keep` | cuánto se guarda un documento tras su último cambio: un número entero y `m`, `h` o `d` (`90m`, `12h`, `1d`, `2d`; por defecto `1d`) |
+| `documents.dir` | dónde se guardan los documentos (`/var/lib/kunveno/documents`, en el stack, el volumen de datos) |
 | `auth.enabled` | `true` activa el inicio de sesión (por defecto `false`: sin inicio de sesión, como antes) |
 | `auth.public_url` | la dirección que la gente abre, solo `https://`; con ella se construye la URL de retorno del proveedor `<public_url>/auth/<type>/callback` |
 | `auth.session` | cuánto dura un inicio de sesión, duración de Go (`12h` por defecto, de 1m a 720h) |

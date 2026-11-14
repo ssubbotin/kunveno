@@ -90,7 +90,7 @@ var (
 		Name: "kunveno_nacked_packets_total", Help: "Packets viewers asked to resend (NACK), by kind.",
 	}, []string{"kind"})
 	PINFailures = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "kunveno_pin_failures_total", Help: "Wrong room PINs and invitations, by where they were tried (join, delete, notes, recording, invites: the invitations API; invite: a bad invitation at join).",
+		Name: "kunveno_pin_failures_total", Help: "Wrong room PINs and invitations, by where they were tried (join, delete, notes, summary, recording, documents, invites: the invitations API; invite: a bad invitation at join).",
 	}, []string{"source"})
 	PINBlocks = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "kunveno_pin_blocks_total", Help: "Addresses blocked for a minute after too many wrong PINs.",
@@ -125,8 +125,8 @@ func RegisterAuth(r *prometheus.Registry, active func() int) {
 }
 
 // RegisterKept adds the bytes the kept meeting material holds on disk, read at scrape time.
-func RegisterKept(r *prometheus.Registry, notesBytes, recordingBytes func() int64) {
-	for kind, f := range map[string]func() int64{"notes": notesBytes, "recording": recordingBytes} {
+func RegisterKept(r *prometheus.Registry, notesBytes, recordingBytes, documentsBytes func() int64) {
+	for kind, f := range map[string]func() int64{"notes": notesBytes, "recording": recordingBytes, "documents": documentsBytes} {
 		if f == nil {
 			continue
 		}
