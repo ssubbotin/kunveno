@@ -15,8 +15,8 @@ const MAX_LABEL = 40;
 const PROVIDER_TYPE = /^[a-z0-9-]{1,32}$/;
 
 export type Info = { title: string; reactions: string[]; noiseSuppression: boolean; notesEnabled: boolean; notesLive: boolean; recordingEnabled: boolean; facilitatorEnabled: boolean; reconnectGrace: number; auth: Auth;
-  // Meeting documents (documents.enabled); present only while they are on.
-  documentsEnabled?: true };
+  // Meeting documents (documents.enabled)
+  documentsEnabled: boolean };
 
 // authFrom reads the sign-in block defensively: anything malformed means sign-in off.
 function authFrom(v: unknown): Auth {
@@ -48,7 +48,7 @@ export function infoFrom(info: unknown): Info {
     title, reactions: list.length > 0 ? list : DEFAULT_REACTIONS, noiseSuppression: v.noise_suppression === true,
     notesEnabled, notesLive: notesEnabled && v.notes_live === true, recordingEnabled: v.recording === true, facilitatorEnabled: v.facilitator === true,
     auth: authFrom(v.auth),
-    ...(v.documents === true ? { documentsEnabled: true as const } : {}),
+    documentsEnabled: v.documents === true,
   };
 }
 
@@ -107,7 +107,7 @@ async function fetchInfo(): Promise<void> {
     site.notesLive = info.notesLive;
     site.recordingEnabled = info.recordingEnabled;
     site.facilitatorEnabled = info.facilitatorEnabled;
-    site.documentsEnabled = info.documentsEnabled === true;
+    site.documentsEnabled = info.documentsEnabled;
     site.reconnectGrace = info.reconnectGrace;
     site.auth = info.auth;
     site.loaded = true;

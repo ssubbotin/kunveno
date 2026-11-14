@@ -258,7 +258,7 @@
     documentBusy = true;
     documentError = '';
     try {
-      const r = await fetchDocument(fetch, rs.roomSlug, session.pin, d.id);
+      const r = await fetchDocument(fetch, rs.roomSlug, session.pin, d.id, rs.documentsMeeting);
       if (r.ok) saveFile(r.blob, r.filename);
       else documentError = documentErrorText(r, t);
     } finally {

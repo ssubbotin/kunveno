@@ -20,8 +20,9 @@ export type ServerMessage =
   | { type: 'recording_ready' }
   // notes.live: a recognised phrase; start is Unix milliseconds.
   | { type: 'phrase'; name: string; start: number; text: string }
-  // The documents of the room's meeting, sent when one is stored or replaced and on join.
-  | { type: 'documents'; list: DocumentItem[] };
+  // The documents of the room's meeting (its start in Unix ms, as the meeting history names it), sent
+  // when one is stored, replaced, deleted or expires, and on join.
+  | { type: 'documents'; meeting: number; list: DocumentItem[] };
 
 // RestartReason says why a page dropped its previous session; sent with the next join.
 export type RestartReason = 'ws_closed' | 'media_disconnected' | 'media_failed' | 'connect_timeout' | 'media_error' | 'rtc_error';
@@ -111,8 +112,8 @@ export function parseServerMessage(raw: string): ServerMessage {
       if (typeof v.name !== 'string' || typeof v.text !== 'string' || typeof v.start !== 'number' || !Number.isFinite(v.start)) bad('phrase');
       return { type: 'phrase', name: v.name, start: v.start, text: v.text };
     case 'documents':
-      if (!Array.isArray(v.list)) bad('documents');
-      return { type: 'documents', list: v.list.map(documentItem).filter((d: DocumentItem | null): d is DocumentItem => d !== null) };
+      if (!Array.isArray(v.list) || !Number.isSafeInteger(v.meeting) || v.meeting <= 0) bad('documents');
+      return { type: 'documents', meeting: v.meeting, list: v.list.map(documentItem).filter((d: DocumentItem | null): d is DocumentItem => d !== null) };
     default:
       return bad(`type ${v.type}`);
   }

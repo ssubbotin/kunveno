@@ -99,10 +99,14 @@ describe('RoomState', () => {
   it('keeps the meeting\'s documents until a reset', () => {
     const s = new RoomState();
     expect(s.documents).toEqual([]);
-    s.apply({ type: 'documents', list: [{ id: 'minutes', title: 'Протокол', updated: 1, rev: 1 }] });
-    s.apply({ type: 'documents', list: [{ id: 'minutes', title: 'Протокол встречи', updated: 2, rev: 2 }, { id: 'plan', title: 'План', updated: 3, rev: 1 }] });
+    s.apply({ type: 'documents', meeting: 7, list: [{ id: 'minutes', title: 'Протокол', updated: 1, rev: 1 }] });
+    s.apply({ type: 'documents', meeting: 7, list: [{ id: 'minutes', title: 'Протокол встречи', updated: 2, rev: 2 }, { id: 'plan', title: 'План', updated: 3, rev: 1 }] });
     expect(s.documents.map((d) => [d.id, d.rev])).toEqual([['minutes', 2], ['plan', 1]]);
+    expect(s.documentsMeeting).toBe(7);
+    s.apply({ type: 'documents', meeting: 7, list: [] }); // the last one was deleted
+    expect(s.documents).toEqual([]);
     s.reset();
     expect(s.documents).toEqual([]);
+    expect(s.documentsMeeting).toBe(0);
   });
 });

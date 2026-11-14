@@ -1,6 +1,6 @@
 // Meeting documents (documents.enabled): Markdown files the facilitator prepares during a meeting.
-// The room hears their list; each is downloaded with the room PIN (POST /api/rooms/<slug>/documents/<id>
-// for the room's latest, or under one meeting of the history) and deleted from the history (DELETE).
+// The room hears their list with its meeting; each is downloaded with the room PIN under its
+// meeting (POST /api/rooms/<slug>/meetings/<meeting>/documents/<id>) and deleted there (DELETE).
 import type { Key } from './i18n/messages';
 import { meetingPath } from './meetingPath';
 import { downloadFailure, fileName, type DeleteResult, type NotesError, type NotesResult } from './notes';
@@ -8,10 +8,9 @@ import { downloadFailure, fileName, type DeleteResult, type NotesError, type Not
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 type Translate = (key: Key, vars?: Record<string, string | number>) => string;
 
-const documentPath = (slug: string, id: string, meeting?: number) =>
-  `${meeting !== undefined ? meetingPath(slug, meeting) : `/api/rooms/${encodeURIComponent(slug)}`}/documents/${encodeURIComponent(id)}`;
+const documentPath = (slug: string, id: string, meeting: number) => `${meetingPath(slug, meeting)}/documents/${encodeURIComponent(id)}`;
 
-export async function fetchDocument(fetchFn: Fetch, slug: string, pin: string, id: string, meeting?: number): Promise<NotesResult> {
+export async function fetchDocument(fetchFn: Fetch, slug: string, pin: string, id: string, meeting: number): Promise<NotesResult> {
   let res: Response;
   try {
     res = await fetchFn(documentPath(slug, id, meeting), {

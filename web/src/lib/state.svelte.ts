@@ -55,6 +55,7 @@ export class RoomState {
   private phraseSeq = 0;
   // The documents of this meeting (documents.enabled), in the order first stored.
   documents = $state<DocumentItem[]>([]);
+  documentsMeeting = $state(0); // the meeting they belong to, its start in Unix ms
   // The emoji each participant sent last, shown on their tile for a few seconds.
   reactions = $state<Record<string, { emoji: string; seq: number }>>({});
   private reactionSeq = 0;
@@ -102,6 +103,7 @@ export class RoomState {
     this.facilitatorOffered = false;
     this.phrases = [];
     this.documents = [];
+    this.documentsMeeting = 0;
     this.transport = '';
   }
 
@@ -146,6 +148,7 @@ export class RoomState {
         break;
       case 'documents':
         this.documents = msg.list;
+        this.documentsMeeting = msg.meeting;
         break;
       case 'offer':
         break;

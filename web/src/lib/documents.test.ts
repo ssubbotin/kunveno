@@ -12,31 +12,26 @@ function fakeFetch(res: Response | Error) {
 }
 
 describe('fetchDocument', () => {
-  it('posts the PIN for the room\'s document and returns the file', async () => {
+  it('posts the PIN for one meeting\'s document and returns the file', async () => {
     const name = 'ops-2026-11-14-1030-Протокол.md';
     const f = fakeFetch(new Response('# Протокол', {
       status: 200,
       headers: { 'Content-Disposition': `attachment; filename="ops-2026-11-14-1030-minutes.md"; filename*=UTF-8''${encodeURIComponent(name)}` },
     }));
-    const r = await fetchDocument(f.fn, 'ops', '1234', 'minutes');
-    expect(f.calls[0].url).toBe('/api/rooms/ops/documents/minutes');
+    const r = await fetchDocument(f.fn, 'ops', '1234', 'minutes', 1792137300123);
+    expect(f.calls[0].url).toBe('/api/rooms/ops/meetings/1792137300123/documents/minutes');
     expect(f.calls[0].init.method).toBe('POST');
     expect(JSON.parse(String(f.calls[0].init.body))).toEqual({ pin: '1234' });
     if (!r.ok) throw new Error(r.error);
     expect(r.filename).toBe(name);
     expect(await r.blob.text()).toBe('# Протокол');
   });
-  it('asks for one meeting\'s document when the meeting is given', async () => {
-    const f = fakeFetch(new Response('x', { status: 200 }));
-    await fetchDocument(f.fn, 'ops', '1234', 'plan', 1792137300123);
-    expect(f.calls[0].url).toBe('/api/rooms/ops/meetings/1792137300123/documents/plan');
-  });
   it('names each failure', async () => {
-    expect(await fetchDocument(fakeFetch(new Response('', { status: 403 })).fn, 'ops', 'x', 'a')).toEqual({ ok: false, error: 'bad_pin' });
-    expect(await fetchDocument(fakeFetch(new Response('', { status: 404 })).fn, 'ops', 'x', 'a')).toEqual({ ok: false, error: 'gone' });
-    expect(await fetchDocument(fakeFetch(new Response('', { status: 429, headers: { 'Retry-After': '30' } })).fn, 'ops', 'x', 'a'))
+    expect(await fetchDocument(fakeFetch(new Response('', { status: 403 })).fn, 'ops', 'x', 'a', 1)).toEqual({ ok: false, error: 'bad_pin' });
+    expect(await fetchDocument(fakeFetch(new Response('', { status: 404 })).fn, 'ops', 'x', 'a', 1)).toEqual({ ok: false, error: 'gone' });
+    expect(await fetchDocument(fakeFetch(new Response('', { status: 429, headers: { 'Retry-After': '30' } })).fn, 'ops', 'x', 'a', 1))
       .toEqual({ ok: false, error: 'too_many', retryAfter: 30 });
-    expect(await fetchDocument(fakeFetch(new Error('offline')).fn, 'ops', 'x', 'a')).toEqual({ ok: false, error: 'failed' });
+    expect(await fetchDocument(fakeFetch(new Error('offline')).fn, 'ops', 'x', 'a', 1)).toEqual({ ok: false, error: 'failed' });
   });
 });
 
