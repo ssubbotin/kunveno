@@ -302,11 +302,14 @@ only together with the add-on (the same text is the package comment of `internal
    characters once whitespace runs are collapsed and the ends trimmed; the body is UTF-8, not
    blank, at most 512 KiB. The same `id` replaces the document of that meeting: its revision grows
    by one, its update time moves and the title may change. A meeting keeps at most 20 documents.
-   Answers: 204 stored, 400 a bad id, title or body, 403 not loopback, 404 documents off or no such
-   room, 409 no live meeting with a facilitator in the room or a 21st document, 413 a larger body.
-   The document belongs to the meeting live at the upload. After each store the people (never the
-   bots) in the room get `{"type":"documents","list":[{"id","title","updated","rev"}]}` (`updated`
-   in Unix ms, in the order first stored), and a person who joins gets it after the `participants`
+   Answers: 200 stored with `{"id","rev","updated"}` (`updated` in Unix ms), 400 a bad id, title or
+   body, 403 not loopback, 404 documents off or no such room, 409 no live meeting with a facilitator
+   in the room or a 21st document, 413 a larger body. The document belongs to the meeting live at
+   the upload. The people (never the bots) in the room get
+   `{"type":"documents","meeting":<ms>,"list":[{"id","title","updated","rev"}]}` after each store
+   and after a document of the live meeting is deleted or expires (the list may then be empty);
+   `meeting` is the meeting's start in Unix ms as the meeting history names it, `updated` is Unix
+   ms, the list is in the order first stored. A person who joins gets it after the `participants`
    message when the list is not empty. With documents off no such message is sent.
 
 ### Meeting documents
@@ -326,9 +329,9 @@ start and the title. A document is kept `documents.keep` after its last update a
 minute, also while `documents.enabled` is off; deleting a room deletes its documents. With
 `enabled: false` (the default) the upload answers 404, the room and the lobby show nothing about
 documents, and the `joined` and `participants` messages are as without the feature; `/api/info`
-has `"documents": true` only while they are on. Routes: `POST /api/rooms/{slug}/documents/{id}`
-(the newest meeting that keeps the document), `POST` and `DELETE`
-`/api/rooms/{slug}/meetings/{meeting}/documents/{id}` with `{"pin"}`; the meeting list carries
+has `"documents"` (`true` or `false`). Routes: `POST` (download) and `DELETE`
+`/api/rooms/{slug}/meetings/{meeting}/documents/{id}` with `{"pin"}`; the room downloads through
+the same route with the meeting from the `documents` message. The meeting list carries
 `documents: [{"id","title","rev","updated","until"}]` per meeting.
 
 The Debian packages have no facilitator add-on; with them leave `facilitator.enabled` off.
@@ -429,7 +432,7 @@ with the meeting's `index.json`.
   and for `meetings.keep` (30 days by default) after its end otherwise. Everything is swept every
   minute. Deleting a room in the lobby deletes all of its meetings; a room removed from
   `config.yaml` keeps them until they expire.
-- **Disk.** `kunveno_kept_bytes{kind="notes"|"recording"}` and the dashboard's "Хранится на диске"
+- **Disk.** `kunveno_kept_bytes{kind="notes"|"recording"|"documents"}` and the dashboard's "Хранится на диске"
   panel show what the material takes. Size `recording.keep` for the meetings you record: a
   35-minute meeting with a shared screen took about 180 MB.
 - **API.** `/api/rooms` lists `meetings` (the count) and, as before, `last_meeting` and the latest
