@@ -217,24 +217,6 @@ func TestDeleteAndRemove(t *testing.T) {
 	}
 }
 
-func TestLatest(t *testing.T) {
-	c := &clock{t0}
-	s := open(t, t.TempDir(), c)
-	a, b := t0.UnixMilli(), t0.Add(time.Hour).UnixMilli()
-	s.Put("ops", a, "minutes", "A", []byte("a"))
-	s.Put("ops", a, "plan", "A", []byte("a"))
-	s.Put("ops", b, "minutes", "B", []byte("b"))
-	if m, ok := s.Latest("ops", "minutes"); !ok || m != b {
-		t.Fatalf("minutes: %d %v", m, ok)
-	}
-	if m, ok := s.Latest("ops", "plan"); !ok || m != a {
-		t.Fatalf("plan: %d %v", m, ok)
-	}
-	if _, ok := s.Latest("ops", "nope"); ok {
-		t.Fatal("unknown id found")
-	}
-}
-
 func TestCleanTitle(t *testing.T) {
 	for in, want := range map[string]string{"  План  ": "План", "a\n\tb": "a b", strings.Repeat("я", 120): strings.Repeat("я", 120)} {
 		if got, ok := CleanTitle(in); !ok || got != want {

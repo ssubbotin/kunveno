@@ -202,3 +202,32 @@ func TestConcurrentUploadsEndWithTheFullList(t *testing.T) {
 	}
 	noDocuments(t, ca)
 }
+
+// With documents disabled no documents message ever arrives and no meeting takes documents, even
+// with the facilitator in the room and the conference asked to announce a list.
+func TestNoDocumentsMessageWhenOff(t *testing.T) {
+	e := newFacilitatorEnv(t) // documents.enabled off: SetDocuments never called
+	ca, _ := joinRoom(t, e, "ops", "Ann")
+	facilitatorOn(t, ca, true)
+	joinFacilitator(t, e)
+	if _, ok := e.conf.DocumentMeeting("ops"); ok {
+		t.Fatal("documents accepted while off")
+	}
+	r, _ := e.reg.Get("ops")
+	start, _ := r.Meeting()
+	e.conf.DocumentsChanged("ops", start)
+	cb, _ := joinRoom(t, e, "ops", "Bob")
+	noDocuments(t, ca)
+	noDocuments(t, cb)
+}
+
+// A person joining a room whose meeting has no documents gets no documents message.
+func TestNoDocumentsMessageWhenEmpty(t *testing.T) {
+	e, _ := newDocumentsEnv(t)
+	ca, _ := joinRoom(t, e, "ops", "Ann")
+	facilitatorOn(t, ca, true)
+	joinFacilitator(t, e)
+	cb, _ := joinRoom(t, e, "ops", "Bob")
+	noDocuments(t, ca)
+	noDocuments(t, cb)
+}

@@ -292,18 +292,6 @@ func (s *Store) Meetings(slug string) []int64 {
 	return out
 }
 
-// Latest is the newest meeting of the room that keeps the document id.
-func (s *Store) Latest(slug, id string) (int64, bool) {
-	for _, m := range s.Meetings(slug) {
-		for _, d := range s.List(slug, m) {
-			if d.ID == id {
-				return m, true
-			}
-		}
-	}
-	return 0, false
-}
-
 // Has reports whether the meeting keeps a document.
 func (s *Store) Has(slug string, meeting int64) bool { return len(s.List(slug, meeting)) > 0 }
 
