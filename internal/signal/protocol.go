@@ -134,6 +134,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/ssubbotin/kunveno/internal/media"
@@ -171,6 +172,16 @@ const (
 	MediaTCP        = "tcp"
 	MaxSDPLen       = 256 * 1024
 )
+
+// MaxHelpLen is the longest help text of the facilitator, in characters after trimming.
+const MaxHelpLen = 800
+
+// BotStates are the states the facilitator may report with a status frame.
+var BotStates = map[string]bool{"listening": true, "thinking": true, "speaking": true, "waiting": true}
+
+// facilitatorOnly are the frame types only a facilitator in a room may send; from anyone else they
+// are unknown types.
+var facilitatorOnly = map[string]bool{"status": true, "help": true}
 
 // Phrase limits of the notes bot contract.
 const (
@@ -266,7 +277,10 @@ type ClientMessage struct {
 	Speaker string `json:"speaker,omitempty"` // the speaking participant's id
 	Start   *int64 `json:"start,omitempty"`   // unix ms
 	End     *int64 `json:"end,omitempty"`     // unix ms
-	Text    string `json:"text,omitempty"`
+	Text    string `json:"text,omitempty"`    // also help, from the facilitator only
+
+	// status, from the facilitator only: one of BotStates
+	State string `json:"state,omitempty"`
 }
 
 // ParseClient decodes and validates one client frame.
@@ -319,6 +333,16 @@ func ParseClient(data []byte) (ClientMessage, error) {
 		if m.Speaker == "" || len(m.Speaker) > 64 || m.Start == nil || m.End == nil {
 			return m, fmt.Errorf("%w: phrase", ErrBadMessage)
 		}
+	case "status":
+		if !BotStates[m.State] {
+			return m, fmt.Errorf("%w: status.state", ErrBadMessage)
+		}
+	case "help":
+		text, ok := validHelp(m.Text)
+		if !ok {
+			return m, fmt.Errorf("%w: help.text", ErrBadMessage)
+		}
+		m.Text = text
 	case "react":
 		// The configured set is checked by the handler; here only the shape.
 		if m.Emoji == "" || len(m.Emoji) > 16 {
@@ -334,7 +358,7 @@ func ParseClient(data []byte) (ClientMessage, error) {
 		}
 	case "leave":
 	default:
-		return m, fmt.Errorf("%w: type %q", ErrBadMessage, m.Type)
+		return m, unknownType(m.Type)
 	}
 	return m, nil
 }
@@ -364,6 +388,8 @@ type joinedMsg struct {
 	Type string          `json:"type"`
 	Self ParticipantInfo `json:"self"`
 	Room roomInfo        `json:"room"`
+	// Status is set for the facilitator only: the server takes its status and help frames.
+	Status bool `json:"status,omitempty"`
 	// Meeting is set for a recorder only: the start of the meeting, RFC 3339 with fractional seconds (RFC3339Nano).
 	Meeting string `json:"meeting,omitempty"`
 }
@@ -397,6 +423,12 @@ func Joined(self ParticipantInfo, slug, name string) any {
 // JoinedWithFacilitator is joined in a room that offers the facilitator switch.
 func JoinedWithFacilitator(self ParticipantInfo, slug, name string) any {
 	return joinedMsg{Type: "joined", Self: self, Room: roomInfo{Slug: slug, Name: name, Facilitator: true}}
+}
+
+// JoinedFacilitatorBot is joined for the facilitator bot: the room offers the facilitator, and
+// the server takes the bot's status and help frames.
+func JoinedFacilitatorBot(self ParticipantInfo, slug, name string) any {
+	return joinedMsg{Type: "joined", Self: self, Room: roomInfo{Slug: slug, Name: name, Facilitator: true}, Status: true}
 }
 
 // JoinedRecorder is joined for a recorder: it also carries the start of the meeting.
@@ -447,6 +479,24 @@ func validPhrase(m ClientMessage, now time.Time) (text string, start, end time.T
 	return text, start, end, true
 }
 
+// validHelp trims the facilitator's help text and checks it: 1..MaxHelpLen characters, line
+// breaks kept, no other control character.
+func validHelp(raw string) (string, bool) {
+	text := strings.TrimSpace(raw)
+	if n := utf8.RuneCountInString(text); n < 1 || n > MaxHelpLen {
+		return "", false
+	}
+	for _, r := range text {
+		if r != '\n' && r != '\r' && unicode.IsControl(r) {
+			return "", false
+		}
+	}
+	return text, true
+}
+
+// unknownType is the error of a frame type the server does not take from this sender.
+func unknownType(typ string) error { return fmt.Errorf("%w: type %q", ErrBadMessage, typ) }
+
 type typeOnlyMsg struct {
 	Type string `json:"type"`
 }
@@ -494,3 +544,21 @@ func Documents(meeting int64, list []DocumentInfo) any {
 	}
 	return documentsMsg{Type: "documents", Meeting: meeting, List: list}
 }
+
+type botStateMsg struct {
+	Type  string `json:"type"`
+	ID    string `json:"id"`
+	State string `json:"state"`
+}
+
+// BotState tells people what the facilitator (id) is doing now: one of BotStates.
+func BotState(id, state string) any { return botStateMsg{Type: "bot_state", ID: id, State: state} }
+
+type botHelpMsg struct {
+	Type string `json:"type"`
+	ID   string `json:"id"`
+	Text string `json:"text"`
+}
+
+// BotHelp tells people how to talk to the facilitator (id), in its own plain text.
+func BotHelp(id, text string) any { return botHelpMsg{Type: "bot_help", ID: id, Text: text} }

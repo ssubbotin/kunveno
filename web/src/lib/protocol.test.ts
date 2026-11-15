@@ -98,4 +98,22 @@ describe('parseServerMessage', () => {
       expect(() => parseServerMessage(raw)).toThrow(/bad message/);
     }
   });
+  it('parses bot_state', () => {
+    for (const state of ['listening', 'thinking', 'speaking', 'waiting']) {
+      expect(parseServerMessage(JSON.stringify({ type: 'bot_state', id: 'f1', state }))).toEqual({ type: 'bot_state', id: 'f1', state });
+    }
+    for (const raw of ['{"type":"bot_state","id":"f1","state":"sleeping"}', '{"type":"bot_state","state":"thinking"}',
+      '{"type":"bot_state","id":"","state":"thinking"}', '{"type":"bot_state","id":"f1"}', '{"type":"bot_state","id":5,"state":"thinking"}']) {
+      expect(() => parseServerMessage(raw)).toThrow(/bad message/);
+    }
+  });
+  it('parses bot_help', () => {
+    const text = 'Скажите «стоп» <b>&amp;</b> &\nи «дальше».';
+    expect(parseServerMessage(JSON.stringify({ type: 'bot_help', id: 'f1', text }))).toEqual({ type: 'bot_help', id: 'f1', text });
+    expect(parseServerMessage(JSON.stringify({ type: 'bot_help', id: 'f1', text: 'я'.repeat(800) }))).toMatchObject({ type: 'bot_help' });
+    for (const raw of [{ type: 'bot_help', id: 'f1', text: '' }, { type: 'bot_help', id: 'f1', text: ' \n ' }, { type: 'bot_help', id: 'f1', text: 'я'.repeat(801) },
+      { type: 'bot_help', text: 'x' }, { type: 'bot_help', id: 'f1' }, { type: 'bot_help', id: 'f1', text: 5 }]) {
+      expect(() => parseServerMessage(JSON.stringify(raw))).toThrow(/bad message/);
+    }
+  });
 });

@@ -1,16 +1,43 @@
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { initials } from './initials';
+  import { ANNOUNCE_GAP, Throttle, type BotState } from './botStatus';
+  import BotHelpDialog from './BotHelpDialog.svelte';
   import { t } from './i18n/i18n.svelte';
   import Video from './Video.svelte';
   import NotesFeed from './NotesFeed.svelte';
   import type { Participant } from './protocol';
   import type { LivePhrase } from './state.svelte';
   // phrases: set with notes.live; the notes bot's tile then shows them in place of a picture.
-  let { participants, selfId, sharer, speaking, videos = {}, reactions = {}, compact = false, phrases }: {
+  // botStates and botHelp: what each facilitator bot is doing and how to talk to it, by id.
+  let { participants, selfId, sharer, speaking, videos = {}, reactions = {}, compact = false, phrases, botStates = {}, botHelp = {} }: {
     participants: Participant[]; selfId: string; sharer: string; speaking: Record<string, boolean>;
     videos?: Record<string, MediaStreamTrack>; reactions?: Record<string, { emoji: string; seq: number }>; compact?: boolean;
-    phrases?: LivePhrase[];
+    phrases?: LivePhrase[]; botStates?: Record<string, BotState>; botHelp?: Record<string, string>;
   } = $props();
+
+  // The facilitator's state is read out politely, at most once in ANNOUNCE_GAP: the latest state
+  // of a quick run of changes, never each of them.
+  let spoken = $state('');
+  const announcer = new Throttle<string>(ANNOUNCE_GAP, (line) => (spoken = line));
+  const stateLine = $derived(participants
+    .filter((p) => p.botKind === 'facilitator' && botStates[p.id])
+    .map((p) => t('bot.spoken', { name: p.name, state: t(`bot.${botStates[p.id]}`) }))
+    .join('. '));
+  $effect(() => {
+    if (stateLine) announcer.push(stateLine);
+  });
+  onDestroy(() => announcer.stop());
+
+  // The help dialog of one facilitator bot.
+  let helpDialog: BotHelpDialog;
+  let helpId = $state('');
+  let helpName = $state('');
+  function openHelp(p: Participant, button: HTMLElement) {
+    helpId = p.id;
+    helpName = p.name;
+    helpDialog.open(button);
+  }
 
 
   const bars = { good: 3, fair: 2, poor: 1 };
@@ -55,11 +82,17 @@
             {:else}<span>{t('people.notesTag')}</span>{/if}
           {/if}
           {#if p.botKind === 'recorder'}<span>{t('people.recorderTag')}</span>{/if}
-          {#if p.botKind === 'facilitator'}<span>{t('people.facilitatorTag')}</span>{/if}
+          {#if p.botKind === 'facilitator'}
+            <span>{t('people.facilitatorTag')}</span>
+            {#if botStates[p.id]}<span class="bot-state">{t(`bot.${botStates[p.id]}`)}</span>{/if}
+          {/if}
           {#if p.botKind === 'player'}<span>{t('people.playerTag')}</span>{/if}
           {#if p.botKind === 'camera'}<span class="live-tag">{t('people.cameraTag')}</span>{/if}
           {#if p.id === sharer}<span class="share">{t('people.sharing')}</span>{/if}
         </span>
+        {#if p.botKind === 'facilitator' && botHelp[p.id]}
+          <button type="button" class="bot-help" onclick={(e) => openHelp(p, e.currentTarget)}>{t('bot.help')}</button>
+        {/if}
       </span>
       {#if p.quality && !p.bot}
         <span class="signal {p.quality}" title={t(`quality.${p.quality}`)}>
@@ -84,6 +117,8 @@
     </li>
   {/each}
 </ul>
+<div class="sr" role="status">{spoken}</div>
+<BotHelpDialog bind:this={helpDialog} name={helpName} text={helpId ? botHelp[helpId] : undefined} onclose={() => (helpId = '')} />
 
 <style>
   .people {
@@ -135,6 +170,12 @@
   .name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tags { display: flex; flex-wrap: wrap; justify-content: center; gap: .25rem .5rem; color: var(--muted); font-size: .8rem; }
   .tags .share { color: var(--live); }
+  .tags .bot-state { color: var(--text); }
+  .bot-help {
+    justify-self: center; padding: .1rem .4rem; border: 0; background: none; color: var(--text);
+    font: inherit; font-size: .8rem; text-decoration: underline; text-underline-offset: .15em; cursor: pointer;
+  }
+  .compact .bot-help { justify-self: start; padding-left: 0; }
   .tags .live-tag::before { content: ''; display: inline-block; width: .45rem; height: .45rem; border-radius: 50%; background: var(--danger); margin-right: .3rem; vertical-align: middle; }
   .muted {
     position: absolute; top: .6rem; right: .6rem; width: 1.75rem; height: 1.75rem; border-radius: 50%;

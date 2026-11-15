@@ -101,6 +101,9 @@ func wire(e conference.Event) any {
 		if e.Recorder {
 			return JoinedRecorder(self, e.Slug, e.RoomName, e.Meeting)
 		}
+		if e.Status {
+			return JoinedFacilitatorBot(self, e.Slug, e.RoomName)
+		}
 		if e.Offered {
 			return JoinedWithFacilitator(self, e.Slug, e.RoomName)
 		}
@@ -129,6 +132,10 @@ func wire(e conference.Event) any {
 			list[i] = DocumentInfo{ID: d.ID, Title: d.Title, Updated: d.Updated.UnixMilli(), Rev: d.Rev}
 		}
 		return Documents(e.Meeting.UnixMilli(), list)
+	case conference.BotState:
+		return BotState(e.ID, e.State)
+	case conference.BotHelp:
+		return BotHelp(e.ID, e.Text)
 	}
 	panic("signal: unknown conference event")
 }
@@ -240,6 +247,9 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 	go h.conf.WatchQuality(ctx, s)
 	for {
 		m, err := readClient(ctx, conn)
+		if (err == nil || errors.Is(err, ErrBadMessage)) && facilitatorOnly[m.Type] && s.Role() != RoleFacilitator {
+			err = unknownType(m.Type) // exactly as a type the server does not know
+		}
 		if err != nil {
 			if !errors.Is(err, ErrBadMessage) {
 				return // socket closed or context cancelled
@@ -294,6 +304,10 @@ func (h *Handler) serve(ctx context.Context, cancel context.CancelFunc, conn *we
 				continue
 			}
 			h.conf.Phrase(s, m.Speaker, text, start, end)
+		case "status":
+			h.conf.SetBotState(s, m.State)
+		case "help":
+			h.conf.SetBotHelp(s, m.Text)
 		case "leave":
 			h.conf.Leave(s) // at once: closing waits for the other side's answer
 			_ = conn.Close(websocket.StatusNormalClosure, "bye")

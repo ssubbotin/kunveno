@@ -1,3 +1,4 @@
+import type { BotState } from './botStatus';
 import type { DocumentItem, Participant, ServerMessage } from './protocol';
 
 // A phrase shown in the live panel (notes.live); seq keys it in the list.
@@ -56,6 +57,10 @@ export class RoomState {
   // The documents of this meeting (documents.enabled), in the order first stored.
   documents = $state<DocumentItem[]>([]);
   documentsMeeting = $state(0); // the meeting they belong to, its start in Unix ms
+  // What each facilitator bot in the room is doing and how to talk to it, by participant id;
+  // dropped once the bot is no longer in the participants snapshot.
+  botStates = $state<Record<string, BotState>>({});
+  botHelp = $state<Record<string, string>>({});
   // The emoji each participant sent last, shown on their tile for a few seconds.
   reactions = $state<Record<string, { emoji: string; seq: number }>>({});
   private reactionSeq = 0;
@@ -104,6 +109,8 @@ export class RoomState {
     this.phrases = [];
     this.documents = [];
     this.documentsMeeting = 0;
+    this.botStates = {};
+    this.botHelp = {};
     this.transport = '';
   }
 
@@ -127,6 +134,14 @@ export class RoomState {
         if (msg.recording && !this.recording) this.recordingReady = false; // a new recording; the old notice is stale
         this.recording = msg.recording;
         this.facilitator = msg.facilitator;
+        this.botStates = present(this.botStates, msg.participants);
+        this.botHelp = present(this.botHelp, msg.participants);
+        break;
+      case 'bot_state':
+        this.botStates[msg.id] = msg.state;
+        break;
+      case 'bot_help':
+        this.botHelp[msg.id] = msg.text;
         break;
       case 'error':
         this.status = 'error';
@@ -154,4 +169,15 @@ export class RoomState {
         break;
     }
   }
+}
+
+// present keeps the entries of byId whose participant is still in the room; the same object when
+// nothing goes, so a snapshot that changes nothing here wakes nobody.
+function present<T>(byId: Record<string, T>, participants: Participant[]): Record<string, T> {
+  const ids = new Set(participants.map((p) => p.id));
+  const gone = Object.keys(byId).filter((id) => !ids.has(id));
+  if (gone.length === 0) return byId;
+  const out = { ...byId };
+  for (const id of gone) delete out[id];
+  return out;
 }

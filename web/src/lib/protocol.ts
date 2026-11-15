@@ -1,3 +1,5 @@
+import { BOT_STATES, MAX_BOT_HELP, type BotState } from './botStatus';
+
 // bot marks a server-side helper such as the echo; the parser always fills it in. guest marks a
 // person who joined by an invitation link (sign-in on).
 export type Quality = 'good' | 'fair' | 'poor';
@@ -22,7 +24,11 @@ export type ServerMessage =
   | { type: 'phrase'; name: string; start: number; text: string }
   // The documents of the room's meeting (its start in Unix ms, as the meeting history names it), sent
   // when one is stored, replaced, deleted or expires, and on join.
-  | { type: 'documents'; meeting: number; list: DocumentItem[] };
+  | { type: 'documents'; meeting: number; list: DocumentItem[] }
+  // What the facilitator bot (id) is doing now; sent on each change and on join.
+  | { type: 'bot_state'; id: string; state: BotState }
+  // How to talk to the facilitator bot (id), as plain text with line breaks; never markup.
+  | { type: 'bot_help'; id: string; text: string };
 
 // RestartReason says why a page dropped its previous session; sent with the next join.
 export type RestartReason = 'ws_closed' | 'media_disconnected' | 'media_failed' | 'connect_timeout' | 'media_error' | 'rtc_error';
@@ -114,6 +120,12 @@ export function parseServerMessage(raw: string): ServerMessage {
     case 'documents':
       if (!Array.isArray(v.list) || !Number.isSafeInteger(v.meeting) || v.meeting <= 0) bad('documents');
       return { type: 'documents', meeting: v.meeting, list: v.list.map(documentItem).filter((d: DocumentItem | null): d is DocumentItem => d !== null) };
+    case 'bot_state':
+      if (typeof v.id !== 'string' || v.id === '' || !(BOT_STATES as readonly string[]).includes(v.state)) bad('bot_state');
+      return { type: 'bot_state', id: v.id, state: v.state as BotState };
+    case 'bot_help':
+      if (typeof v.id !== 'string' || v.id === '' || typeof v.text !== 'string' || v.text.trim() === '' || [...v.text].length > MAX_BOT_HELP) bad('bot_help');
+      return { type: 'bot_help', id: v.id, text: v.text };
     default:
       return bad(`type ${v.type}`);
   }
