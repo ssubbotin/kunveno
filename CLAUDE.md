@@ -109,7 +109,9 @@ Go packages are separated so each is tested alone:
   a bot with role `facilitator` (loopback only, no PIN) that polls `GET /internal/facilitator`. The
   switch `{"type":"facilitator","on":bool}` (people only) works with `facilitator.enabled` and only
   in `facilitator.rooms`; the contract is in `internal/signal/protocol.go`, changed only together
-  with the add-on.
+  with the add-on. The bot may report its state (`status`: listening, thinking, speaking, waiting)
+  and a help text (`help`); people get `bot_state` and `bot_help`, replayed on join
+  (`internal/conference/botstatus.go`).
 
 Media model, which explains most design choices:
 
