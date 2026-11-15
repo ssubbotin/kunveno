@@ -112,12 +112,13 @@
 //     get the field); a bot sends the two frames below only when it is there, so an older server
 //     never sees them. {"type":"status","state":s} says what the bot is doing, s one of listening,
 //     thinking, speaking, waiting. {"type":"help","text":t} says how to talk to it: plain text,
-//     1..800 characters once the ends are trimmed, line breaks allowed, no other control character;
-//     a new text replaces the old one. A frame of either type with anything else, or either type
-//     from anyone but the facilitator, is a bad_message exactly as an unknown type is. At most 5
-//     state changes a second are relayed and the rest are dropped without an answer, never sent
-//     later, so the bot keeps under that rate; a state or a help equal to the current one is not
-//     relayed. The people (never the bots) in the room get {"type":"bot_state","id":<the bot's
+//     1..800 characters once the ends are trimmed, line breaks (\n, \r) allowed, no other control
+//     character, no format character (Unicode Cf, such as U+200E or U+202E) and no U+2028 or
+//     U+2029; a new text replaces the old one. A frame of either type with anything else, or either
+//     type from anyone but the facilitator, is a bad_message exactly as an unknown type is. At most
+//     5 state changes a second are relayed and the frames beyond that get no answer; once the rate
+//     allows again (within a second) the room hears the state the bot reported last, when it
+//     differs from the one relayed last. A state or a help equal to the current one is not relayed. The people (never the bots) in the room get {"type":"bot_state","id":<the bot's
 //     participant id>,"state":s} on each relayed change and {"type":"bot_help","id":...,"text":t}
 //     when the help is set or replaced; a person who joins gets both, when set, after the
 //     participants message. Both are forgotten when the bot leaves the room (switched off, stopped
@@ -495,14 +496,15 @@ func validPhrase(m ClientMessage, now time.Time) (text string, start, end time.T
 }
 
 // validHelp trims the facilitator's help text and checks it: 1..MaxHelpLen characters, line
-// breaks kept, no other control character.
+// breaks (\n, \r) kept, no other control character, no format character (Unicode Cf, such as the
+// direction marks and overrides) and no line or paragraph separator (U+2028, U+2029).
 func validHelp(raw string) (string, bool) {
 	text := strings.TrimSpace(raw)
 	if n := utf8.RuneCountInString(text); n < 1 || n > MaxHelpLen {
 		return "", false
 	}
 	for _, r := range text {
-		if r != '\n' && r != '\r' && unicode.IsControl(r) {
+		if r != '\n' && r != '\r' && (unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || r == '\u2028' || r == '\u2029') {
 			return "", false
 		}
 	}

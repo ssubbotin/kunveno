@@ -25,12 +25,18 @@
     .map((p) => t('bot.spoken', { name: p.name, state: t(`bot.${botStates[p.id]}`) }))
     .join('. '));
   $effect(() => {
-    if (stateLine) announcer.push(stateLine);
+    if (stateLine) {
+      announcer.push(stateLine);
+    } else {
+      announcer.stop(); // the bot left: nothing waiting is read out, and the old text goes
+      spoken = '';
+    }
   });
   onDestroy(() => announcer.stop());
 
-  // The help dialog of one facilitator bot.
+  // The help dialog of one facilitator bot; list takes focus when the bot leaves with it open.
   let helpDialog: BotHelpDialog;
+  let list: HTMLUListElement;
   let helpId = $state('');
   let helpName = $state('');
   function openHelp(p: Participant, button: HTMLElement) {
@@ -45,7 +51,7 @@
 </script>
 
 <!-- Grid sized to the room: ceil(sqrt(n)) columns, and tiles small enough that every row fits the window. -->
-<ul class="people" class:compact aria-label={t('people.label')}
+<ul class="people" class:compact aria-label={t('people.label')} tabindex="-1" bind:this={list}
   style:--cols={Math.max(1, Math.ceil(Math.sqrt(participants.length)))}
   style:--rows={Math.max(1, Math.ceil(participants.length / Math.max(1, Math.ceil(Math.sqrt(participants.length)))))}>
   {#each participants as p (p.id)}
@@ -118,7 +124,7 @@
   {/each}
 </ul>
 <div class="sr" role="status">{spoken}</div>
-<BotHelpDialog bind:this={helpDialog} name={helpName} text={helpId ? botHelp[helpId] : undefined} onclose={() => (helpId = '')} />
+<BotHelpDialog bind:this={helpDialog} name={helpName} text={helpId ? botHelp[helpId] : undefined} onclose={() => (helpId = '')} fallback={() => list} />
 
 <style>
   .people {
@@ -171,6 +177,7 @@
   .tags { display: flex; flex-wrap: wrap; justify-content: center; gap: .25rem .5rem; color: var(--muted); font-size: .8rem; }
   .tags .share { color: var(--live); }
   .tags .bot-state { color: var(--text); }
+  .people:focus:not(:focus-visible) { outline: none; }
   .bot-help {
     justify-self: center; padding: .1rem .4rem; border: 0; background: none; color: var(--text);
     font: inherit; font-size: .8rem; text-decoration: underline; text-underline-offset: .15em; cursor: pointer;

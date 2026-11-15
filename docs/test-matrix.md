@@ -235,3 +235,5 @@ Facilitator state and help (the add-on running in `ops`, a version that sends it
 80. Switching the facilitator off (or the bot dropping): the state and the button disappear with
     the bot; switching it on again starts with neither until the new bot reports. A guest sees the
     state and the help as everyone else; an older add-on that sends neither shows only "bot".
+81. With the help dialog open, switch the facilitator off: when the bot leaves the dialog closes and
+    focus lands on the participant list; a screen reader does not read the old state again.

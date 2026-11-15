@@ -1,10 +1,14 @@
 <script lang="ts">
   import { t } from './i18n/i18n.svelte';
+  import { focusAfterHelp } from './botStatus';
 
   // How to talk to the facilitator bot, in the bot's own words. The text comes from the bot and is
   // shown as plain text with its line breaks, never as markup. A native modal dialog keeps focus
-  // inside and closes on Escape; on close focus goes back to the button that opened it.
-  let { name, text, onclose }: { name: string; text: string | undefined; onclose: () => void } = $props();
+  // inside and closes on Escape; on close focus goes back to the button that opened it, or to
+  // fallback (the participant list) when the help went away with the bot.
+  let { name, text, onclose, fallback }: {
+    name: string; text: string | undefined; onclose: () => void; fallback: () => HTMLElement | null;
+  } = $props();
   let dialog: HTMLDialogElement;
   let opener: HTMLElement | null = null;
 
@@ -14,13 +18,18 @@
   }
 
   // The bot left or its help went away while the dialog was open.
+  let lost = false;
   $effect(() => {
-    if (text === undefined && dialog?.open) dialog.close();
+    if (text === undefined && dialog?.open) {
+      lost = true;
+      dialog.close();
+    }
   });
 
   function closed() {
-    opener?.focus();
+    focusAfterHelp(lost ? null : opener, fallback())?.focus();
     opener = null;
+    lost = false;
     onclose();
   }
 </script>

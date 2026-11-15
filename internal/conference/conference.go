@@ -189,6 +189,9 @@ type Member struct {
 	botState       string      // facilitator: what it is doing, empty until it says; guarded by the room's botMu
 	botHelp        string      // facilitator: how to talk to it, empty until it says; guarded by the room's botMu
 	stateWindow    stateWindow // facilitator: its recent state changes, for BotStateRate; guarded by the room's botMu
+	botWanted      string      // facilitator: the state it reported last, relayed once the rate allows; guarded by the room's botMu
+	stateTimer     *time.Timer // facilitator: relays botWanted when the rate allows; guarded by the room's botMu
+	botGone        bool        // facilitator: it has left, nothing more is relayed; guarded by the room's botMu
 	joined         time.Time
 	conn           Conn
 	peer           MediaPeer
@@ -429,6 +432,7 @@ func (c *Conference) Leave(s *Member) {
 	}
 	switch {
 	case s.botKind == room.BotFacilitator:
+		c.forgetBotState(lr, s)
 		c.facilitatorLeft(s)
 	case wasFacilitator && !lr.room.Facilitator():
 		c.stopFacilitators(lr) // the last person left

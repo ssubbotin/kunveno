@@ -29,3 +29,20 @@ func TestBotStateWindow(t *testing.T) {
 		t.Fatal("refused once the second change is a second old")
 	}
 }
+
+func TestBotStateWindowWait(t *testing.T) {
+	var w stateWindow
+	t0 := time.Unix(1000, 0)
+	if d := w.wait(t0); d != 0 {
+		t.Fatalf("empty window waits %v", d)
+	}
+	for i := 0; i < BotStateRate; i++ {
+		w.allow(t0.Add(time.Duration(i) * 10 * time.Millisecond))
+	}
+	if d := w.wait(t0.Add(300 * time.Millisecond)); d != 700*time.Millisecond {
+		t.Fatalf("wait %v, want 700ms", d)
+	}
+	if d := w.wait(t0.Add(2 * time.Second)); d != 0 {
+		t.Fatalf("wait %v after the window", d)
+	}
+}

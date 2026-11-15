@@ -300,11 +300,13 @@ only together with the add-on (the same text is the package comment of `internal
    get the field); a bot sends these frames only when it is there. `{"type":"status","state":…}`
    says what the bot is doing: `listening`, `thinking`, `speaking` or `waiting`.
    `{"type":"help","text":…}` says how to talk to it: plain text, 1..800 characters once the ends
-   are trimmed, line breaks allowed, no other control character; a new text replaces the old one.
+   are trimmed, line breaks (`\n`, `\r`) allowed, no other control character, no format character
+   (Unicode Cf, such as U+200E or U+202E) and no U+2028 or U+2029; a new text replaces the old one.
    A frame of either type with anything else, or from anyone but the facilitator, is a
-   `bad_message` exactly as an unknown type is. At most 5 state changes a second are relayed; the
-   rest are dropped without an answer and never sent later, so the bot keeps under that rate. A
-   state or a help equal to the current one is not relayed. The people (never the bots) in the room
+   `bad_message` exactly as an unknown type is. At most 5 state changes a second are relayed and
+   the frames beyond that get no answer; once the rate allows again (within a second) the room
+   hears the state the bot reported last, when it differs from the one relayed last. A state or a
+   help equal to the current one is not relayed. The people (never the bots) in the room
    get `{"type":"bot_state","id":<the bot's participant id>,"state":…}` on each relayed change and
    `{"type":"bot_help","id":…,"text":…}` when the help is set or replaced; a person who joins gets
    both, when set, after the `participants` message. Both are forgotten when the bot leaves the

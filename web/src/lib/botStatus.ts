@@ -44,3 +44,13 @@ export class Throttle<T> {
     this.emit(value);
   }
 }
+
+type Focusable = { isConnected: boolean };
+
+// focusAfterHelp picks where focus goes when the help dialog closes: back to the button that opened
+// it while that is still in the page, else to the participant list (the button went away with the
+// bot); null when neither is in the page.
+export function focusAfterHelp<T extends Focusable>(opener: T | null, list: T | null): T | null {
+  if (opener?.isConnected) return opener;
+  return list?.isConnected ? list : null;
+}

@@ -255,6 +255,11 @@ func TestBotHelpValidation(t *testing.T) {
 		`{"type":"help","text":"` + strings.Repeat("я", MaxHelpLen+1) + `"}`,
 		`{"type":"help","text":"нуль\u0000внутри"}`,
 		`{"type":"help","text":"табуляция\tвнутри"}`,
+		`{"type":"help","text":"справа\u202eналево"}`,
+		`{"type":"help","text":"метка\u200eнаправления"}`,
+		`{"type":"help","text":"нулевая\u200bширина"}`,
+		`{"type":"help","text":"строка\u2028разделитель"}`,
+		`{"type":"help","text":"абзац\u2029разделитель"}`,
 		`{"type":"status","state":"dancing"}`,
 		`{"type":"status"}`,
 		`{"type":"status","state":5}`,
@@ -347,4 +352,66 @@ func TestFacilitatorOffNoStatusField(t *testing.T) {
 	}
 	expectRefused(t, e, nil, CodeBadRoom)
 	noBotMessages(t, ca)
+}
+
+// A burst beyond the rate, then silence: the last state still reaches the room within about a
+// second, and the rate holds.
+func TestBotStateLastOfBurstArrives(t *testing.T) {
+	e, ca := newBotStatusEnv(t)
+	bot, _ := joinFacilitator(t, e)
+	type relayed struct {
+		at    time.Time
+		state string
+	}
+	got := make(chan relayed, 64)
+	go func() {
+		for {
+			_, data, err := ca.Read(context.Background())
+			if err != nil {
+				return
+			}
+			var m botMsg
+			if json.Unmarshal(data, &m) == nil && m.Type == "bot_state" {
+				got <- relayed{time.Now(), m.State}
+			}
+		}
+	}()
+	start := time.Now()
+	for i := 0; i < 20; i++ {
+		if i%2 == 0 {
+			send(t, bot, `{"type":"status","state":"listening"}`)
+		} else {
+			send(t, bot, `{"type":"status","state":"thinking"}`) // the last one sent
+		}
+	}
+	var all []relayed
+	for deadline := time.After(time.Until(start.Add(2500 * time.Millisecond))); ; {
+		select {
+		case r := <-got:
+			all = append(all, r)
+			continue
+		case <-deadline:
+		}
+		break
+	}
+	last := -1
+	for i, r := range all {
+		if r.state == "thinking" && r.at.Before(start.Add(1500*time.Millisecond)) {
+			last = i
+		}
+	}
+	if len(all) == 0 || all[len(all)-1].state != "thinking" || last != len(all)-1 {
+		t.Fatalf("relayed %+v; the last state thinking must arrive within 1.5 s and stay last", all)
+	}
+	for i := range all {
+		n := 0
+		for _, r := range all[i:] {
+			if r.at.Sub(all[i].at) < 950*time.Millisecond {
+				n++
+			}
+		}
+		if n > conference.BotStateRate {
+			t.Fatalf("%d relays within a second from %d: %+v", n, i, all)
+		}
+	}
 }
