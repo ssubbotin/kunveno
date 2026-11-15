@@ -17,6 +17,7 @@ type Joined struct {
 	Recorder       bool      // the member is the recorder, which is told the meeting's start
 	Meeting        time.Time // the start of the meeting, for the recorder
 	Offered        bool      // the room offers the facilitator switch
+	Status         bool      // the member is the facilitator, which may send its state and help
 }
 
 // Roster is the room's participants and switches, sent to everyone on every change.
@@ -51,6 +52,12 @@ type Documents struct {
 	List    []documents.Info
 }
 
+// BotState is what the facilitator is doing now, sent to people.
+type BotState struct{ ID, State string }
+
+// BotHelp is how to talk to the facilitator, as the bot puts it, sent to people.
+type BotHelp struct{ ID, Text string }
+
 func (Joined) event()         {}
 func (Roster) event()         {}
 func (ShareBusy) event()      {}
@@ -60,3 +67,5 @@ func (NotesReady) event()     {}
 func (RecordingReady) event() {}
 func (LivePhrase) event()     {}
 func (Documents) event()      {}
+func (BotState) event()       {}
+func (BotHelp) event()        {}

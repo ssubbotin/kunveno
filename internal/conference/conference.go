@@ -1,6 +1,7 @@
 // Package conference runs the meetings: who is in each live room, which media every member
 // receives, the share lock, the helpers (echo, player, notes bot, recorder, facilitator) and their
-// lifecycles. Lock order: recMu, notesMu and a room's docsMu before mu, never while holding it.
+// lifecycles. Lock order: recMu, notesMu and a room's docsMu and botMu before mu, never while
+// holding it.
 // It knows nothing of WebSocket or of the wire format: a member's client is a Conn, and what the
 // client is told is an Event. The signal package adapts both to the protocol.
 package conference
@@ -150,6 +151,10 @@ type liveRoom struct {
 	// docsMu orders the documents lists sent to the room, so the last one sent is never older than
 	// another; taken before Conference.mu, never while holding it.
 	docsMu sync.Mutex
+	// botMu orders the facilitator's state and help sent to the room with the copy a joining person
+	// gets, and guards them on the facilitator's member; taken before Conference.mu, never while
+	// holding it.
+	botMu sync.Mutex
 	// admitted holds the invitations and logins (JoinRequest.admitKey) admitted to the current
 	// meeting; ended is when the last person left. Both guarded by Conference.mu.
 	admitted map[string]bool
@@ -181,6 +186,12 @@ type Member struct {
 	meeting        time.Time   // notes bot: start of the meeting it joined to take notes of
 	client         string      // the page's id from join, if it sent one
 	lastReaction   time.Time   // for the reaction rate limit; only the session's read loop uses it
+	botState       string      // facilitator: what it is doing, empty until it says; guarded by the room's botMu
+	botHelp        string      // facilitator: how to talk to it, empty until it says; guarded by the room's botMu
+	stateWindow    stateWindow // facilitator: its recent state changes, for BotStateRate; guarded by the room's botMu
+	botWanted      string      // facilitator: the state it reported last, relayed once the rate allows; guarded by the room's botMu
+	stateTimer     *time.Timer // facilitator: relays botWanted when the rate allows; guarded by the room's botMu
+	botGone        bool        // facilitator: it has left, nothing more is relayed; guarded by the room's botMu
 	joined         time.Time
 	conn           Conn
 	peer           MediaPeer
@@ -336,6 +347,7 @@ func (c *Conference) Join(conn Conn, req JoinRequest) (*Member, error) {
 		joined.Recorder = true
 		joined.Meeting, _ = lr.room.Meeting()
 	}
+	joined.Status = req.Role == room.BotFacilitator
 	if err := conn.Send(joined); err != nil {
 		c.Leave(s)
 		return nil, ErrWrite
@@ -344,6 +356,7 @@ func (c *Conference) Join(conn Conn, req JoinRequest) (*Member, error) {
 	c.broadcast(lr)
 	if !bot {
 		c.sendDocumentsOnJoin(lr, s)
+		c.sendBotStatusOnJoin(lr, s)
 	}
 	peer.Negotiate()
 	if notesOffAtJoin && !lr.room.Notes() {
@@ -419,6 +432,7 @@ func (c *Conference) Leave(s *Member) {
 	}
 	switch {
 	case s.botKind == room.BotFacilitator:
+		c.forgetBotState(lr, s)
 		c.facilitatorLeft(s)
 	case wasFacilitator && !lr.room.Facilitator():
 		c.stopFacilitators(lr) // the last person left

@@ -109,4 +109,22 @@ describe('RoomState', () => {
     expect(s.documents).toEqual([]);
     expect(s.documentsMeeting).toBe(0);
   });
+  it('drops the facilitator\'s state and help once it is not in the snapshot', () => {
+    const s = new RoomState();
+    const bot = { id: 'f1', name: 'Ведущий', muted: false, bot: true, botKind: 'facilitator' as const };
+    const ann = { id: 'a', name: 'Ann', muted: false, bot: false };
+    s.apply({ type: 'participants', participants: [ann, bot], sharer: '', echo: false, notes: false, recording: false, facilitator: true });
+    s.apply({ type: 'bot_state', id: 'f1', state: 'thinking' });
+    s.apply({ type: 'bot_help', id: 'f1', text: 'Скажите «стоп».' });
+    expect(s.botStates).toEqual({ f1: 'thinking' });
+    expect(s.botHelp).toEqual({ f1: 'Скажите «стоп».' });
+    s.apply({ type: 'participants', participants: [ann, bot], sharer: '', echo: false, notes: false, recording: false, facilitator: true });
+    expect(s.botStates).toEqual({ f1: 'thinking' }); // still there: kept
+    s.apply({ type: 'participants', participants: [ann], sharer: '', echo: false, notes: false, recording: false, facilitator: false });
+    expect(s.botStates).toEqual({});
+    expect(s.botHelp).toEqual({});
+    s.apply({ type: 'bot_state', id: 'f2', state: 'waiting' });
+    s.reset();
+    expect(s.botStates).toEqual({});
+  });
 });

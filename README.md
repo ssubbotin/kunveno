@@ -40,7 +40,8 @@ Licensed under the GNU Affero General Public License v3.0 only; a commercial lic
 - A stand-up facilitator with the private `kunveno-facilitator` add-on: in the rooms you list, a
   person switches it on and a voice bot runs the stand-up, calling on each person, asking short
   follow-ups from the sprint and parking long discussions until after the round (Russian only for
-  now; see `docs/deploy.md`).
+  now; see `docs/deploy.md`). Next to the bot's name people see what it is doing (listening,
+  thinking, speaking, waiting) and can open its own short help on how to talk to it.
 - Meeting documents: Markdown files the facilitator prepares during the meeting (minutes, a plan),
   downloaded from the room or the lobby's meeting list with the room PIN.
 - Works behind awkward networks: when a participant's UDP path fails, the browser falls back to

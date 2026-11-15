@@ -221,3 +221,19 @@ facilitator is in the room a document can also be stored by hand on the host:
 76. The meeting list in the lobby shows the meeting's documents with "Download" and "Delete"; a
     wrong PIN is refused and counts toward the PIN limit; deleting removes the row. Deleting the
     room removes its documents; after `documents.keep` they disappear on their own.
+
+Facilitator state and help (the add-on running in `ops`, a version that sends its state and help):
+
+77. While the bot works, its tile shows "bot" followed by "listening", "thinking", "speaking" or
+    "waiting", changing as the bot listens, prepares an answer and talks. In Russian: «слушает»,
+    «думает», «говорит», «ждёт»; in Spanish «escucha», «piensa», «habla», «espera».
+78. With a screen reader, the state is announced politely, not more often than once in 3 s; a
+    quick run of changes is read as its last state only.
+79. "How to talk to it" next to the bot's name opens the bot's help as plain text with its line
+    breaks (markup such as `<b>` shows as typed); Escape closes it and focus returns to the button.
+    A person who joins mid-meeting sees the current state and the button at once.
+80. Switching the facilitator off (or the bot dropping): the state and the button disappear with
+    the bot; switching it on again starts with neither until the new bot reports. A guest sees the
+    state and the help as everyone else; an older add-on that sends neither shows only "bot".
+81. With the help dialog open, switch the facilitator off: when the bot leaves the dialog closes and
+    focus lands on the participant list; a screen reader does not read the old state again.

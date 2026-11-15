@@ -339,7 +339,7 @@
     {#if screenTrack}
       <ScreenView track={screenTrack} label={rs.isSharing ? t('screen.yours') : t('screen.theirs', { name: sharerName })} />
     {/if}
-    <ParticipantList participants={rs.participants} selfId={rs.selfId} sharer={rs.sharer} speaking={rs.speaking} videos={rs.videos} reactions={rs.reactions} compact={screenTrack !== null} phrases={site.notesLive ? rs.phrases : undefined} />
+    <ParticipantList participants={rs.participants} selfId={rs.selfId} sharer={rs.sharer} speaking={rs.speaking} videos={rs.videos} reactions={rs.reactions} compact={screenTrack !== null} phrases={site.notesLive ? rs.phrases : undefined} botStates={rs.botStates} botHelp={rs.botHelp} />
   </div>
 
 

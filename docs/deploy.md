@@ -296,7 +296,24 @@ only together with the add-on (the same text is the package comment of `internal
    sends `{"type":"stop"}`. The bot stops speaking and sends `{"type":"leave"}`. A bot still there
    5 s after the stop is closed. The stop may arrive before `joined` (the switch went off during
    the join), so the bot accepts it at any point after sending its join.
-5. Meeting documents (`documents.enabled`). While the bot is in the room's live meeting it may store
+5. State and help. The bot's `joined` message carries `"status": true` (people and other bots never
+   get the field); a bot sends these frames only when it is there. `{"type":"status","state":…}`
+   says what the bot is doing: `listening`, `thinking`, `speaking` or `waiting`.
+   `{"type":"help","text":…}` says how to talk to it: plain text, 1..800 characters once the ends
+   are trimmed, line breaks (`\n`, `\r`) allowed, no other control character, no format character
+   (Unicode Cf, such as U+200E or U+202E) and no U+2028 or U+2029; a new text replaces the old one.
+   A frame of either type with anything else, or from anyone but the facilitator, is a
+   `bad_message` exactly as an unknown type is. At most 5 state changes a second are relayed and
+   the frames beyond that get no answer; once the rate allows again (within a second) the room
+   hears the state the bot reported last, when it differs from the one relayed last. A state or a
+   help equal to the current one is not relayed. The people (never the bots) in the room
+   get `{"type":"bot_state","id":<the bot's participant id>,"state":…}` on each relayed change and
+   `{"type":"bot_help","id":…,"text":…}` when the help is set or replaced; a person who joins gets
+   both, when set, after the `participants` message. Both are forgotten when the bot leaves the
+   room (switched off, stopped or disconnected); the next facilitator starts with neither. The
+   client shows the state after the bot's name and a "How to talk to it" button that opens the help
+   as plain text.
+6. Meeting documents (`documents.enabled`). While the bot is in the room's live meeting it may store
    Markdown documents with `PUT /internal/documents/<slug>/<id>?title=<text>` on loopback (never
    proxied by nginx). `id` is `^[a-z0-9-]{1,40}$`, chosen by the bot; the title is 1..120
    characters once whitespace runs are collapsed and the ends trimmed; the body is UTF-8, not

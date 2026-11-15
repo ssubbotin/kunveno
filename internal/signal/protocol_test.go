@@ -24,6 +24,8 @@ func TestParseClientAccepts(t *testing.T) {
 		"video":     `{"type":"video","receive":false}`,
 		"notes":     `{"type":"notes","on":true}`,
 		"phrase":    `{"type":"phrase","speaker":"a1b2c3d4","start":1760421600000,"end":1760421602000,"text":"Начнём."}`,
+		"status":    `{"type":"status","state":"waiting"}`,
+		"help":      `{"type":"help","text":"Скажите «стоп».\nИли «дальше»."}`,
 	}
 	for name, raw := range cases {
 		m, err := ParseClient([]byte(raw))
@@ -63,11 +65,21 @@ func TestParseClientRejects(t *testing.T) {
 		"join bad media":    `{"type":"join","room":"ops","pin":"1234","name":"Ann","media":"carrier-pigeon"}`,
 		"join bad client":   `{"type":"join","room":"ops","pin":"1234","name":"Ann","client":"no spaces allowed"}`,
 		"join bad role":     `{"type":"join","room":"ops","pin":"1234","name":"Ann","role":"admin"}`,
+		"status bad state":  `{"type":"status","state":"sleeping"}`,
+		"help empty":        `{"type":"help","text":" "}`,
+		"help control":      `{"type":"help","text":"a\u001bb"}`,
 	}
 	for name, raw := range cases {
 		if _, err := ParseClient([]byte(raw)); !errors.Is(err, ErrBadMessage) {
 			t.Errorf("%s: err = %v, want ErrBadMessage", name, err)
 		}
+	}
+}
+
+func TestParseClientHelpIsTrimmed(t *testing.T) {
+	m, err := ParseClient([]byte(`{"type":"help","text":"\n  <b>&</b>\r\nдва  \n"}`))
+	if err != nil || m.Text != "<b>&</b>\r\nдва" {
+		t.Fatalf("m.Text = %q, err = %v", m.Text, err)
 	}
 }
 

@@ -42,7 +42,8 @@ Licencia GNU Affero General Public License v3.0 only; hay disponible una licenci
 - Facilitador de la reunión diaria con el complemento privado `kunveno-facilitator`: en las salas
   que indiques, un participante lo activa y un bot de voz dirige la reunión: da la palabra a cada
   persona, hace preguntas breves sobre el sprint y aplaza las discusiones largas hasta el final de
-  la ronda (por ahora solo en ruso; véase `docs/deploy.md`).
+  la ronda (por ahora solo en ruso; véase `docs/deploy.md`). Junto al nombre del bot se ve qué está
+  haciendo (escucha, piensa, habla, espera) y se puede abrir su breve ayuda sobre cómo hablarle.
 - Documentos de la reunión: archivos Markdown que el facilitador prepara durante la reunión (acta,
   plan); se descargan en la sala o en la lista de reuniones de la página de inicio con el PIN de la sala.
 - Funciona en redes difíciles: si a un participante le falla UDP, el navegador pasa a ICE sobre
