@@ -108,6 +108,21 @@
 //     server sends {"type":"stop"}. The bot stops speaking and sends {"type":"leave"}. A bot still
 //     there 5 s after the stop is closed. The stop may arrive before "joined" (the switch went off
 //     during the join), so the bot accepts it at any point after sending its join.
+//   - State and help. The bot's joined message carries "status":true (people and other bots never
+//     get the field); a bot sends the two frames below only when it is there, so an older server
+//     never sees them. {"type":"status","state":s} says what the bot is doing, s one of listening,
+//     thinking, speaking, waiting. {"type":"help","text":t} says how to talk to it: plain text,
+//     1..800 characters once the ends are trimmed, line breaks allowed, no other control character;
+//     a new text replaces the old one. A frame of either type with anything else, or either type
+//     from anyone but the facilitator, is a bad_message exactly as an unknown type is. At most 5
+//     state changes a second are relayed and the rest are dropped without an answer, never sent
+//     later, so the bot keeps under that rate; a state or a help equal to the current one is not
+//     relayed. The people (never the bots) in the room get {"type":"bot_state","id":<the bot's
+//     participant id>,"state":s} on each relayed change and {"type":"bot_help","id":...,"text":t}
+//     when the help is set or replaced; a person who joins gets both, when set, after the
+//     participants message. Both are forgotten when the bot leaves the room (switched off, stopped
+//     or disconnected): the next facilitator starts with neither, and clients drop them once the
+//     participants message no longer lists the bot.
 //   - Meeting documents (documents.enabled). While the bot is in the room's live meeting it may store
 //     Markdown documents with PUT /internal/documents/<slug>/<id>?title=<text> (loopback only,
 //     never proxied by nginx). id is ^[a-z0-9-]{1,40}$, chosen by the bot; title is 1..120
